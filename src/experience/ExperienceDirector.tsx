@@ -11,6 +11,7 @@ import { AudioDirector } from '../audio/AudioDirector';
 import { TransitionDirector } from '../transitions/TransitionDirector';
 import { useSceneState } from '../state/SceneStateManager';
 import { reducedMotion } from '../config/experience';
+import { SHELL_ACTIONS, SHELL_DURATIONS } from '../config/shell';
 
 class RenderBoundary extends Component<{children:ReactNode},{error:boolean}> {
   state={error:false};
@@ -45,12 +46,14 @@ function AwakeScene({director,marker,audio}:{director:CameraDirector;marker:Reac
   useFrame((_,delta)=>{
     elapsed.current+=Math.min(delta,1);
     director.update(camera as PerspectiveCamera,delta,size.width,size.height);
-    environment.update(elapsed.current,Math.min(delta,1),reducedMotion);
-    baymax.current?.update(elapsed.current,reducedMotion);
+    const currentPhase=useSceneState.getState().phase;
+    environment.update(elapsed.current,Math.min(delta,1),reducedMotion,director.visualProgress,currentPhase);
+    baymax.current?.update(elapsed.current,reducedMotion,currentPhase);
     audio.updateProgress(director.visualProgress);
-    if(scene.fog&&'density' in scene.fog)scene.fog.density=.015+director.visualProgress*.002;
+    if(scene.fog&&'density' in scene.fog)scene.fog.density=.015+director.visualProgress*.006;
     if(marker.current){
-      projection.set(2.7,2.2,-11.3).project(camera);
+      const focus=currentPhase==='chip-focus'||currentPhase==='chip-reaching'||currentPhase==='chip-held'?new Vector3(4.05,.25,-10.45):new Vector3(3.12,2.06,-11.28);
+      projection.copy(focus).project(camera);
       marker.current.style.left=`${(projection.x*.5+.5)*size.width}px`;
       marker.current.style.top=`${(-projection.y*.5+.5)*size.height}px`;
     }
@@ -59,7 +62,7 @@ function AwakeScene({director,marker,audio}:{director:CameraDirector;marker:Reac
     post.render(Math.min(delta,1),director.wake,director.visualProgress,director.focusDistance);
     gl.domElement.dataset.drawCalls=String(gl.info.render.calls);
   },1);
-  const check=(event:ThreeEvent<MouseEvent>)=>{event.stopPropagation();useSceneState.getState().inspect();};
+  const check=(event:ThreeEvent<MouseEvent>)=>{event.stopPropagation();useSceneState.getState().interact();};
   return <>
     <color attach="background" args={['#101c31']}/>
     <fogExp2 attach="fog" args={['#253e59',.015]}/>
@@ -87,6 +90,25 @@ export function ExperienceDirector(){
     setIdleHint(false);
     if(phase==='approaching')idleTimer.current=setTimeout(()=>setIdleHint(true),6500);
     return()=>{if(idleTimer.current)clearTimeout(idleTimer.current);};
+  },[phase]);
+  useEffect(()=>{
+    const duration=SHELL_DURATIONS[phase];
+    if(!duration)return;
+    const timer=setTimeout(()=>useSceneState.getState().advance(phase),duration*1000);
+    return()=>clearTimeout(timer);
+  },[phase]);
+  useEffect(()=>{
+    if(phase==='chip-reaching')audio.shellCue('lift');
+    if(phase==='panel-opening')audio.shellCue('latch');
+    if(phase==='inserting')audio.shellCue('align');
+    if(phase==='sealing')audio.shellCue('lock');
+    if(phase==='booting')audio.shellCue('boot');
+    if(phase==='threat')audio.shellCue('fault');
+  },[phase,audio]);
+  useEffect(()=>{
+    if(phase==='booting')useSceneState.getState().say('Baymax…?', 'HIRO');
+    if(phase==='diagnostic')useSceneState.getState().say('HEALTHCARE DIRECTIVE  //  MISSING','BAYMAX');
+    if(phase==='threat')useSceneState.getState().say('PRIMARY THREAT  //  HIRO HAMADA','BAYMAX');
   },[phase]);
   useEffect(()=>{
     if(!subtitle)return;
@@ -151,7 +173,8 @@ export function ExperienceDirector(){
     {phase==='approaching'&&idleHint&&<button className="approach" onClick={()=>{setIdleHint(false);useSceneState.getState().move(.065);}} aria-label="Move closer to Baymax">
       MOVE <span>//</span> SCROLL
     </button>}
-    <button ref={marker} className="shell-interaction" hidden={phase!=='discovery'} onClick={()=>useSceneState.getState().inspect()} aria-label="Check Baymax for a response"><span className="interaction-ring"/><span>CHECK RESPONSE <small>E</small></span></button>
+    <button ref={marker} className={`shell-interaction ${phase==='chip-focus'||phase==='chip-reaching'||phase==='chip-held'||phase==='panel-opening'||phase==='socket-ready'?'shell-action':''}`} hidden={!['discovery','chip-focus','chip-held','socket-ready'].includes(phase)} onPointerDown={()=>useSceneState.getState().interact()} aria-label={SHELL_ACTIONS[phase]?.description||'Check Baymax for a response'}><span className="interaction-ring"/><span>{SHELL_ACTIONS[phase]?.label||'CHECK RESPONSE'} <small>{phase==='discovery'?'E':'HOLD'}</small></span></button>
+    {(phase==='diagnostic'||phase==='threat')&&<div className="system-readout" aria-live="polite"><span>{phase==='diagnostic'?'HEALTHCARE DIRECTIVE':'PRIMARY THREAT'}</span><b>{phase==='diagnostic'?'MISSING':'HIRO HAMADA'}</b></div>}
     {phase==='inspected'&&<div className={`failed-link ${linkVisible?'visible':''}`} aria-live="polite"><span className="fault-dot"/> BAYMAX <span>NO RESPONSE</span></div>}
     <div className="signature" aria-hidden="true">PROJECT <span>//</span> LATTICE <i>{chapter==='THE_SHELL'?'01':'00'}</i></div>
     {phase==='inspected'&&linkVisible&&<button className="replay" onClick={()=>{camera.resetPointer();useSceneState.getState().restart();}}>REPLAY OPENING <span>R ↶</span></button>}

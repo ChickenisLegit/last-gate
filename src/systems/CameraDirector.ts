@@ -17,6 +17,7 @@ export class CameraDirector {
   public focusDistance=19;
   public pointer={x:0,y:0};
   public holding=false;
+  private shellTime=0;private shellPhase='';
 
   update(camera:PerspectiveCamera,delta:number,width:number,height:number) {
     const state=useSceneState.getState(),dt=Math.min(delta,1);
@@ -41,11 +42,26 @@ export class CameraDirector {
     this.target.set(MathUtils.lerp(-.65,2.65,p)+this.gaze.x*.52,MathUtils.lerp(.3,2.4,wake)-p*1.25-this.gaze.y*.23,-14+p*2);
     camera.fov=MathUtils.lerp(51,45,p)+(reducedMotion?0:Math.sin(this.time*.9)*.025+(1-wake)*.2);
     camera.lookAt(this.target);
+    const shellPhases=['chip-focus','chip-reaching','chip-held','panel-opening','socket-ready','inserting','sealing','silence','booting','diagnostic','threat','corrupted'];
+    if(shellPhases.includes(state.phase)){
+      if(this.shellPhase!==state.phase){this.shellPhase=state.phase;this.shellTime=0;}this.shellTime+=dt;
+      const pickup=['chip-focus','chip-reaching','chip-held'].includes(state.phase);
+      const port=['panel-opening','socket-ready','inserting'].includes(state.phase);
+      const eye=['booting','diagnostic','threat','corrupted'].includes(state.phase);
+      const position=new Vector3(pickup?2.25:2.4,pickup?1.6:2.4,pickup?-8.2:-9.45);
+      const gaze=new Vector3(pickup?3.4:3.05,pickup?.6:eye?2.7:1.98,pickup?-10.6:-11.35);
+      const settle=MathUtils.smoothstep(this.shellTime,0,2);
+      camera.position.lerp(position,settle);
+      this.target.lerp(gaze,settle);
+      camera.lookAt(this.target);
+      camera.fov=MathUtils.lerp(camera.fov,port?39:eye?42:45,settle);
+      this.focusDistance=camera.position.distanceTo(this.target);
+    }else{this.shellPhase='';this.shellTime=0;}
     camera.rotateZ(reducedMotion?0:(1-wake)*-.09+Math.sin(this.time*.43)*.0012-this.velocity*.01);
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
     this.visualProgress=p;this.wake=wake;
-    this.focusDistance=-new Vector3(2.7,2,-12).applyMatrix4(camera.matrixWorldInverse).z;
+    if(!shellPhases.includes(state.phase))this.focusDistance=-new Vector3(2.7,2,-12).applyMatrix4(camera.matrixWorldInverse).z;
     if(this.progress>.995&&state.phase==='approaching')state.arrive();
   }
   resetPointer(){this.pointer={x:0,y:0};this.holding=false;}

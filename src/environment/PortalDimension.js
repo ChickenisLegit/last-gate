@@ -28,6 +28,16 @@ for(let i=0;i<13;i++){
   const x=rand(-4.8,4.8),z=rand(-23,9),r=rand(.05,.2);
   const stone=mesh(new THREE.DodecahedronGeometry(r),materials.edge,x,-.08,z);stone.rotation.set(random()*3,random()*3,random()*3);
 }
+// Sparse structural scars keep the road graphic and directional without making it busy.
+const roadScarMat=new THREE.MeshBasicMaterial({color:'#252d3a',transparent:true,opacity:.38,depthWrite:false});
+function roadScar(points,opacity=.38){
+  const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(points.map(([x,y,z])=>new THREE.Vector3(x,y,z))),roadScarMat.clone());line.material.opacity=opacity;scene.add(line);return line;
+}
+roadScar([[-3.9,-.135,5.2],[-3.5,-.135,3.8],[-3.8,-.135,2.4]],.3);
+roadScar([[2.9,-.134,-2.2],[3.2,-.134,-3.1],[2.8,-.134,-4.4]],.27);
+roadScar([[-1.9,-.134,-7.8],[-1.3,-.134,-8.3],[-1.55,-.134,-9.1]],.34);
+const tyreMat=new THREE.MeshBasicMaterial({color:'#18202b',transparent:true,opacity:.2,depthWrite:false});
+for(const x of [-1.05,1.55]){const tyre=mesh(new THREE.PlaneGeometry(.18,4.8),tyreMat,x,-.136,-5.1);tyre.rotation.x=-Math.PI/2;tyre.rotation.z=(x<0?.035:-.025);}
 // Broken parapets frame the path rather than hiding the companion.
 for(const side of [-1,1]){
   for(let i=0;i<7;i++){
@@ -103,7 +113,7 @@ const chip=new THREE.Group();scene.add(chip);chip.position.set(4.05,-.108,-10.45
 box(.23,.32,.045,materials.red,0,0,0,chip);
 box(.14,.18,.008,new THREE.MeshStandardMaterial({color:'#3a1a18',metalness:.5,roughness:.4}),0,0,.026,chip);
 for(let i=0;i<4;i++)box(.023,.055,.025,new THREE.MeshStandardMaterial({color:'#cda46a',metalness:.8,roughness:.35}),-.08+i*.053,-.18,0,chip);
-const chipLight=new THREE.PointLight('#d94329',1.6,2,1.7);chipLight.position.set(4.05,.17,-10.45);scene.add(chipLight);
+const chipLight=new THREE.PointLight('#d94329',.72,2,1.7);chipLight.position.set(4.05,.17,-10.45);scene.add(chipLight);
 // A ruined wall gives the body a grounded resting place.
 box(4.2,1.6,.65,materials.concrete,3.05,.65,-13.05).rotation.z=.04;
 box(1.4,2.6,.7,materials.concrete,4.8,1.05,-13.1).rotation.z=-.15;
@@ -142,6 +152,21 @@ for(let i=0;i<8;i++){
   s.position.set(rand(-10,10),rand(.2,1.7),-16-i*4);s.scale.set(rand(13,21),rand(1.8,3.6),1);scene.add(s);mistLayers.push({sprite:s,x:s.position.x});
 }
 const backGlow=new THREE.Sprite(new THREE.SpriteMaterial({map:mistTexture,color:'#88c5ed',transparent:true,opacity:.3,depthWrite:false,blending:THREE.AdditiveBlending}));backGlow.position.set(2.7,4,-18);backGlow.scale.set(17,15,1);scene.add(backGlow);
+// The primary dimensional landmark: a vertical architectural seam, half swallowed
+// by the mid-city blocks rather than a conventional circular portal.
+const anomaly=new THREE.Group();scene.add(anomaly);anomaly.position.set(1.8,4.2,-34);anomaly.rotation.z=-.08;
+const seamCurve=new THREE.CatmullRomCurve3([
+  new THREE.Vector3(-.35,-5.8,.2),new THREE.Vector3(.1,-2.2,0),new THREE.Vector3(-.18,1.5,.05),
+  new THREE.Vector3(.42,5.2,-.02),new THREE.Vector3(.08,9.4,.02),new THREE.Vector3(.55,13.4,0)
+]);
+const seamFringe=new THREE.MeshBasicMaterial({color:'#9e73c6',transparent:true,opacity:.2,blending:THREE.AdditiveBlending,depthWrite:false});
+const seamHalo=new THREE.MeshBasicMaterial({color:'#72c9ef',transparent:true,opacity:.1,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
+const seamCore=new THREE.Mesh(new THREE.TubeGeometry(seamCurve,48,.075,7,false),new THREE.MeshBasicMaterial({color:'#dcf7ff',toneMapped:false}));anomaly.add(seamCore);
+anomaly.add(new THREE.Mesh(new THREE.TubeGeometry(seamCurve,48,.22,7,false),seamFringe));
+for(const [x,y,rot,s] of [[-.75,1.2,-.16,1.2],[.7,4.9,.19,.8]]){
+  const shard=new THREE.Mesh(new THREE.PlaneGeometry(1.45,7),seamHalo);shard.position.set(x,y,-.08);shard.rotation.z=rot;shard.scale.set(s,1,1);anomaly.add(shard);
+}
+const anomalyLight=new THREE.PointLight('#b6eaff',3.1,16,2);anomalyLight.position.set(.1,3.7,.2);anomaly.add(anomalyLight);
 for(let i=0;i<25;i++){
   const m=new THREE.SpriteMaterial({map:mistTexture,color:i%5===0?'#836eae':'#65a8cd',transparent:true,opacity:rand(.05,.16),depthWrite:false,blending:THREE.AdditiveBlending});
   const s=new THREE.Sprite(m);s.position.set(rand(-70,70),rand(-5,35),rand(-150,-55));s.scale.set(rand(25,70),rand(10,40),1);scene.add(s);
@@ -190,13 +215,29 @@ for(const objects of instanceGroups.values()){
 
 
 let lastShadow=0;
-return {group:scene,chip,dispose(){const geos=new Set(),mats=new Set(),textures=new Set();scene.traverse(obj=>{if(obj.geometry)geos.add(obj.geometry);if(obj.material){for(const mat of Array.isArray(obj.material)?obj.material:[obj.material]){mats.add(mat);for(const value of Object.values(mat))if(value?.isTexture)textures.add(value);}}});geos.forEach(g=>g.dispose());textures.forEach(t=>t.dispose());mats.forEach(m=>m.dispose());},update(t,dt,reduced){
+let chipPhase='ground',chipPhaseStart=0;
+const chipBase=chip.position.clone(),chipTarget=new THREE.Vector3(),chipQuat=new THREE.Quaternion();
+function ease(t){t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);}
+return {group:scene,chip,dispose(){const geos=new Set(),mats=new Set(),textures=new Set();scene.traverse(obj=>{if(obj.geometry)geos.add(obj.geometry);if(obj.material){for(const mat of Array.isArray(obj.material)?obj.material:[obj.material]){mats.add(mat);for(const value of Object.values(mat))if(value?.isTexture)textures.add(value);}}});geos.forEach(g=>g.dispose());textures.forEach(t=>t.dispose());mats.forEach(m=>m.dispose());},update(t,dt,reduced,progress=0,phase='approaching'){
+ if(phase!==chipPhase){chipPhase=phase;chipPhaseStart=t;}
  if(!reduced){floating.forEach((f,i)=>{f.obj.position.y=f.y+Math.sin(t*f.speed+f.phase)*f.amp;f.obj.rotation.y+=dt*.006;f.obj.updateMatrix();debris.setMatrixAt(i,f.obj.matrix);});debris.instanceMatrix.needsUpdate=true;dust.rotation.y=t*.001;riftGroup.rotation.z=-.45+Math.sin(t*.04)*.015;skyMaterial.uniforms.uTime.value=t;}
- details.update(t,dt,reduced);
+ details.update(t,dt,reduced,progress);
  art.update(reduced?0:t);
- if(!reduced){sign.rotation.z=-.08+Math.sin(t*.21)*.009;mistLayers.forEach((h,i)=>{h.sprite.position.x=h.x+Math.sin(t*.04+i)*.7;});}
+ if(!reduced){sign.rotation.z=-.08+Math.sin(t*.21)*.009;mistLayers.forEach((h,i)=>{h.sprite.position.x=h.x+Math.sin(t*.04+i)*.7;h.sprite.material.opacity=.12*(1-progress*.65);});anomaly.rotation.y=Math.sin(t*.07)*.012;anomaly.position.x=1.8+Math.sin(t*.035)*.035;}
+ dust.material.opacity=.44*(1-progress*.72);
+ const held=['chip-reaching','chip-held','panel-opening','socket-ready','inserting'].includes(phase);
+ chip.visible=!['sealing','silence','booting','diagnostic','threat','corrupted'].includes(phase);
+ if(held){
+   const u=ease((t-chipPhaseStart)/1.55);
+   if(phase==='chip-reaching'){chipTarget.set(3.05,.72,-10.45);chip.position.lerpVectors(chipBase,chipTarget,u);}
+   else if(phase==='chip-held'){chipTarget.set(3.02,1.14,-10.63);chip.position.lerp(chipTarget,.22);}
+   else if(phase==='panel-opening'){chipTarget.set(3.04,1.55,-10.94);chip.position.lerp(chipTarget,.16);}
+   else if(phase==='socket-ready'){chipTarget.set(3.08,1.78,-11.16);chip.position.lerp(chipTarget,.18);}
+   else {chipTarget.set(3.11,1.96,-11.29);chip.position.lerp(chipTarget,.18);}
+   chip.rotation.z=-.38+u*.38;chip.rotation.x=-Math.PI/2-u*.08;
+ }
  const pulse=reduced?0:Math.pow(Math.max(0,Math.sin(t*.63)),12);
- chipLight.intensity=1.1+pulse*.85;materials.red.emissiveIntensity=1.2+pulse*.6;
+ chipLight.intensity=.58+pulse*.42;materials.red.emissiveIntensity=1.05+pulse*.45;
  if(t-lastShadow>.18){key.shadow.needsUpdate=true;lastShadow=t;}
 }};
 }

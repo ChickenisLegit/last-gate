@@ -8,9 +8,9 @@ export function createCinematicDetails(scene,{mesh,box,materials,rand,building,m
   const cable=mesh(new THREE.TubeGeometry(cableCurve,36,.021,7,false),materials.dark,0,0,0,cableRoot);cable.castShadow=false;
   const shardGeo=new THREE.BufferGeometry();shardGeo.setAttribute('position',new THREE.Float32BufferAttribute([-.4,-.2,0,.32,-.1,.03,.12,.53,0],3));shardGeo.computeVertexNormals();
   const glass=new THREE.MeshPhysicalMaterial({color:'#818f8e',roughness:.24,metalness:.14,transparent:true,opacity:.29,side:THREE.DoubleSide,envMapIntensity:.7});
-  const shards=new THREE.InstancedMesh(shardGeo,glass,7);scene.add(shards);
+  const shards=new THREE.InstancedMesh(shardGeo,glass,3);scene.add(shards);
   const shardStates=[],dummy=new THREE.Object3D();
-  for(let i=0;i<7;i++){const pos=new THREE.Vector3(rand(-4.5,4.5),rand(.7,4.7),rand(-2,6));const s=rand(.15,.5);shardStates.push({pos,scale:s,phase:rand(0,6.3)});dummy.position.copy(pos);dummy.scale.setScalar(s);dummy.rotation.set(rand(0,1),rand(0,1),rand(0,2));dummy.updateMatrix();shards.setMatrixAt(i,dummy.matrix);}
+  for(let i=0;i<3;i++){const pos=new THREE.Vector3(rand(-4.5,4.5),rand(.7,4.7),rand(-2,6));const s=rand(.15,.5);shardStates.push({pos,scale:s,phase:rand(0,6.3)});dummy.position.copy(pos);dummy.scale.setScalar(s);dummy.rotation.set(rand(0,1),rand(0,1),rand(0,2));dummy.updateMatrix();shards.setMatrixAt(i,dummy.matrix);}
   const nearPositions=new Float32Array(190*3);
   for(let i=0;i<190;i++){nearPositions[i*3]=rand(-6,6);nearPositions[i*3+1]=rand(.2,6);nearPositions[i*3+2]=rand(-14,10);}
   const nearGeo=new THREE.BufferGeometry();nearGeo.setAttribute('position',new THREE.BufferAttribute(nearPositions,3));
@@ -38,6 +38,19 @@ export function createCinematicDetails(scene,{mesh,box,materials,rand,building,m
   const shadowCanvas=document.createElement('canvas');shadowCanvas.width=shadowCanvas.height=256;
   const ctx=shadowCanvas.getContext('2d');const gradient=ctx.createRadialGradient(128,128,12,128,128,128);gradient.addColorStop(0,'rgba(1,5,7,.85)');gradient.addColorStop(.4,'rgba(1,5,7,.5)');gradient.addColorStop(1,'rgba(1,5,7,0)');ctx.fillStyle=gradient;ctx.fillRect(0,0,256,256);
   const contact=mesh(new THREE.PlaneGeometry(4.6,3.9),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(shadowCanvas),transparent:true,depthWrite:false,opacity:.85}),2.7,-.133,-11.6);contact.rotation.x=-Math.PI/2;contact.castShadow=false;
+  // A few landing traces make the shell feel like it came to rest here. They stay
+  // low and asymmetrical so the road still reads as the leading line.
+  const landingRoot=new THREE.Group();scene.add(landingRoot);landingRoot.position.set(2.7,-.125,-12.1);animatedRoots.push(landingRoot);
+  const scrapeMat=new THREE.MeshStandardMaterial({color:'#343c4a',roughness:1,transparent:true,opacity:.52,depthWrite:false});
+  const scrape=mesh(new THREE.PlaneGeometry(1.9,.16),scrapeMat,.1,.004,.15,landingRoot);scrape.rotation.x=-Math.PI/2;scrape.rotation.z=-.18;
+  const scrape2=mesh(new THREE.PlaneGeometry(1.15,.1),scrapeMat,-.5,.006,.55,landingRoot);scrape2.rotation.x=-Math.PI/2;scrape2.rotation.z=.2;
+  const landingBits=[];
+  [[-1.45,.02,.18,.42],[1.25,.03,-.32,.3],[-.65,.04,.7,.2]].forEach(([x,y,z,s])=>{
+    const bit=mesh(new THREE.DodecahedronGeometry(s,0),materials.concrete,x,y,z,landingRoot);bit.rotation.set(rand(0,2),rand(0,3),rand(0,2));landingBits.push(bit);
+  });
+  const roadChip=mesh(new THREE.BoxGeometry(.64,.12,.42),materials.edge,.75,.04,.74,landingRoot);roadChip.rotation.set(.12,.3,-.14);landingBits.push(roadChip);
+  // A low crimson bounce is local to the damaged armour and never becomes a pickup glow.
+  const shellBounce=new THREE.PointLight('#b72a31',.34,3.4,2);shellBounce.position.set(2.95,.12,-11.55);scene.add(shellBounce);
   // Low grime and grit keep concrete stylized while breaking perfect material uniformity.
   const grit=document.createElement('canvas');grit.width=grit.height=256;const gc=grit.getContext('2d');gc.fillStyle='#aaaaaa';gc.fillRect(0,0,256,256);
   for(let i=0;i<9000;i++){const v=Math.floor(rand(110,210));gc.fillStyle=`rgba(${v},${v},${v},.24)`;gc.fillRect(rand(0,256),rand(0,256),rand(1,6),rand(1,3));}
@@ -45,13 +58,15 @@ export function createCinematicDetails(scene,{mesh,box,materials,rand,building,m
   materials.concrete.bumpMap=gritTexture;materials.concrete.bumpScale=.025;materials.concrete.roughnessMap=gritTexture;materials.concrete.roughness=.98;
   materials.metal.roughness=.38;materials.metal.metalness=.65;materials.metal.envMapIntensity=.35;
   materials.dark.roughness=.49;materials.dark.metalness=.12;
-  return {animatedRoots,update(t,dt,reduced){
+  return {animatedRoots,update(t,dt,reduced,progress=0){
     if(reduced)return;
     cableRoot.rotation.z=Math.sin(t*.18)*.018;
     upper.rotation.z=Math.PI/2-.08+Math.sin(t*.035)*.008;
     detached.position.y=7.5+Math.sin(t*.12)*.08;
     haze.forEach(h=>{h.sprite.position.x=h.x+Math.sin(t*.035+h.phase)*1.3;h.sprite.position.y=h.y+Math.sin(t*.05+h.phase)*.15;});
     nearDust.position.x=Math.sin(t*.025)*.65;nearDust.position.y=Math.sin(t*.06)*.08;
+    nearDust.material.opacity=.34*(1-progress*.72);
     shardStates.forEach((s,i)=>{dummy.position.copy(s.pos);dummy.position.y+=Math.sin(t*.15+s.phase)*.12;dummy.scale.setScalar(s.scale);dummy.rotation.set(s.phase+t*.012,s.phase*.4+t*.009,s.phase*.3);dummy.updateMatrix();shards.setMatrixAt(i,dummy.matrix);});shards.instanceMatrix.needsUpdate=true;
+    shellBounce.intensity=.3+Math.sin(t*.63)*.025;
   }};
 }

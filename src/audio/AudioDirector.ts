@@ -47,5 +47,12 @@ export class AudioDirector {
     gain.gain.setValueAtTime(.04,ctx.currentTime);gain.gain.exponentialRampToValueAtTime(.001,ctx.currentTime+.5);
     osc.connect(gain);gain.connect(this.master);osc.start();osc.stop(ctx.currentTime+.5);
   }
+  shellCue(kind:'lift'|'latch'|'align'|'lock'|'boot'|'fault'){
+    if(!this.ctx||!this.master||!this.enabled)return;
+    const ctx=this.ctx,t=ctx.currentTime,frequencies={lift:180,latch:92,align:440,lock:118,boot:54,fault:238};
+    const o=ctx.createOscillator(),g=ctx.createGain();o.type=kind==='fault'?'sine':'triangle';
+    const f=frequencies[kind];o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*(kind==='lock'?.62:kind==='fault'?.45:1.18),t+(kind==='boot'?.8:.18));
+    g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(kind==='boot'?.018:.012,t+.018);g.gain.exponentialRampToValueAtTime(.0001,t+(kind==='boot'?1.1:.32));o.connect(g);g.connect(this.master);o.start();o.stop(t+(kind==='boot'?1.15:.36));
+  }
   dispose(){void this.ctx?.close();this.ctx=null;this.master=null;}
 }

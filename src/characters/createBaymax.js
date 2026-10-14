@@ -10,12 +10,26 @@ const torso=mesh(new THREE.LatheGeometry(torsoCurve.getPoints(60),64),materials.
 const head=new THREE.Group();baymax.add(head);head.name='dormant-head';head.position.set(0,2.98,.23);head.rotation.x=.24;head.rotation.z=-.12;
 ellipsoid(.77,.49,.49,materials.white,0,0,0,head);
 const eyeMat=new THREE.MeshBasicMaterial({color:'#172022'});
-ellipsoid(.065,.065,.025,eyeMat,-.23,.015,.49,head);
-ellipsoid(.065,.065,.025,eyeMat,.23,.015,.49,head);
+ellipsoid(.065,.065,.025,eyeMat,-.23,.015,.49,head).name='dormant-eye';
+ellipsoid(.065,.065,.025,eyeMat,.23,.015,.49,head).name='dormant-eye';
 box(.46,.022,.016,eyeMat,0,.015,.502,head);
-// Chest seam and circular access port.
-const port=mesh(new THREE.TorusGeometry(.145,.014,8,40),materials.seam,.42,2.05,.638,baymax);port.rotation.y=.15;
-mesh(new THREE.CircleGeometry(.132,32),materials.white,.42,2.05,.643,baymax);
+// Chest seam and circular medical access port. The shell remains soft; the service
+// bay underneath is a restrained, cleanly layered mechanism rather than an exposed engine.
+const access=new THREE.Group();access.name='baymax-access';baymax.add(access);access.position.set(.42,2.05,.63);access.rotation.y=.15;
+const port=mesh(new THREE.TorusGeometry(.17,.018,10,48),materials.seam,0,0,.025,access);port.name='access-ring';
+const panel=mesh(new THREE.CircleGeometry(.151,40),materials.white,0,0,.03,access);panel.name='access-panel';
+const internal=new THREE.Group();internal.name='medical-interface';internal.visible=false;baymax.add(internal);internal.position.set(.42,2.05,.7);internal.rotation.y=.15;
+const housingMat=new THREE.MeshStandardMaterial({color:'#c9d0d0',roughness:.42,metalness:.32,envMapIntensity:.4});
+const darkMat=new THREE.MeshStandardMaterial({color:'#1d2830',roughness:.38,metalness:.44,envMapIntensity:.35});
+const softBlue=new THREE.MeshBasicMaterial({color:'#b9eaff',transparent:true,opacity:.78});
+// Nested medical-grade layers: rim, carrier, keyed socket. No loose wiring or clutter.
+mesh(new THREE.CylinderGeometry(.145,.145,.06,32),housingMat,0,0,-.015,internal).rotation.x=Math.PI/2;
+mesh(new THREE.TorusGeometry(.11,.012,8,32),softBlue,0,0,.02,internal);
+mesh(new THREE.BoxGeometry(.16,.09,.035),darkMat,0,0,.035,internal);
+mesh(new THREE.BoxGeometry(.105,.035,.012),softBlue,0,0,.057,internal);
+for(const x of [-.075,.075])mesh(new THREE.BoxGeometry(.018,.15,.025),housingMat,x,0,.02,internal);
+const seal=new THREE.Group();seal.name='access-seal';seal.visible=false;baymax.add(seal);seal.position.copy(access.position);seal.rotation.copy(access.rotation);
+mesh(new THREE.TorusGeometry(.155,.01,8,40),materials.seam,0,0,.043,seal);
 for(let side of [-1,1]){
   ellipsoid(.45,.56,.46,materials.armor,side*.93,2.3,-.03,baymax).rotation.z=side*.25;
   ellipsoid(.38,.73,.38,materials.white,side*1.12,1.7,.08,baymax).rotation.z=side*.12;
