@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import {createGeometryKit} from '../systems/GeometryKit.js';
-export function createPortalDimension(mobile=false){
+import {createCinematicDetails} from './CinematicDetails.js';
+export function createPortalDimension(){
 const scene=new THREE.Group();scene.name='PortalDimension';
 const {mesh,box,cylinderBetween,materials,random,rand}=createGeometryKit(scene);
 // A single fractured street, with layered stone edges and exposed reinforcing steel.
@@ -10,7 +11,7 @@ for(let i=0;i<27000;i++){const c=Math.floor(rand(75,145));gx.fillStyle=`rgba(${c
 gx.strokeStyle='#434e49';gx.lineWidth=1;
 for(let i=0;i<13;i++){gx.beginPath();let x=rand(0,512),y=rand(0,512);gx.moveTo(x,y);for(let j=0;j<5;j++){x+=rand(-55,55);y+=rand(10,50);gx.lineTo(x,y);}gx.stroke();}
 const groundTexture=new THREE.CanvasTexture(groundCanvas);groundTexture.wrapS=groundTexture.wrapT=THREE.RepeatWrapping;groundTexture.repeat.set(3,12);groundTexture.colorSpace=THREE.SRGBColorSpace;
-const groundMat=new THREE.MeshStandardMaterial({map:groundTexture,color:'#9d9b95',roughness:.97});
+const groundMat=new THREE.MeshStandardMaterial({map:groundTexture,bumpMap:groundTexture,bumpScale:.027,color:'#78807e',roughness:.97,metalness:0,envMapIntensity:.015});
 box(10.8,.7,40,groundMat,0,-.5,-8);
 box(10.5,1.2,39,materials.edge,.1,-1.3,-8.1);
 for(let i=0;i<22;i++){
@@ -38,9 +39,13 @@ for(const side of [-1,1]){
 
 const floating=[];
 const windowLight=new THREE.MeshStandardMaterial({color:'#6a7972',emissive:'#53685e',emissiveIntensity:.15,roughness:.8});
+const wallCanvas=document.createElement('canvas');wallCanvas.width=wallCanvas.height=256;const wc=wallCanvas.getContext('2d');wc.fillStyle='#c1c5bd';wc.fillRect(0,0,256,256);
+for(let i=0;i<5000;i++){const v=Math.floor(rand(120,205));wc.fillStyle=`rgba(${v},${v+3},${v},.12)`;wc.fillRect(rand(0,256),rand(0,256),rand(1,5),rand(2,11));}
+for(let i=0;i<10;i++){const x=rand(0,256);const g=wc.createLinearGradient(x,0,x+13,0);g.addColorStop(0,'#414c4630');g.addColorStop(1,'#414c4600');wc.fillStyle=g;wc.fillRect(x,0,13,256);}
+const wallTexture=new THREE.CanvasTexture(wallCanvas);wallTexture.colorSpace=THREE.SRGBColorSpace;wallTexture.wrapS=wallTexture.wrapT=THREE.RepeatWrapping;
 function building(x,y,z,w,h,d,tilt=0){
   const g=new THREE.Group();scene.add(g);g.position.set(x,y,z);g.rotation.z=tilt;
-  const facade=new THREE.MeshStandardMaterial({color:new THREE.Color().setHSL(.46,.055,rand(.15,.28)),roughness:.94});
+  const facade=new THREE.MeshStandardMaterial({map:wallTexture,bumpMap:wallTexture,bumpScale:.017,color:new THREE.Color().setHSL(.47,.045,rand(.15,.23)),roughness:.96,envMapIntensity:.1});
   box(w,h,d,facade,0,h/2,0,g);
   const sill=materials.metal;
   for(let fy=1;fy<h-.8;fy+=1.5){
@@ -57,7 +62,8 @@ function building(x,y,z,w,h,d,tilt=0){
 }
 building(-15,-4,-21,6,22,6,-.16);
 building(-22,1,-41,8,30,8,.22);
-building(18,-7,-29,7,26,7,-.2);
+building(17,-7,-29,2.5,26,7,-.2);
+building(21,-7,-29,2.5,26,7,-.2);
 building(27,8,-56,9,33,7,.19);
 building(-35,6,-69,8,27,8,-.31);
 building(9,-13,-53,6,15,7,.1);
@@ -90,11 +96,11 @@ for(let i=0;i<46;i++){
   floating.push({obj:g,y:g.position.y,speed:rand(.15,.35),phase:rand(0,6.3),amp:rand(.1,.5)});
 }
 
-const chip=new THREE.Group();scene.add(chip);chip.position.set(4.17,.04,-10.95);chip.rotation.set(-Math.PI/2,0,-.4);
+const chip=new THREE.Group();scene.add(chip);chip.position.set(4.05,-.108,-10.45);chip.rotation.set(-Math.PI/2,0,-.38);chip.scale.setScalar(1.25);
 box(.23,.32,.045,materials.red,0,0,0,chip);
 box(.14,.18,.008,new THREE.MeshStandardMaterial({color:'#3a1a18',metalness:.5,roughness:.4}),0,0,.026,chip);
 for(let i=0;i<4;i++)box(.023,.055,.025,new THREE.MeshStandardMaterial({color:'#cda46a',metalness:.8,roughness:.35}),-.08+i*.053,-.18,0,chip);
-const chipLight=new THREE.PointLight('#e25938',.8,2);chipLight.position.set(4.2,.3,-10.9);scene.add(chipLight);
+const chipLight=new THREE.PointLight('#d94329',1.6,2,1.7);chipLight.position.set(4.05,.17,-10.45);scene.add(chipLight);
 // A ruined wall gives the body a grounded resting place.
 box(4.2,1.6,.65,materials.concrete,3.05,.65,-13.05).rotation.z=.04;
 box(1.4,2.6,.7,materials.concrete,4.8,1.05,-13.1).rotation.z=-.15;
@@ -105,6 +111,7 @@ function softTexture(){
   const g=ctx.createRadialGradient(64,64,0,64,64,64);g.addColorStop(0,'rgba(225,242,229,.8)');g.addColorStop(.2,'rgba(180,211,200,.25)');g.addColorStop(1,'rgba(130,180,170,0)');ctx.fillStyle=g;ctx.fillRect(0,0,128,128);return new THREE.CanvasTexture(c);
 }
 const mistTexture=softTexture();
+const mistLayers=[];
 const skyMaterial=new THREE.ShaderMaterial({
   uniforms:{uTime:{value:0}},depthWrite:false,
   vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
@@ -120,14 +127,14 @@ const skyMaterial=new THREE.ShaderMaterial({
       float light=ring*(.26+n*.7)*smoothstep(-.7,.7,p.y+.25)+clouds*.1;
       vec3 col=mix(vec3(.07,.11,.12),vec3(.67,.73,.67),clamp(light,0.,.8));
       col+=vec3(.17,.22,.2)*exp(-r*r*13.)*.4;
-      gl_FragColor=vec4(col,1.);
+      gl_FragColor=vec4(col*.48,1.);
     }`
 });
 mesh(new THREE.PlaneGeometry(230,150),skyMaterial,0,30,-158).castShadow=false;
 // Low mist passes across the broken roadway; a quiet glow separates the shell from the void.
 for(let i=0;i<8;i++){
   const s=new THREE.Sprite(new THREE.SpriteMaterial({map:mistTexture,color:'#c4cfbf',transparent:true,opacity:.14,depthWrite:false,blending:THREE.AdditiveBlending}));
-  s.position.set(rand(-10,10),rand(.2,1.7),-16-i*4);s.scale.set(rand(13,21),rand(1.8,3.6),1);scene.add(s);
+  s.position.set(rand(-10,10),rand(.2,1.7),-16-i*4);s.scale.set(rand(13,21),rand(1.8,3.6),1);scene.add(s);mistLayers.push({sprite:s,x:s.position.x});
 }
 const backGlow=new THREE.Sprite(new THREE.SpriteMaterial({map:mistTexture,color:'#d0d8c2',transparent:true,opacity:.28,depthWrite:false,blending:THREE.AdditiveBlending}));backGlow.position.set(2.7,4,-18);backGlow.scale.set(17,15,1);scene.add(backGlow);
 for(let i=0;i<25;i++){
@@ -135,28 +142,29 @@ for(let i=0;i<25;i++){
   const s=new THREE.Sprite(m);s.position.set(rand(-70,70),rand(-5,35),rand(-150,-55));s.scale.set(rand(25,70),rand(10,40),1);scene.add(s);
 }
 const riftGroup=new THREE.Group();scene.add(riftGroup);riftGroup.position.set(6,27,-106);riftGroup.rotation.z=-.45;
-for(let i=0;i<18;i++){
+for(let i=0;i<9;i++){
   const curve=new THREE.EllipseCurve(0,0,rand(25,42),rand(9,14),rand(-.2,.1),rand(3.8,5.8),false,0);
   const pts=curve.getPoints(140).map(v=>new THREE.Vector3(v.x,v.y,rand(-.1,.1)));
   const line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts),new THREE.LineBasicMaterial({color:i%3===0?'#c9ded0':'#7fa8a5',transparent:true,opacity:rand(.12,.4)}));line.position.y=rand(-2,2);riftGroup.add(line);
 }
-const dustCount=mobile?650:1400,dustPositions=new Float32Array(dustCount*3);
+const dustCount=900,dustPositions=new Float32Array(dustCount*3);
 for(let i=0;i<dustCount;i++){dustPositions[i*3]=rand(-50,50);dustPositions[i*3+1]=rand(-12,30);dustPositions[i*3+2]=rand(-95,15);}
 const dustGeo=new THREE.BufferGeometry();dustGeo.setAttribute('position',new THREE.BufferAttribute(dustPositions,3));
-const dust=new THREE.Points(dustGeo,new THREE.PointsMaterial({color:'#bdd5c6',map:mistTexture,size:.09,transparent:true,opacity:.7,depthWrite:false,blending:THREE.AdditiveBlending}));scene.add(dust);
+const dust=new THREE.Points(dustGeo,new THREE.PointsMaterial({color:'#bdd5c6',map:mistTexture,size:.065,transparent:true,opacity:.44,depthWrite:false,blending:THREE.AdditiveBlending}));scene.add(dust);
 // Distinct fragments crossing the void give the scene depth and scale.
 for(let i=0;i<7;i++){
   const lineGeo=new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(rand(-40,40),rand(0,28),-65),new THREE.Vector3(rand(-30,30),rand(10,38),-95)]);
   scene.add(new THREE.Line(lineGeo,new THREE.LineBasicMaterial({color:'#9fbeb2',transparent:true,opacity:.13})));
 }
-scene.add(new THREE.HemisphereLight('#dbe2de','#172125',1.5));
-const key=new THREE.DirectionalLight('#dfebd7',3.6);key.position.set(-12,22,-18);key.castShadow=!mobile;key.shadow.mapSize.set(2048,2048);key.shadow.camera.left=-14;key.shadow.camera.right=14;key.shadow.camera.top=18;key.shadow.camera.bottom=-18;key.shadow.normalBias=.04;key.shadow.bias=-.0002;scene.add(key);scene.add(key.target);key.target.position.set(0,0,-10);
-const rim=new THREE.DirectionalLight('#98c6c6',2.2);rim.position.set(12,8,-30);scene.add(rim);
-const front=new THREE.PointLight('#e2d9c9',4,25,1.8);front.position.set(-2,5,-4);scene.add(front);
-const companionLight=new THREE.PointLight('#e0dfce',3,10,1.5);companionLight.position.set(3,5,-8);scene.add(companionLight);
+scene.add(new THREE.HemisphereLight('#bec9c7','#111a20',.45));
+const key=new THREE.DirectionalLight('#ece7db',1.8);key.position.set(-7,15,-4);key.castShadow=true;key.shadow.mapSize.set(2048,2048);key.shadow.camera.left=-11;key.shadow.camera.right=11;key.shadow.camera.top=14;key.shadow.camera.bottom=-14;key.shadow.camera.near=.5;key.shadow.camera.far=42;key.shadow.normalBias=.024;key.shadow.bias=-.00015;key.shadow.autoUpdate=false;key.shadow.needsUpdate=true;scene.add(key);scene.add(key.target);key.target.position.set(1,0,-10);
+const rim=new THREE.DirectionalLight('#b0c0c1',.8);rim.position.set(12,8,-30);scene.add(rim);
+const front=new THREE.PointLight('#b1c2c1',.8,24,1.8);front.position.set(-2,5,-4);scene.add(front);
+const companionLight=new THREE.SpotLight('#e3dccd',19,22,.72,1,1.7);companionLight.position.set(-2,7,-7);companionLight.target.position.set(2.7,1.6,-12);scene.add(companionLight,companionLight.target);
+const details=createCinematicDetails(scene,{mesh,box,materials,rand,building,mistTexture});
 
 // Collapse repeated static windows and details into GPU instances.
-const animatedRoots=new Set(floating.map(f=>f.obj));
+const animatedRoots=new Set([...floating.map(f=>f.obj),signGroup,...details.animatedRoots,chip]);
 scene.updateMatrixWorld(true);
 const instanceGroups=new Map();
 scene.traverse(obj=>{
@@ -169,13 +177,18 @@ for(const objects of instanceGroups.values()){
   if(objects.length<3)continue;
   const instanced=new THREE.InstancedMesh(objects[0].geometry,objects[0].material,objects.length);
   objects.forEach((obj,i)=>{instanced.setMatrixAt(i,obj.matrixWorld);obj.parent.remove(obj);});
-  instanced.castShadow=true;instanced.receiveShadow=true;instanced.instanceMatrix.needsUpdate=true;scene.add(instanced);
+  instanced.castShadow=objects[0].geometry.parameters?.depth>.1;instanced.receiveShadow=true;instanced.instanceMatrix.needsUpdate=true;scene.add(instanced);
 }
 
 
-return {group:scene,chip,update(t,dt,reduced){
+let lastShadow=0;
+return {group:scene,chip,dispose(){const geos=new Set(),mats=new Set(),textures=new Set();scene.traverse(obj=>{if(obj.geometry)geos.add(obj.geometry);if(obj.material){for(const mat of Array.isArray(obj.material)?obj.material:[obj.material]){mats.add(mat);for(const value of Object.values(mat))if(value?.isTexture)textures.add(value);}}});geos.forEach(g=>g.dispose());textures.forEach(t=>t.dispose());mats.forEach(m=>m.dispose());},update(t,dt,reduced){
  if(!reduced){floating.forEach((f,i)=>{f.obj.position.y=f.y+Math.sin(t*f.speed+f.phase)*f.amp;f.obj.rotation.y+=dt*.006;f.obj.updateMatrix();debris.setMatrixAt(i,f.obj.matrix);});debris.instanceMatrix.needsUpdate=true;dust.rotation.y=t*.001;riftGroup.rotation.z=-.45+Math.sin(t*.04)*.015;skyMaterial.uniforms.uTime.value=t;}
- chipLight.intensity=.65+(reduced?0:Math.sin(t*1.1)*.12);
+ details.update(t,dt,reduced);
+ if(!reduced){sign.rotation.z=-.08+Math.sin(t*.21)*.009;mistLayers.forEach((h,i)=>{h.sprite.position.x=h.x+Math.sin(t*.04+i)*.7;});}
+ const pulse=reduced?0:Math.pow(Math.max(0,Math.sin(t*.63)),12);
+ chipLight.intensity=1.1+pulse*.85;materials.red.emissiveIntensity=1.2+pulse*.6;
+ if(t-lastShadow>.18){key.shadow.needsUpdate=true;lastShadow=t;}
 }};
 }
 

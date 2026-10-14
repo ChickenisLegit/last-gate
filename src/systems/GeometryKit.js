@@ -11,10 +11,11 @@ const materials = {
   white: new THREE.MeshStandardMaterial({color:'#eeeade',roughness:.53,metalness:.025}),
   seam: new THREE.MeshStandardMaterial({color:'#b2bbb2',roughness:.7}),
   black: new THREE.MeshStandardMaterial({color:'#131a1b',roughness:.45}),
-  armor: new THREE.MeshStandardMaterial({color:'#792b24',roughness:.47,metalness:.25}),
+  armor: new THREE.MeshPhysicalMaterial({color:'#4b1918',roughness:.32,metalness:.52,clearcoat:.32,clearcoatRoughness:.38}),
   light: new THREE.MeshBasicMaterial({color:'#c5dfd7'}),
-  red: new THREE.MeshStandardMaterial({color:'#bf3d2d',emissive:'#f53722',emissiveIntensity:.65,roughness:.35,metalness:.3})
+  red: new THREE.MeshStandardMaterial({color:'#a52b24',emissive:'#e62915',emissiveIntensity:1.4,roughness:.32,metalness:.45})
 };
+materials.white.name='inflatable';materials.armor.name='armor';materials.seam.name='seam';
 function mesh(geo,mat,x=0,y=0,z=0,parent=scene){
   const m = new THREE.Mesh(geo,mat); m.position.set(x,y,z); m.castShadow=true;m.receiveShadow=true;parent.add(m);return m;
 }
