@@ -25,13 +25,13 @@ export function createCinematicDetails(scene,{mesh,box,materials,rand,building,m
   const detached=new THREE.Group();scene.add(detached);detached.position.set(-9.1,7.5,-33);detached.rotation.z=.22;animatedRoots.push(detached);
   for(let i=0;i<6;i++)box(.53,.95,.04,materials.dark,(i-2.5)*.9,0,0,detached);
   // Extreme-distance masses read through the fog instead of ending at an empty sky.
-  const farMat=new THREE.MeshStandardMaterial({color:'#303c3d',roughness:1});
+  const farMat=new THREE.MeshStandardMaterial({color:'#303e59',roughness:1});
   const massA=box(22,62,19,farMat,-36,20,-123);massA.rotation.z=.19;massA.castShadow=false;
   const massB=box(16,53,18,farMat,33,12,-135);massB.rotation.z=-.35;massB.castShadow=false;
   const farBridge=box(70,1.5,9,farMat,8,16,-115);farBridge.rotation.z=.24;farBridge.castShadow=false;
   // Local haze is deliberately not uniform: thin pools collect at separate depths.
   for(let i=0;i<5;i++){
-    const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:mistTexture,color:'#7b8b88',transparent:true,opacity:.15,depthWrite:false,blending:THREE.NormalBlending}));
+    const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:mistTexture,color:'#6b87ad',transparent:true,opacity:.12,depthWrite:false,blending:THREE.NormalBlending}));
     sprite.position.set(rand(-8,8),rand(.4,3),-9-i*11);sprite.scale.set(19+i*3,rand(2,5),1);scene.add(sprite);haze.push({sprite,x:sprite.position.x,y:sprite.position.y,phase:rand(0,6)});
   }
   // Contact occlusion under the shell, independently of shadow-map softness.

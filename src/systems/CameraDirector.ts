@@ -37,7 +37,7 @@ export class CameraDirector {
     this.footfall+=Math.abs(this.velocity)*dt*70;
     const breathing=reducedMotion?0:Math.sin(this.time*1.12)*.008;
     const step=reducedMotion?0:Math.sin(this.footfall)*Math.min(.008,Math.abs(this.velocity)*.08);
-    camera.position.set(MathUtils.lerp(-1.7,1.15,p)+Math.sin(p*Math.PI)*-.6+this.look.x*.07,MathUtils.lerp(1.05,2.48,wake)-p*.24+breathing+step,MathUtils.lerp(8,-5.65,p));
+    camera.position.set(MathUtils.lerp(-1.7,1.15,p)+Math.sin(p*Math.PI)*-.6+this.look.x*.07,MathUtils.lerp(1.05,2.48,wake)-p*.24+breathing+step,MathUtils.lerp(8,-4.8,p));
     this.target.set(MathUtils.lerp(-.65,2.65,p)+this.gaze.x*.52,MathUtils.lerp(.3,2.4,wake)-p*.85-this.gaze.y*.23,-14+p*2);
     camera.fov=MathUtils.lerp(51,45,p)+(reducedMotion?0:Math.sin(this.time*.9)*.025+(1-wake)*.2);
     camera.lookAt(this.target);

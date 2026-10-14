@@ -4,10 +4,10 @@ let seed = 71;
 const random = () => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed / 4294967296; };
 const rand = (a,b) => a + random() * (b-a);
 const materials = {
-  concrete: new THREE.MeshStandardMaterial({color:'#5c6867',roughness:.94}),
-  edge: new THREE.MeshStandardMaterial({color:'#333e40',roughness:1}),
-  dark: new THREE.MeshStandardMaterial({color:'#1b272b',roughness:.82}),
-  metal: new THREE.MeshStandardMaterial({color:'#525d5b',roughness:.66,metalness:.5}),
+  concrete: new THREE.MeshStandardMaterial({color:'#677384',roughness:.94}),
+  edge: new THREE.MeshStandardMaterial({color:'#354156',roughness:1}),
+  dark: new THREE.MeshStandardMaterial({color:'#101925',roughness:.82}),
+  metal: new THREE.MeshStandardMaterial({color:'#626c7c',roughness:.66,metalness:.5}),
   white: new THREE.MeshStandardMaterial({color:'#eeeade',roughness:.53,metalness:.025}),
   seam: new THREE.MeshStandardMaterial({color:'#b2bbb2',roughness:.7}),
   black: new THREE.MeshStandardMaterial({color:'#131a1b',roughness:.45}),

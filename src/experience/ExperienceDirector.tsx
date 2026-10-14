@@ -61,8 +61,8 @@ function AwakeScene({director,marker,audio}:{director:CameraDirector;marker:Reac
   },1);
   const check=(event:ThreeEvent<MouseEvent>)=>{event.stopPropagation();useSceneState.getState().inspect();};
   return <>
-    <color attach="background" args={['#202b2d']}/>
-    <fogExp2 attach="fog" args={['#303e42',.015]}/>
+    <color attach="background" args={['#101c31']}/>
+    <fogExp2 attach="fog" args={['#253e59',.015]}/>
     <primitive object={environment.group}/>
     {shell&&<primitive object={shell} onClick={check} onPointerOver={()=>{if(useSceneState.getState().phase==='discovery')gl.domElement.style.cursor='crosshair';}} onPointerOut={()=>{gl.domElement.style.cursor='default';}}/>}
   </>;
@@ -132,7 +132,7 @@ export function ExperienceDirector(){
   };
   return <main className={`experience phase-${phase}`} aria-label="PROJECT LATTICE: Hiro’s vision inside the portal dimension">
     <div className="world">
-      <RenderBoundary><Canvas camera={{fov:49,near:.1,far:280,position:[-1.4,.72,7]}} dpr={[1,1.7]} shadows gl={{antialias:true,powerPreference:'high-performance',toneMapping:ACESFilmicToneMapping,outputColorSpace:SRGBColorSpace}} onCreated={({gl})=>{gl.toneMappingExposure=1.12;}} fallback={<span aria-hidden="true"/>}>
+      <RenderBoundary><Canvas camera={{fov:49,near:.1,far:280,position:[-1.4,.72,7]}} dpr={1.25} shadows gl={{antialias:true,powerPreference:'high-performance',toneMapping:ACESFilmicToneMapping,outputColorSpace:SRGBColorSpace}} onCreated={({gl})=>{gl.toneMappingExposure=1.12;}} fallback={<span aria-hidden="true"/>}>
         <AwakeScene director={camera} marker={marker} audio={audio}/>
       </Canvas></RenderBoundary>
     </div>
