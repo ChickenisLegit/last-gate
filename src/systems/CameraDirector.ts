@@ -57,6 +57,14 @@ export class CameraDirector {
       camera.fov=MathUtils.lerp(camera.fov,port?39:eye?42:45,settle);
       this.focusDistance=camera.position.distanceTo(this.target);
     }else{this.shellPhase='';this.shellTime=0;}
+    const aspect=width/Math.max(height,1);
+    if(aspect<16/9){
+      const original=MathUtils.degToRad(camera.fov/2);
+      camera.fov=Math.min(75,MathUtils.radToDeg(2*Math.atan(Math.tan(original)*(16/9)/aspect)));
+      const distanceScale=Math.max(1,Math.tan(original)*(16/9)/aspect/Math.tan(MathUtils.degToRad(camera.fov/2)));
+      camera.position.sub(this.target).multiplyScalar(distanceScale).add(this.target);
+      this.focusDistance=camera.position.distanceTo(this.target);
+    }
     camera.rotateZ(reducedMotion?0:(1-wake)*-.09+Math.sin(this.time*.43)*.0012-this.velocity*.01);
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();

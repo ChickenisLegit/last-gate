@@ -188,7 +188,7 @@ for(let i=0;i<7;i++){
 }
 scene.add(new THREE.HemisphereLight('#b8cee8','#161d30',.65));
 const key=new THREE.DirectionalLight('#ece7db',1.8);key.position.set(-7,15,-4);key.castShadow=true;key.shadow.mapSize.set(2048,2048);key.shadow.camera.left=-11;key.shadow.camera.right=11;key.shadow.camera.top=14;key.shadow.camera.bottom=-14;key.shadow.camera.near=.5;key.shadow.camera.far=42;key.shadow.normalBias=.024;key.shadow.bias=-.00015;key.shadow.autoUpdate=false;key.shadow.needsUpdate=true;scene.add(key);scene.add(key.target);key.target.position.set(1,0,-10);
-key.shadow.mapSize.set(4096,4096);key.shadow.radius=3;
+key.shadow.radius=3;
 const rim=new THREE.DirectionalLight('#8ed4ff',1.25);rim.position.set(12,8,-30);scene.add(rim);
 const front=new THREE.PointLight('#c7d7ec',1.1,24,1.8);front.position.set(-2,5,-4);scene.add(front);
 // Broad reflected sky warmth, without a spotlight cone on the character.
@@ -218,7 +218,7 @@ let lastShadow=0;
 let chipPhase='ground',chipPhaseStart=0;
 const chipBase=chip.position.clone(),chipTarget=new THREE.Vector3(),chipQuat=new THREE.Quaternion();
 function ease(t){t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);}
-return {group:scene,chip,dispose(){const geos=new Set(),mats=new Set(),textures=new Set();scene.traverse(obj=>{if(obj.geometry)geos.add(obj.geometry);if(obj.material){for(const mat of Array.isArray(obj.material)?obj.material:[obj.material]){mats.add(mat);for(const value of Object.values(mat))if(value?.isTexture)textures.add(value);}}});geos.forEach(g=>g.dispose());textures.forEach(t=>t.dispose());mats.forEach(m=>m.dispose());},update(t,dt,reduced,progress=0,phase='approaching'){
+return {group:scene,chip,setQuality(level){const resolution=level==='HIGH'?2048:1024;if(key.shadow.mapSize.x!==resolution){key.shadow.mapSize.set(resolution,resolution);key.shadow.map?.dispose();key.shadow.map=null;key.shadow.needsUpdate=true;}},dispose(){const geos=new Set(),mats=new Set(),textures=new Set();scene.traverse(obj=>{if(obj.geometry)geos.add(obj.geometry);if(obj.material){for(const mat of Array.isArray(obj.material)?obj.material:[obj.material]){mats.add(mat);for(const value of Object.values(mat))if(value?.isTexture)textures.add(value);}}});geos.forEach(g=>g.dispose());textures.forEach(t=>t.dispose());mats.forEach(m=>m.dispose());},update(t,dt,reduced,progress=0,phase='approaching'){
  if(phase!==chipPhase){chipPhase=phase;chipPhaseStart=t;}
  if(!reduced){floating.forEach((f,i)=>{f.obj.position.y=f.y+Math.sin(t*f.speed+f.phase)*f.amp;f.obj.rotation.y+=dt*.006;f.obj.updateMatrix();debris.setMatrixAt(i,f.obj.matrix);});debris.instanceMatrix.needsUpdate=true;dust.rotation.y=t*.001;riftGroup.rotation.z=-.45+Math.sin(t*.04)*.015;skyMaterial.uniforms.uTime.value=t;}
  details.update(t,dt,reduced,progress);

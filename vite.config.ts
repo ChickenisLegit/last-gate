@@ -1,0 +1,2 @@
+import { defineConfig } from 'vite';
+export default defineConfig({build:{rollupOptions:{output:{manualChunks(id){if(/node_modules[\\/]three[\\/]build[\\/]/.test(id))return 'three-core';if(/node_modules[\\/]@react-three[\\/]/.test(id))return 'react-three';if(/node_modules[\\/]gsap[\\/]/.test(id))return 'animation';if(/node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id))return 'react';}}}}});
