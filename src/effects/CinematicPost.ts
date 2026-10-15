@@ -8,6 +8,8 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { reducedMotion } from '../config/experience';
+import { cinematicSignals } from './CinematicSignals';
+import { useQuality, type QualityPreset } from '../performance/Quality';
 
 export class CinematicPost {
   readonly composer:EffectComposer;
@@ -16,8 +18,9 @@ export class CinematicPost {
   private bloom:UnrealBloomPass;
   private ao:GTAOPass;
   private width=1920;private height=1080;
-  private measured=0;private total=0;
-  private medium=false;
+  private preset:QualityPreset=useQuality.getState().preset;
+  private unsubscribe:()=>void;
+  private dpr=0;
   constructor(private gl:WebGLRenderer,scene:Scene,camera:PerspectiveCamera){
     this.composer=new EffectComposer(gl);
     this.composer.addPass(new RenderPass(scene,camera));
@@ -51,26 +54,34 @@ export class CinematicPost {
         c+=vec3(1.,.93,.88)*uFlash*.55;
         c=mix(c,vec3(.93,.98,1.),uWhite);
         gl_FragColor=vec4(max(c,0.),1.);}`});this.composer.addPass(this.grade);this.composer.addPass(new SMAAPass());this.composer.addPass(new OutputPass());
+    // Quality presets (performance/Quality) own resolution-dependent cost; FrameGovernor switches them.
+    this.unsubscribe=useQuality.subscribe(s=>this.applyQuality(s.preset));this.applyQuality(this.preset);
   }
-  resize(width:number,height:number){this.width=width;this.height=height;this.grade.uniforms.uAspect.value=width/Math.max(1,height);this.composer.setSize(width,height);const scale=this.medium?.5:.65;this.ao.setSize(Math.ceil(width*scale),Math.ceil(height*scale));}
+  applyQuality(preset:QualityPreset){
+    this.preset=preset;
+    this.ao.updateGtaoMaterial({samples:preset.aoSamples});this.bloom.strength=.18*preset.bloom;
+    this.resize(this.width,this.height);
+  }
+  resize(width:number,height:number){this.width=width;this.height=height;this.grade.uniforms.uAspect.value=width/Math.max(1,height);this.composer.setSize(width,height);const scale=this.preset.aoScale;this.ao.setSize(Math.ceil(width*scale),Math.ceil(height*scale));}
   /** Sequence grade, written each frame by the scene. */
   fx={warp:0,center:new Vector2(.5,.5),flash:0,white:0,red:0,cyan:0,chroma:0,aperture:-1,time:0};
   render(dt:number,wake:number,progress:number,focus:number){
+    const dpr=this.gl.getPixelRatio();if(dpr!==this.dpr){this.dpr=dpr;this.composer.setPixelRatio(dpr);this.resize(this.width,this.height);}
     const recovering=!reducedMotion&&wake<1;
-    this.bokeh.enabled=recovering||progress>.48;
+    const signal=cinematicSignals;
+    this.bokeh.enabled=this.preset.dof&&(recovering||progress>.48||signal.blur>.01);
     const uniforms=this.bokeh.uniforms as Record<string,{value:number}>;
     uniforms.focus.value=recovering?MathUtils.lerp(2.8,focus,MathUtils.smoothstep(wake,.55,1)):focus;
     uniforms.aperture.value=recovering?MathUtils.lerp(.0013,.000045,wake):MathUtils.lerp(.000025,.00013,MathUtils.smoothstep(progress,.48,1));
-    uniforms.maxblur.value=recovering?.018:.006;
-    this.grade.uniforms.instability.value=recovering?(1-wake)*.003:0;
+    uniforms.maxblur.value=(recovering?.018:.006)+signal.blur*.012;uniforms.aperture.value+=signal.blur*.0006;
+    this.grade.uniforms.instability.value=(recovering?(1-wake)*.003:0)+signal.instability;
     const g=this.grade.uniforms,fx=this.fx;
     g.uWarp.value=fx.warp;g.uCenter.value.copy(fx.center);g.uFlash.value=fx.flash;g.uWhite.value=fx.white;g.uRed.value=fx.red;g.uCyan.value=fx.cyan;g.uChroma.value=fx.chroma;g.uTime.value=fx.time;
     // Shell beats isolate the subject with a shallower field; the chase opens it back up.
-    if(fx.aperture>=0&&!recovering){this.bokeh.enabled=fx.aperture>0;uniforms.aperture.value=fx.aperture;uniforms.maxblur.value=.009;}
-    this.gl.toneMappingExposure=recovering?MathUtils.lerp(.74,1.08,wake):1.08;
-    if(document.visibilityState==='visible'&&dt<.12&&dt>.001&&wake===1){this.measured++;this.total+=dt;if(this.measured===180&&this.total/this.measured>.029&&!this.medium){this.medium=true;this.composer.setPixelRatio(1);this.ao.setSize(Math.ceil(this.width*.4),Math.ceil(this.height*.4));this.ao.updateGtaoMaterial({samples:8});this.bloom.strength=.09;}}
-    this.gl.domElement.dataset.quality=this.medium?'MEDIUM':'HIGH';
+    if(fx.aperture>=0&&!recovering){this.bokeh.enabled=this.preset.dof&&fx.aperture>0;uniforms.aperture.value=fx.aperture;uniforms.maxblur.value=.009;}
+    this.gl.toneMappingExposure=(recovering?MathUtils.lerp(.74,1.08,wake):1.08)+signal.exposure;
+    this.gl.domElement.dataset.quality=useQuality.getState().name;
     this.composer.render(dt);
   }
-  dispose(){for(const pass of this.composer.passes)pass.dispose?.();this.composer.dispose();}
+  dispose(){this.unsubscribe();for(const pass of this.composer.passes)pass.dispose?.();this.composer.dispose();}
 }

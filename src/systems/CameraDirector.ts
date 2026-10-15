@@ -1,6 +1,7 @@
 import { CatmullRomCurve3, MathUtils, PerspectiveCamera, Vector3 } from 'three';
 import { useSceneState, type Phase } from '../state/SceneStateManager';
 import { reducedMotion } from '../config/experience';
+import { cameraRig } from './CameraRig';
 import { CHASE_PATH, type SequenceDirector } from './SequenceDirector';
 
 const span=(t:number,a:number,b:number)=>MathUtils.smoothstep(t,a,b);
@@ -24,7 +25,7 @@ export class CameraDirector {
   private fromPos=new Vector3();private fromLook=new Vector3();private fromFov=45;private fromRoll=0;
   private pos=new Vector3();private aim=new Vector3();private fov=45;private roll=0;
   private lastPos=new Vector3();private lastLook=new Vector3();private lastRoll=0;
-  private v=new Vector3();private v2=new Vector3();private shakeT=0;
+  private v=new Vector3();private v2=new Vector3();private shakeT=0;private focusPoint=new Vector3();
   private run=0;
 
   update(camera:PerspectiveCamera,delta:number,_w:number,_h:number,seq?:SequenceDirector,ctx?:ShotContext){
@@ -65,10 +66,11 @@ export class CameraDirector {
     }else{this.phase=state.phase;}
     camera.lookAt(this.target);
     camera.rotateZ(roll);
+    cameraRig.apply(camera,dt); // global camera language: motivated shake + transition FOV kicks
     camera.updateProjectionMatrix();camera.updateMatrixWorld();
     this.lastPos.copy(camera.position);this.lastLook.copy(this.target);this.lastRoll=roll;
     this.visualProgress=p;this.wake=wake;
-    if(!directed)this.focusDistance=-new Vector3(2.7,2,-12).applyMatrix4(camera.matrixWorldInverse).z;
+    if(!directed)this.focusDistance=-this.focusPoint.set(2.7,2,-12).applyMatrix4(camera.matrixWorldInverse).z;
     if(this.progress>.995&&state.phase==='approaching')state.arrive();
   }
 

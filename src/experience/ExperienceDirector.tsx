@@ -15,6 +15,11 @@ import { TransitionDirector } from '../transitions/TransitionDirector';
 import { HOLD_PHASES, useSceneState, type Phase } from '../state/SceneStateManager';
 import { reducedMotion } from '../config/experience';
 import { DIAGNOSTIC_LINES, SHELL_ACTIONS, SHELL_DURATIONS } from '../config/shell';
+import { RuntimeBridge } from '../core/RuntimeBridge';
+import { experience } from '../core/ExperienceFlow';
+import { setRunReset } from '../core/legacyCheckpoints';
+import { ProductionLayer } from '../core/ProductionLayer';
+import { useQuality } from '../performance/Quality';
 
 class RenderBoundary extends Component<{children:ReactNode},{error:boolean}> {
   state={error:false};
@@ -178,6 +183,7 @@ export function ExperienceDirector(){
   const aperture=useRef<SVGPathElement>(null),marker=useRef<HTMLButtonElement>(null),readout=useRef<HTMLDivElement>(null);
   const [idleHint,setIdleHint]=useState(false),[runHint,setRunHint]=useState(false);
   const pressedAt=useRef(0),firstScroll=useRef(true),scrollGuard=useRef(0),idleTimer=useRef<ReturnType<typeof setTimeout>|null>(null),sprintTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const dpr=useQuality(s=>s.dpr);
   const camera=useMemo(()=>new CameraDirector(),[]),transitions=useMemo(()=>new TransitionDirector(),[]),audio=useMemo(()=>new AudioDirector(),[]),seq=useMemo(()=>new SequenceDirector(),[]);
 
   useEffect(()=>{
@@ -221,6 +227,9 @@ export function ExperienceDirector(){
 
   const skip=()=>{camera.skipAwakening();if(aperture.current)transitions.skip(aperture.current);};
   const restart=()=>{camera.resetPointer();seq.pointerDown=false;seq.keyHold=false;useSceneState.getState().restart();};
+  // Replays go through the experience flow: one lock-guarded blink covers the reset.
+  const replayRun=()=>{void experience.jumpTo('AWAKE');};
+  useEffect(()=>setRunReset(restart),[camera,seq]);
   useEffect(()=>{
     const input=()=>{setIdleHint(false);setRunHint(false);seq.lastInput=performance.now()/1000;if(idleTimer.current)clearTimeout(idleTimer.current);};
     const sprintPulse=()=>{seq.sprint=true;if(sprintTimer.current)clearTimeout(sprintTimer.current);sprintTimer.current=setTimeout(()=>{seq.sprint=false;},380);};
@@ -237,7 +246,7 @@ export function ExperienceDirector(){
     const down=(event:KeyboardEvent)=>{
       if(event.ctrlKey||event.metaKey||event.altKey)return;
       const p=useSceneState.getState().phase;
-      if(event.code==='KeyR'){restart();return;}
+      if(event.code==='KeyR'){if(!event.repeat)replayRun();return;}
       if(event.code==='Escape'&&p==='awakening')skip();
       if(event.code==='KeyE'&&p==='discovery')useSceneState.getState().inspect();
       if(runKeys.includes(event.code)&&p==='approaching'){event.preventDefault();input();camera.holding=true;}
@@ -274,8 +283,9 @@ export function ExperienceDirector(){
   const diagnosticVisible=['diagnostic','corrupting','threat','ignition'].includes(phase);
   return <main className={`experience phase-${phase}`} aria-label="PROJECT LATTICE: Hiro’s vision inside the portal dimension">
     <div className="world">
-      <RenderBoundary><Canvas camera={{fov:49,near:.05,far:280,position:[-1.4,.72,7]}} dpr={1.25} shadows gl={{antialias:true,powerPreference:'high-performance',toneMapping:ACESFilmicToneMapping,outputColorSpace:SRGBColorSpace}} onCreated={({gl})=>{gl.toneMappingExposure=1.12;}} fallback={<span aria-hidden="true"/>}>
+      <RenderBoundary><Canvas camera={{fov:49,near:.05,far:280,position:[-1.4,.72,7]}} dpr={dpr} shadows gl={{antialias:false,stencil:false,powerPreference:'high-performance',toneMapping:ACESFilmicToneMapping,outputColorSpace:SRGBColorSpace}} onCreated={({gl})=>{gl.toneMappingExposure=1.12;}} fallback={<span aria-hidden="true"/>}>
         <AwakeScene director={camera} seq={seq} marker={marker} readout={readout} audio={audio}/>
+        <RuntimeBridge/>
       </Canvas></RenderBoundary>
     </div>
     <div className="lens-vignette" aria-hidden="true"/><div className="film-grain" aria-hidden="true"/>
@@ -308,14 +318,15 @@ export function ExperienceDirector(){
     </div>
     {phase==='inspected'&&<div className={`failed-link ${linkVisible?'visible':''}`} aria-live="polite"><span className="fault-dot"/> BAYMAX <span>NO RESPONSE</span></div>}
     <div className="signature" aria-hidden="true">PROJECT <span>//</span> LATTICE <i>{CHAPTER_MARK[chapter]}</i></div>
-    {phase==='inspected'&&linkVisible&&<button className="replay" onClick={restart}>REPLAY OPENING <span>R ↶</span></button>}
+    {phase==='inspected'&&linkVisible&&<button className="replay" onClick={replayRun}>REPLAY OPENING <span>R ↶</span></button>}
     {phase==='handoff'&&<div className="handoff" role="status">
       <p>PROJECT <span>//</span> LATTICE</p>
       <h1><i>03</i>THE FRACTURE CORRIDOR</h1>
       <small>SIGNAL <b>HIRO HAMADA</b> // PURSUIT CONTINUES DEEPER</small>
-      <button className="replay-inline" onClick={restart}>REPLAY FROM THE BEGINNING <span>R ↶</span></button>
+      <button className="replay-inline" onClick={replayRun}>REPLAY FROM THE BEGINNING <span>R ↶</span></button>
     </div>}
     {error&&<div className="failure"><p>{error}</p><button onClick={()=>location.reload()}>RECONNECT ↗</button></div>}
+    <ProductionLayer/>
     <p className="sr-only">The opening starts automatically. Press Escape to skip awakening. Scroll, hold Space, W, or Arrow Up, or use the move closer button to approach Baymax. Select Baymax or press E to check for a response. Then press and hold the mouse, or hold E, Space or Enter, to pick up the red chip and to release Baymax’s chest access. Move the pointer to guide the chip into the socket, or hold E to guide it automatically. When Baymax attacks, Hiro runs on his own; hold the mouse, Space, W or Arrow Up, or scroll, to sprint. Press R to replay.</p>
   </main>;
 }

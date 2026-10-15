@@ -7,6 +7,8 @@ const smooth=(t:number,a:number,b:number)=>{const x=Math.max(0,Math.min(1,(t-a)/
  * Original, synthesized sound only. Silence is used as deliberately as noise: continuous
  * layers are mixed per phase, one-shots are authored to the frame they belong to.
  */
+import { audioEngine } from './AudioMix';
+
 export class AudioDirector {
   private ctx:AudioContext|null=null;
   private master:GainNode|null=null;private bus:GainNode|null=null;private ears:BiquadFilterNode|null=null;
@@ -23,11 +25,12 @@ export class AudioDirector {
     this.master.gain.setTargetAtTime(enabled?.34:0,this.ctx.currentTime,.25);
   }
   private create(){
-    const ctx=new AudioContext();this.ctx=ctx;
+    // Shared context + mix bus (AudioMix): narrative snapshots, silence beats and cleanup apply here too.
+    const ctx=audioEngine.ensure();if(!ctx)throw new Error('Web Audio unavailable');this.ctx=ctx;
     this.master=ctx.createGain();this.master.gain.value=0;
     const comp=ctx.createDynamicsCompressor();comp.threshold.value=-16;comp.ratio.value=4;comp.attack.value=.004;comp.release.value=.25;
     this.ears=ctx.createBiquadFilter();this.ears.type='lowpass';this.ears.frequency.value=20000;
-    this.bus=ctx.createGain();this.bus.connect(this.ears);this.ears.connect(comp);comp.connect(this.master);this.master.connect(ctx.destination);
+    this.bus=ctx.createGain();this.bus.connect(this.ears);this.ears.connect(comp);comp.connect(this.master);this.master.connect(audioEngine.bus('LEGACY')!);
     const buffer=ctx.createBuffer(1,ctx.sampleRate*6,ctx.sampleRate),data=buffer.getChannelData(0);let last=0;
     for(let i=0;i<data.length;i++){last=(last+.025*(Math.random()*2-1))/1.025;data[i]=last*3.5;}
     const white=ctx.createBuffer(1,ctx.sampleRate*2,ctx.sampleRate),w=white.getChannelData(0);for(let i=0;i<w.length;i++)w[i]=Math.random()*2-1;
@@ -174,5 +177,5 @@ export class AudioDirector {
   rupture(){this.tone('sine',41,22,4.5,.16,.8);this.burst('bandpass',180,3800,4,.06,{q:2,attack:2.5});}
   whiteout(){this.tone('sine',220,880,1.6,.02,1.2);this.burst('highpass',1200,9000,1.8,.05,{attack:1.4});}
   arrival(){[293.7,440,587.3].forEach((f,i)=>this.tone('sine',f,f,5,.008,2,.4+i*.3));}
-  dispose(){void this.ctx?.close();this.ctx=null;this.master=null;}
+  dispose(){this.master?.disconnect();this.ctx=null;this.master=null;}
 }

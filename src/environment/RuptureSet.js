@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {patchWarpTree,warpUniforms} from '../effects/WorldWarp.js';
 import {SEAM_POSITION} from '../systems/SequenceDirector';
 
@@ -50,10 +51,13 @@ export function createRuptureSet(environment){
     const g=new THREE.Group();g.visible=false;root.add(g);
     const scorch=new THREE.Mesh(new THREE.PlaneGeometry(2,2),new THREE.MeshBasicMaterial({map:scorchTex,transparent:true,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-2}));scorch.rotation.x=-Math.PI/2;g.add(scorch);
     const crackMat=new THREE.MeshBasicMaterial({color:'#9fe6ff',transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending,toneMapped:false,polygonOffset:true,polygonOffsetFactor:-3});
+    // All 21 strips of a scar are baked into one mesh: same image, 1 draw call instead of 21.
+    const strips=[],place=new THREE.Object3D();
     for(let i=0;i<7;i++){
       const a=i/7*Math.PI*2+rand(-.3,.3),len=rand(1,2.6);let px=0,pz=0;
-      for(let s=0;s<3;s++){const seg=len/3,dir=a+rand(-.5,.5);const strip=new THREE.Mesh(new THREE.PlaneGeometry(.035,seg),crackMat);strip.rotation.set(-Math.PI/2,0,-dir+Math.PI/2);strip.position.set(px+Math.cos(dir)*seg/2,.004,pz+Math.sin(dir)*seg/2);g.add(strip);px+=Math.cos(dir)*seg;pz+=Math.sin(dir)*seg;}
+      for(let s=0;s<3;s++){const seg=len/3,dir=a+rand(-.5,.5);const strip=new THREE.PlaneGeometry(.035,seg);place.rotation.set(-Math.PI/2,0,-dir+Math.PI/2);place.position.set(px+Math.cos(dir)*seg/2,.004,pz+Math.sin(dir)*seg/2);place.updateMatrix();strip.applyMatrix4(place.matrix);strips.push(strip);px+=Math.cos(dir)*seg;pz+=Math.sin(dir)*seg;}
     }
+    g.add(new THREE.Mesh(mergeGeometries(strips),crackMat));strips.forEach(strip=>strip.dispose());
     return {g,crackMat,age:0,tear:false};
   });
   let scarIndex=0;
