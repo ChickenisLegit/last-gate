@@ -12,7 +12,7 @@ export type Bus = typeof BUSES[number];
 
 type Levels = Partial<Record<Bus, number>>;
 // Narrative mix snapshots. Missing buses default to 1. Silence is a feature: FRACTURE,
-// HOME and EPILOGUE are deliberately sparse. MUSIC stays at 0 unless a chapter asks for it.
+// MUSIC stays at 0 unless a chapter asks for it.
 export const MIX_SNAPSHOTS: Record<AudioMixName, Levels> = {
   SILENT:       { AMBIENCE: 0, CHARACTER: 0, MECHANICAL: 0, PORTAL: 0, IMPACT: 0, MICROBOT: 0, MUSIC: 0, LEGACY: 0 },
   AWAKE:        { AMBIENCE: .9, CHARACTER: 1, MECHANICAL: .5, PORTAL: .55, IMPACT: .6, MICROBOT: 0, MUSIC: 0 },
@@ -22,13 +22,6 @@ export const MIX_SNAPSHOTS: Record<AudioMixName, Levels> = {
   CORRUPTION:   { AMBIENCE: .45, CHARACTER: .8, MECHANICAL: 1, PORTAL: .8, IMPACT: .9, MICROBOT: 0, MUSIC: 0 },
   CHASE:        { AMBIENCE: .7, CHARACTER: .9, MECHANICAL: .9, PORTAL: .8, IMPACT: 1, MICROBOT: .4, MUSIC: 0 },
   FRACTURE:     { AMBIENCE: .18, CHARACTER: .7, MECHANICAL: .3, PORTAL: .35, IMPACT: .5, MICROBOT: .2, MUSIC: 0 },
-  LATTICE:      { AMBIENCE: .5, CHARACTER: .8, MECHANICAL: .7, PORTAL: .4, IMPACT: .7, MICROBOT: 1, MUSIC: 0 },
-  VECTOR_HUNT:  { AMBIENCE: .6, CHARACTER: .9, MECHANICAL: .8, PORTAL: .5, IMPACT: .9, MICROBOT: .9, MUSIC: 0 },
-  NULL_CHAMBER: { AMBIENCE: .8, CHARACTER: .8, MECHANICAL: .3, PORTAL: .9, IMPACT: .6, MICROBOT: .4, MUSIC: 0 },
-  MAX_ATTACK:   { AMBIENCE: .6, CHARACTER: 1, MECHANICAL: .9, PORTAL: .9, IMPACT: 1, MICROBOT: 1, MUSIC: 0 },
-  ESCAPE:       { AMBIENCE: .8, CHARACTER: .9, MECHANICAL: .8, PORTAL: 1, IMPACT: 1, MICROBOT: .7, MUSIC: 0 },
-  HOME:         { AMBIENCE: 1, CHARACTER: .9, MECHANICAL: .1, PORTAL: 0, IMPACT: .3, MICROBOT: 0, MUSIC: 0 },
-  EPILOGUE:     { AMBIENCE: .25, CHARACTER: .8, MECHANICAL: .4, PORTAL: 0, IMPACT: .2, MICROBOT: 0, MUSIC: 0 },
 };
 
 export type SoundHandle = { readonly id: string; stop(fade?: number): void; setGain(value: number, fade?: number): void };

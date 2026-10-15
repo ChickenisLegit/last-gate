@@ -19,6 +19,7 @@ const MANIFEST: Partial<Record<ExperienceState, AssetEntry[]>> = {
 
 class AssetManager {
   private baymax: Promise<Group> | null = null;
+  private baymaxTemplate: Group | null = null;
   private cache = new Map<string, Promise<unknown>>();
   private gltf = new GLTFLoader();
   private textures = new TextureLoader();
@@ -27,9 +28,16 @@ class AssetManager {
   loadBaymax(): Promise<Group> {
     this.baymax ??= this.gltf.loadAsync(MODEL_URL).then(gltf => {
       gltf.scene.traverse(object => { if ('isMesh' in object) { object.castShadow = true; object.receiveShadow = true; } });
+      this.baymaxTemplate = gltf.scene.clone(true);
       return gltf.scene;
     }).catch(error=>{this.baymax=null;throw error;});
     return this.baymax;
+  }
+
+  /** A fresh pose of the same cached asset, independent of cinematic articulation. */
+  async cloneBaymax(): Promise<Group> {
+    await this.loadBaymax();
+    return this.baymaxTemplate!.clone(true);
   }
 
   /** Phase branches declare what their chapter needs (one call at module load). */

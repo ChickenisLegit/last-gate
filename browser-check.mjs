@@ -1,16 +1,31 @@
-import { chromium } from 'file:///C:/Users/dmdbu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/index.mjs';
-import {mkdir,writeFile} from 'node:fs/promises';
+import {chromium} from 'file:///C:/Users/dmdbu/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core/index.mjs';
 const browser=await chromium.launch({headless:true,executablePath:'C:/Users/dmdbu/AppData/Local/ms-playwright/chromium_headless_shell-1234/chrome-headless-shell-win64/chrome-headless-shell.exe'});
-const page=await browser.newPage({viewport:{width:1920,height:1080},deviceScaleFactor:1});
-const errors=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text())});
-await page.goto('http://127.0.0.1:4174/#final/EXIT_VECTOR',{waitUntil:'networkidle'});await page.waitForFunction(()=>window.__LATTICE_FINAL);await page.evaluate(()=>window.__LATTICE_FINAL.pause(true));await page.waitForTimeout(1000);
-for(let i=0;i<4;i++){
- const start=await page.evaluate(i=>window.__LATTICE_FINAL.endpoints()[i],i),end=await page.evaluate(()=>window.__LATTICE_FINAL.target());
- await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(end.x,end.y,{steps:5});await page.mouse.up();await page.waitForTimeout(400);
- console.log('aligned',i,await page.evaluate(()=>window.__LATTICE_FINAL.status().aligned));
-}
-await mkdir('validation/final',{recursive:true});
-for(const [stage,time,name] of [['MAX_ATTACK',1,'01-quiet'],['MAX_ATTACK',19,'02-charge'],['MAX_ATTACK',20.15,'03-impact'],['VECTOR_CAPTURE',8.6,'04-captured'],['PORTAL_RECONSTRUCTION',15,'05-portal'],['FINAL_ESCAPE',7,'06-conflict'],['FINAL_ESCAPE',12,'07-sacrifice'],['FINAL_ESCAPE',19,'08-near-catch'],['HOME',8,'09-home'],['EPILOGUE',3,'10-unknown'],['EPILOGUE',8,'11-lost'],['FINAL_BLACK',3,'12-black']]){
- await page.evaluate(([stage,time])=>window.__LATTICE_FINAL.enter(stage,time),[stage,time]);await page.waitForTimeout(600);await page.screenshot({path:`validation/final/${name}.png`});console.log(name,await page.evaluate(()=>window.__LATTICE_FINAL.status()));
-}
-console.log('errors',errors);await writeFile('validation/final/errors.json',JSON.stringify(errors,null,2));await browser.close();
+try {
+ const page=await browser.newPage({viewport:{width:1280,height:800}, reducedMotion:'reduce'});page.setDefaultTimeout(90000);const errors=[];page.on('pageerror',e=>errors.push(e.message));
+ const base = process.env.CHECK_URL ?? 'http://127.0.0.1:4173';
+ await page.goto(`${base}/?phase2=null#final/EXIT_VECTOR`);
+ await page.waitForFunction(()=>window.__lattice && window.__lattice.getState().phase!=='loading',{},{timeout:60000});
+ if(await page.locator('.experience').count()!==1) throw Error('Old route bypassed opening');
+ await page.evaluate(()=>window.__lattice.setState({chapter:'THE_FRACTURE',phase:'handoff',subtitle:''}));
+ await page.waitForFunction(()=>window.__latticePhaseII,{},{timeout:60000});
+ await page.evaluate(()=>{const d=window.__latticePhaseII.director;for(let i=0;i<170;i++)d.step(.05);if(d.getSnapshot().stage!=='afterimage')throw Error('Afterimage missing');d.act();for(let i=0;i<70;i++)d.step(.05);});
+ await page.getByRole('button',{name:/FOLLOW THE TRACE/}).click();
+ await page.getByRole('button',{name:'Approach Baymax',exact:true}).waitFor({timeout:60000});
+ await page.evaluate(()=>window.recoveryCanvas=document.querySelector('canvas'));
+ await page.getByRole('button',{name:'Approach Baymax',exact:true}).click();
+ await page.getByRole('button',{name:'Chest access',exact:true}).click();
+ await page.getByText('The combat chip is still inside.',{exact:false}).waitFor();
+ await page.getByRole('textbox').fill('Check the chip before proceeding.');
+ await page.getByRole('button',{name:'Return to street view'}).click();
+ await page.getByRole('button',{name:'Approach Baymax',exact:true}).click();
+ if(await page.getByRole('textbox').inputValue()!=='Check the chip before proceeding.')throw Error('Notes lost');
+ if(!await page.evaluate(()=>window.recoveryCanvas===document.querySelector('canvas')))throw Error('Viewport remounted');
+ await page.getByRole('button',{name:'Overview',exact:true}).click();
+ if (await page.locator('.recovery-arrival').evaluate(node => getComputedStyle(node).opacity) !== '0') throw Error('Arrival cover blocks reduced-motion viewport');
+ if (process.env.CHECK_SCREENSHOT) {
+   await page.waitForTimeout(2500);
+   await page.screenshot({path:process.env.CHECK_SCREENSHOT});
+ }
+ if(errors.length)throw Error(JSON.stringify(errors));
+ console.log(JSON.stringify({opening:true,oldRoutesIgnored:true,handoff:true,afterimage:true,recovery:true,sameCanvas:true,notesPersist:true,browserErrors:errors}));
+} finally {await browser.close();}
