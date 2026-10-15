@@ -4,8 +4,7 @@
 
 export const EXPERIENCE_STATES = [
   'BOOT', 'AWAKE', 'SHELL', 'CHIP', 'BOOT_FAILURE', 'RED_WAKE', 'FRACTURE',
-  'AFTERIMAGE', 'BAYMAX_RECOVERY', 'LATTICE', 'VECTOR_HUNT', 'NULL_CHAMBER', 'MAX_ATTACK',
-  'EXIT_VECTOR', 'FINAL_ESCAPE', 'HOME', 'EPILOGUE',
+  'AFTERIMAGE', 'BAYMAX_RECOVERY',
 ] as const;
 export type ExperienceState = typeof EXPERIENCE_STATES[number];
 
@@ -22,8 +21,7 @@ export type CameraMode =
   | 'RECOVERY' | 'EXPLORATION' | 'INTERACTION' | 'CHASE' | 'OBSERVATION' | 'WEIGHTLESS' | 'FINAL_RUN' | 'HOME';
 
 export type AudioMixName =
-  | 'SILENT' | 'AWAKE' | 'SHELL' | 'CHIP' | 'BOOT' | 'CORRUPTION' | 'CHASE' | 'FRACTURE'
-  | 'LATTICE' | 'VECTOR_HUNT' | 'NULL_CHAMBER' | 'MAX_ATTACK' | 'ESCAPE' | 'HOME' | 'EPILOGUE';
+  | 'SILENT' | 'AWAKE' | 'SHELL' | 'CHIP' | 'BOOT' | 'CORRUPTION' | 'CHASE' | 'FRACTURE';
 
 export type StateProfile = {
   camera: CameraMode;
@@ -43,15 +41,7 @@ export const STATE_PROFILES: Record<ExperienceState, StateProfile> = {
   RED_WAKE:     { camera: 'CHASE',       mix: 'CORRUPTION',   enterWith: 'RED_SCAN',            preload: ['FRACTURE'] },
   FRACTURE:     { camera: 'OBSERVATION', mix: 'FRACTURE',     enterWith: 'DEBRIS_OCCLUSION',    preload: ['AFTERIMAGE'] },
   AFTERIMAGE:   { camera: 'WEIGHTLESS',  mix: 'FRACTURE',     enterWith: 'DIMENSION_FOLD',      preload: ['BAYMAX_RECOVERY'] },
-  BAYMAX_RECOVERY: { camera: 'INTERACTION', mix: 'SHELL', enterWith: 'DIMENSION_FOLD', preload: [] },
-  LATTICE:      { camera: 'EXPLORATION', mix: 'LATTICE',      enterWith: 'MICROBOT_SWARM',      preload: ['VECTOR_HUNT'] },
-  VECTOR_HUNT:  { camera: 'CHASE',       mix: 'VECTOR_HUNT',  enterWith: 'CAMERA_OCCLUSION',    preload: ['NULL_CHAMBER'] },
-  NULL_CHAMBER: { camera: 'WEIGHTLESS',  mix: 'NULL_CHAMBER', enterWith: 'DEPTH_COLLAPSE',      preload: ['MAX_ATTACK', 'EXIT_VECTOR'] },
-  MAX_ATTACK:   { camera: 'CHASE',       mix: 'MAX_ATTACK',   enterWith: 'RED_SCAN',            preload: ['EXIT_VECTOR'] },
-  EXIT_VECTOR:  { camera: 'FINAL_RUN',   mix: 'ESCAPE',       enterWith: 'FOG_PASS',            preload: ['FINAL_ESCAPE', 'HOME'] },
-  FINAL_ESCAPE: { camera: 'FINAL_RUN',   mix: 'ESCAPE',       enterWith: 'CAMERA_OCCLUSION',    preload: ['HOME'] },
-  HOME:         { camera: 'HOME',        mix: 'HOME',         enterWith: 'PORTAL_OVEREXPOSURE', preload: ['EPILOGUE'] },
-  EPILOGUE:     { camera: 'OBSERVATION', mix: 'EPILOGUE',     enterWith: 'BLINK',               preload: [] },
+  BAYMAX_RECOVERY: { camera: 'INTERACTION', mix: 'SHELL', enterWith: 'PORTAL_OVEREXPOSURE', preload: [] },
 };
 
 export const stateIndex = (state: ExperienceState) => EXPERIENCE_STATES.indexOf(state);

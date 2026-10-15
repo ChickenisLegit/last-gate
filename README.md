@@ -22,9 +22,12 @@ The sequence respects reduced motion. Keyboard operation, live captions, and ass
 
 ## Chapter flow
 
-The opening and RED_WAKE sequence retain the fracture-corridor handoff and existing Afterimage event. Following the recorded trace now enters BAYMAX_RECOVERY: a damaged harbour district in the same San Fransokyo, with Baymax lying on the street. Approach Baymax to open a DOM engineering workspace around the same 3D model. Inspection views and temporary field notes are available; repairs and later missions are not implemented.
+The experience is two phases:
 
-The old build, Falling City, Null Chamber and final sequence are disconnected. Their reusable modules remain in source. Development supports only `?phase2=fracture` and `?phase2=afterimage`; old chapter URLs do not activate those scenes. Production does not expose chapter shortcuts.
+1. **RED_WAKE → Fracture → Afterimage.** The opening awakening, corruption, directed chase and fracture-corridor handoff flow into the Afterimage event. Focus the still line (or press E) to scan and store the trace.
+2. **Baymax recovery.** Following the stored trace opens a portal into BAYMAX_RECOVERY: a damaged harbour district in the same San Fransokyo, with Baymax lying on the street. Approach Baymax to open a DOM engineering workspace around the same 3D model. Overview / outer-shell / chest-access inspection views and temporary field notes are available; repairs and later missions are not implemented.
+
+The old build puzzle, Falling City, Null Chamber and final-escape sequence have been removed from the source entirely. Development supports only `?phase2=fracture` and `?phase2=afterimage`. Production exposes no chapter shortcuts.
 
 ## Architecture
 

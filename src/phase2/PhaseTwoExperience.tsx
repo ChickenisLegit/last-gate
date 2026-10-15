@@ -38,9 +38,7 @@ export function PhaseTwoExperience({ entry }: { entry: EntryStage }) {
     <div className="p2-bars" aria-hidden="true" />
     <button className="p2-audio" onClick={toggleSound} aria-pressed={sound} aria-label={sound ? 'Mute dimensional ambience' : 'Enable dimensional ambience'}><span className={sound ? 'p2-wave enabled' : 'p2-wave'} aria-hidden="true"><i /><i /><i /><i /></span>{audioError ? 'AUDIO UNAVAILABLE' : sound ? 'SOUND ON' : 'SOUND OFF'}</button>
     <div className="p2-subtitle" role="status" aria-live="polite">{snapshot.caption && <p key={snapshot.caption}><small>HIRO</small>{snapshot.caption}</p>}</div><div className="p2-telemetry" key={snapshot.message} aria-live="polite">{snapshot.message}</div>
-    {snapshot.stage === 'descent' && <div className="p2-requirement"><span>MODEL INCOMPLETE</span><small>HIGH-ENERGY DISPLACEMENT REQUIRED</small></div>}
     {snapshot.action && <button className="p2-action" onClick={() => director.act()} onPointerDown={() => { director.recording = true; }} onPointerUp={() => { director.recording = false; }} onPointerLeave={() => { director.recording = false; }}>{snapshot.action}</button>}
-    {snapshot.stage === 'build' && <span className="p2-rotate">Q / R ROTATE <i>SCROLL TO TURN</i></span>}
 
     {error && <div className="p2-error"><p>{error}</p><button onClick={() => location.reload()}>RECONNECT</button></div>}
     <p className="sr-only">Focus on the still line or press E to scan. Follow the trace to return to the city.</p>

@@ -47,18 +47,13 @@ export class PhaseTwoAudio {
   update(director: PhaseTwoDirector) {
     if (!this.context || !this.enabled) return;
     const s = director.getSnapshot(), now = this.context.currentTime;
-    const quiet = s.stage === 'ready' || s.stage === 'fracture' && director.stageTime < 2;
-    this.pressure?.gain.setTargetAtTime(quiet ? .002 : s.stage === 'null' ? .013 : .019, now, .6);
+    const quiet = s.stage === 'fracture' && director.stageTime < 2;
+    this.pressure?.gain.setTargetAtTime(quiet ? .002 : .019, now, .6);
     this.breath?.gain.setTargetAtTime(quiet ? 0 : Math.pow(Math.max(0, Math.sin(director.time * 1.3)), 4) * .035, now, .18);
-    const state = director.huntState;
-    this.threat?.gain.setTargetAtTime(s.stage === 'ready' ? 0 : state === 'ATTACK_PREP' ? .055 : state === 'APPROACHING' ? .024 : .001, now, .5);
-    const key = `${s.stage}/${s.assembled}/${s.stored}/${s.captured}/${s.anchors}/${state}`;
+    this.threat?.gain.setTargetAtTime(.001, now, .5);
+    const key = `${s.stage}/${s.stored}/${s.scanning}`;
     if (key !== this.last) {
-      if (state === 'ATTACK') this.cue(124, 1.2, .32);
-      else if (s.stage === 'lattice') this.cue(680, 1.8, .025);
-      else if (s.captured || s.stored) this.cue(920, .35, .012, -.2);
-      else if (s.assembled) this.cue(280, .16, .04);
-      else if (state === 'TRACKING') this.cue(85, 1.8, .07, -.75);
+      if (s.stored) this.cue(920, .35, .012, -.2);
       this.last = key;
     }
   }
