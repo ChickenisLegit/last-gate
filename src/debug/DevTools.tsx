@@ -40,7 +40,7 @@ export default function DevTools() {
       else if (code === 'Digit0') { say('restart experience'); void experience.restartExperience(); }
       else if (code === 'KeyN') void experience.nextCheckpoint().then(ok => say(ok ? 'next checkpoint' : 'no later checkpoint available'));
       else if (digit >= 0 && digit < CHECKPOINTS.length) void jump(CHECKPOINTS[digit]);
-      else if (code === 'KeyQ') { const q = useQuality.getState(); q.set(q.name === 'HIGH' ? 'BALANCED' : 'HIGH'); say(`quality ${useQuality.getState().name}`); }
+      else if (code === 'KeyQ') { const q = useQuality.getState(); q.set(q.name === 'HIGH' ? 'BALANCED' : q.name === 'BALANCED' ? 'LOW' : 'HIGH'); say(`quality ${useQuality.getState().name}`); }
       else if (code === 'KeyT' && import.meta.env.DEV) {
         const type = TRANSITION_TYPES[transitionIndex++ % TRANSITION_TYPES.length];
         say(`transition ${type}`);

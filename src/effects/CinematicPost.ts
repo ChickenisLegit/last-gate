@@ -59,15 +59,18 @@ export class CinematicPost {
   }
   applyQuality(preset:QualityPreset){
     this.preset=preset;
-    this.ao.updateGtaoMaterial({samples:preset.aoSamples});this.bloom.strength=.18*preset.bloom;
+    // AO re-renders the whole scene for normals; LOW turns it off rather than thinning it.
+    this.ao.enabled=preset.aoSamples>0;if(this.ao.enabled)this.ao.updateGtaoMaterial({samples:preset.aoSamples});this.bloom.strength=.18*preset.bloom;
     this.resize(this.width,this.height);
   }
   resize(width:number,height:number){this.width=width;this.height=height;this.grade.uniforms.uAspect.value=width/Math.max(1,height);this.composer.setSize(width,height);const scale=this.preset.aoScale;this.ao.setSize(Math.ceil(width*scale),Math.ceil(height*scale));}
   /** Sequence grade, written each frame by the scene. */
-  fx={warp:0,center:new Vector2(.5,.5),flash:0,white:0,red:0,cyan:0,chroma:0,aperture:-1,time:0};
+  fx={warp:0,center:new Vector2(.5,.5),flash:0,white:0,red:0,cyan:0,chroma:0,aperture:-1,time:0,action:false};
   render(dt:number,wake:number,progress:number,focus:number){
     const dpr=this.gl.getPixelRatio();if(dpr!==this.dpr){this.dpr=dpr;this.composer.setPixelRatio(dpr);this.resize(this.width,this.height);}
     const recovering=!reducedMotion&&wake<1;
+    // Fast action hides AO; below HIGH it is skipped there so the chase keeps its frame rate.
+    this.ao.enabled=this.preset.aoSamples>0&&!(this.fx.action&&this.preset.dprCap<1.5);
     const signal=cinematicSignals;
     this.bokeh.enabled=this.preset.dof&&(recovering||progress>.48||signal.blur>.01);
     const uniforms=this.bokeh.uniforms as Record<string,{value:number}>;

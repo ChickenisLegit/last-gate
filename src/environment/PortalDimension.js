@@ -3,6 +3,7 @@ import {createGeometryKit} from '../systems/GeometryKit.js';
 import {createCinematicDetails} from './CinematicDetails.js';
 import {createPortalArt} from './PortalArt.js';
 import {patchWarpTree,warpUniforms} from '../effects/WorldWarp.js';
+import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 export function createPortalDimension(){
 const scene=new THREE.Group();scene.name='PortalDimension';
 const {mesh,box,cylinderBetween,materials,random,rand}=createGeometryKit(scene);
@@ -15,16 +16,19 @@ for(let i=0;i<13;i++){gx.beginPath();let x=rand(0,512),y=rand(0,512);gx.moveTo(x
 const groundTexture=new THREE.CanvasTexture(groundCanvas);groundTexture.wrapS=groundTexture.wrapT=THREE.RepeatWrapping;groundTexture.repeat.set(3,12);groundTexture.colorSpace=THREE.SRGBColorSpace;
 groundTexture.anisotropy=8;
 const groundMat=new THREE.MeshStandardMaterial({map:groundTexture,bumpMap:groundTexture,bumpScale:.045,color:'#8b929e',roughness:.94,metalness:0,envMapIntensity:.025});
-const road=mesh(new THREE.BoxGeometry(10.8,.7,40,36,1,120),groundMat,0,-.5,-8);road.name='road';
-box(10.5,1.2,39,materials.edge,.1,-1.3,-8.1);
+// The street runs on past the crater and into the seam, then breaks off into the void.
+const ROAD_NEAR=12,ROAD_FAR=-50,ROAD_LEN=ROAD_NEAR-ROAD_FAR,ROAD_MID=(ROAD_NEAR+ROAD_FAR)/2;
+groundTexture.repeat.set(3,12*ROAD_LEN/40);
+const road=mesh(new THREE.BoxGeometry(10.8,.7,ROAD_LEN,36,1,Math.round(ROAD_LEN*3)),groundMat,0,-.5,ROAD_MID);road.name='road';
+box(10.5,1.2,ROAD_LEN-1,materials.edge,.1,-1.3,ROAD_MID-.1);
 for(let i=0;i<22;i++){
   const side=i%2===0?-1:1,z=rand(-26,11),x=side*rand(4.6,6.8);
   const rubble=mesh(new THREE.DodecahedronGeometry(rand(.3,1.1),0),materials.concrete,x,rand(-.9,.1),z);rubble.scale.set(rand(.8,2),rand(.2,.65),rand(.6,1.6));rubble.rotation.set(rand(0,3),rand(0,3),rand(0,3));
 }
 // Faded lane markings and wet-looking seams give the floor a human scale.
 const roadPaint=new THREE.MeshStandardMaterial({color:'#b9a56e',roughness:1,transparent:true,opacity:.42});
-for(let i=0;i<10;i++)box(.1,.012,1.6,roadPaint,-.7,-.14,10-i*3.8);
-for(let i=0;i<9;i++)box(10.5,.015,.025,materials.dark,0,-.13,10-i*4.7);
+for(let i=0;i<16;i++)box(.1,.012,1.6,roadPaint,-.7,-.14,10-i*3.8);
+for(let i=0;i<13;i++)box(10.5,.015,.025,materials.dark,0,-.13,10-i*4.7);
 for(let i=0;i<13;i++){
   const x=rand(-4.8,4.8),z=rand(-23,9),r=rand(.05,.2);
   const stone=mesh(new THREE.DodecahedronGeometry(r),materials.edge,x,-.08,z);stone.rotation.set(random()*3,random()*3,random()*3);
@@ -49,6 +53,26 @@ for(const side of [-1,1]){
   }
   for(let i=0;i<6;i++)cylinderBetween(new THREE.Vector3(side*5.5,-.7,-25+i*.3),new THREE.Vector3(side*rand(6,8),rand(-.4,1),-25+i*.3),.025,materials.metal);
 }
+// The extended stretch toward the seam. Its own seed, so the original city layout is unchanged.
+{
+  let s=917;const r=(a,b)=>{s=(s*1664525+1013904223)>>>0;return a+s/4294967296*(b-a);};
+  for(const side of [-1,1])for(let i=7;i<11;i++){
+    if((side===1&&i===9)||(side===-1&&i===8))continue;
+    const z=8-i*5.2;
+    box(.52,.85,r(2,4),materials.concrete,side*5.1,.22,z).rotation.z=side*r(0,.06);
+    box(.64,.13,r(2,4),groundMat,side*5.1,.72,z);
+  }
+  for(let i=0;i<14;i++){
+    const side=i%2===0?-1:1,rubble=mesh(new THREE.DodecahedronGeometry(r(.3,1.1),0),materials.concrete,side*r(4.6,6.8),r(-.9,.1),r(ROAD_FAR+3,-26));
+    rubble.scale.set(r(.8,2),r(.2,.65),r(.6,1.6));rubble.rotation.set(r(0,3),r(0,3),r(0,3));
+  }
+  for(let i=0;i<9;i++){const stone=mesh(new THREE.DodecahedronGeometry(r(.05,.2)),materials.edge,r(-4.8,4.8),-.08,r(ROAD_FAR+4,-23));stone.rotation.set(r(0,3),r(0,3),r(0,3));}
+  // A ragged far edge: tilted, half-detached slabs instead of a clean cut.
+  for(let i=0;i<7;i++){
+    const slab=box(r(1.2,2.4),.62,r(1.4,2.6),groundMat,-4.6+i*1.55+r(-.2,.2),-.55-r(0,.6),ROAD_FAR-r(.4,1.8));
+    slab.rotation.set(r(-.35,.05),r(-.3,.3),r(-.18,.18));
+  }
+}
 
 const floating=[];
 const windowLight=new THREE.MeshStandardMaterial({color:'#42536d',roughness:.22,metalness:.62,envMapIntensity:.65});
@@ -56,10 +80,11 @@ const wallCanvas=document.createElement('canvas');wallCanvas.width=wallCanvas.he
 for(let i=0;i<5000;i++){const v=Math.floor(rand(120,205));wc.fillStyle=`rgba(${v},${v+3},${v},.12)`;wc.fillRect(rand(0,256),rand(0,256),rand(1,5),rand(2,11));}
 for(let i=0;i<10;i++){const x=rand(0,256);const g=wc.createLinearGradient(x,0,x+13,0);g.addColorStop(0,'#414c4630');g.addColorStop(1,'#414c4600');wc.fillStyle=g;wc.fillRect(x,0,13,256);}
 const wallTexture=new THREE.CanvasTexture(wallCanvas);wallTexture.colorSpace=THREE.SRGBColorSpace;wallTexture.wrapS=wallTexture.wrapT=THREE.RepeatWrapping;
+// One material per facade colour, shared by every building, so the city batches into few draws.
+const facades=['#647286','#464d5e','#858a94','#4e6973','#807b7e'].map((color,i)=>new THREE.MeshStandardMaterial({map:wallTexture,bumpMap:wallTexture,bumpScale:.025,color,roughness:.78+i*.045,envMapIntensity:.18}));
 function building(x,y,z,w,h,d,tilt=0){
   const g=new THREE.Group();scene.add(g);g.position.set(x,y,z);g.rotation.z=tilt;
-  const palette=['#647286','#464d5e','#858a94','#4e6973','#807b7e'];
-  const facade=new THREE.MeshStandardMaterial({map:wallTexture,bumpMap:wallTexture,bumpScale:.025,color:palette[Math.floor(random()*palette.length)],roughness:rand(.78,.96),envMapIntensity:.18});
+  const facade=facades[Math.floor(random()*facades.length)];rand(0,1); // keep the seeded layout identical
   box(w,h,d,facade,0,h/2,0,g);
   const sill=materials.metal;
   for(let fy=1;fy<h-.8;fy+=1.5){
@@ -196,22 +221,38 @@ const companionLight=new THREE.DirectionalLight('#ffe4c5',.55);companionLight.po
 const details=createCinematicDetails(scene,{mesh,box,materials,rand,building,mistTexture});
 const art=createPortalArt(scene,{mesh,box,materials,rand,mistTexture});
 
-// Collapse repeated static windows and details into GPU instances.
-const animatedRoots=new Set([...floating.map(f=>f.obj),signGroup,...details.animatedRoots,...art.animatedRoots]);
-scene.updateMatrixWorld(true);
-const instanceGroups=new Map();
-scene.traverse(obj=>{
-  if(!obj.isMesh||obj.isInstancedMesh||obj.material.transparent||obj.material.isShaderMaterial)return;
-  let parent=obj;while(parent){if(animatedRoots.has(parent))return;parent=parent.parent;}
-  const key=`${obj.geometry.uuid}/${obj.material.uuid}`;
-  if(!instanceGroups.has(key))instanceGroups.set(key,[]);instanceGroups.get(key).push(obj);
-});
-for(const objects of instanceGroups.values()){
-  if(objects.length<3)continue;
-  const instanced=new THREE.InstancedMesh(objects[0].geometry,objects[0].material,objects.length);
-  objects.forEach((obj,i)=>{instanced.setMatrixAt(i,obj.matrixWorld);obj.parent.remove(obj);});
-  instanced.castShadow=objects[0].geometry.parameters?.depth>.1;instanced.receiveShadow=true;instanced.instanceMatrix.needsUpdate=true;scene.add(instanced);
+// Bake every static opaque surface into one mesh per material. The city was ~330 separate
+// draws (each repeated in the shadow, AO and depth-of-field passes); merged it is a few dozen.
+// Only transforms are baked: materials stay shared, so sign flicker and emissive pulses still work.
+// Moving or toggled groups (debris, sign, cable, anomaly, sliding blocks) stay live.
+const animatedRoots=new Set([...floating.map(f=>f.obj),signGroup,anomaly,riftGroup,...details.animatedRoots]);
+/** Merges the static opaque meshes under `root` (skipping `skip` subtrees) into one mesh per material, in root space. */
+function mergeStatic(root,skip){
+  root.updateMatrixWorld(true);
+  const toRoot=new THREE.Matrix4().copy(root.matrixWorld).invert(),groups=new Map();
+  root.traverse(obj=>{
+    if(!obj.isMesh||obj.isInstancedMesh||Array.isArray(obj.material)||obj.material.transparent||obj.material.isShaderMaterial||!obj.visible)return;
+    let parent=obj;while(parent&&parent!==root){if(skip.has(parent))return;parent=parent.parent;}
+    // Thin facade pieces (windows, sills) never cast: they only add shadow acne.
+    const p=obj.geometry.parameters,cast=obj.castShadow&&!(p&&p.depth!==undefined&&p.depth<=.1);
+    const attrs=Object.keys(obj.geometry.attributes).sort().join(',');
+    const key=`${obj.material.uuid}/${cast?1:0}${obj.receiveShadow?1:0}/${obj.geometry.index?'i':'n'}/${attrs}`;
+    if(!groups.has(key))groups.set(key,{material:obj.material,cast,receive:obj.receiveShadow,objects:[]});
+    groups.get(key).objects.push(obj);
+  });
+  for(const {material,cast,receive,objects} of groups.values()){
+    if(objects.length<2)continue;
+    const geometry=mergeGeometries(objects.map(obj=>obj.geometry.clone().applyMatrix4(new THREE.Matrix4().multiplyMatrices(toRoot,obj.matrixWorld))));
+    if(!geometry)continue;
+    objects.forEach(obj=>obj.parent.remove(obj));
+    geometry.computeBoundingSphere();
+    const merged=new THREE.Mesh(geometry,material);merged.name='static-merged';
+    merged.castShadow=cast;merged.receiveShadow=receive;merged.matrixAutoUpdate=false;root.add(merged);
+  }
 }
+mergeStatic(scene,animatedRoots);
+// Moving groups still hold together as rigid bodies: merge inside each, leaving the swinging sign itself live.
+for(const group of animatedRoots)if(group.isGroup)mergeStatic(group,new Set([sign]));
 
 
 let lastShadow=0;

@@ -6,6 +6,9 @@ import { createChestAccess } from './ChestAccess.js';
 
 const ease=(t:number)=>MathUtils.smoothstep(t,0,1);
 const span=(t:number,a:number,b:number)=>MathUtils.smoothstep(t,a,b);
+/** Shortest signed difference between two angles, so turns never go the long way round. */
+const wrap=(a:number)=>Math.atan2(Math.sin(a),Math.cos(a));
+const HEAD_YAW=1.05,HEAD_PITCH_UP=.45,HEAD_PITCH_DOWN=.6;
 const UP=new Vector3(0,1,0),DOWN=new Vector3(0,-1,0);
 const DORMANT_HEAD={x:.24,y:0,z:-.12};
 type Pose={pos:Vector3;yaw:number;pitch:number;roll:number;head:Vector3;look:number;arm:number;aim:Vector3;thrust:number;inflate:number;stand:number};
@@ -147,18 +150,22 @@ export class BaymaxController {
       T.inflate=span(t,1.3,2.9);T.pos.y+=span(t,1.3,2.9)*.035;T.roll=span(t,1.6,3)*.018;
       T.head.set(MathUtils.lerp(DORMANT_HEAD.x,.04,span(t,2.1,3.7)),0,MathUtils.lerp(DORMANT_HEAD.z,0,span(t,2.1,3.7)));
       eyeOn=span(t,3.5,3.75);seamGlow=span(t,1.4,2)*.45*(1-span(t,3,4.2));
+      // As his eyes light, he finds Hiro.
+      this.lookAt(camera,T,span(t,3.2,4.6)*.9);
     }
     if(after(['diagnostic','corrupting','threat','ignition','chase','fracture','pulled','handoff'])){open=4.6;seated=1;seal=1;T.inflate=1;T.pos.y+=.035;eyeOn=1;T.head.set(.04,0,0);}
     if(phase==='diagnostic'){
       // A small, curious head tilt: the most Baymax gesture there is.
-      T.head.set(.04,.04*span(t,.8,2.2),.11*span(t,.8,2.2)*(1-span(t,4.3,5.6)));
+      T.head.set(.04,.04*span(t,.8,2.2),0);this.lookAt(camera,T,.9);
+      T.head.z=.11*span(t,.8,2.2)*(1-span(t,4.3,5.6));
       seamGlow=.18+.14*Math.sin(t*3.1)**2;
       if(t>4.9)seamGlow=Math.sin(t*41)>.55?.55:.12;
     }
     if(phase==='corrupting'){
       const k=span(t,.2,4.6);seamGlow=.3+k*.5;
       T.pitch=.055*k;T.head.set(.04-.06*k,0,0);T.arm=.06*k;T.pos.y+=.02*k;
-      this.lookAt(camera,T,span(t,3,4.8)*.35);
+      // He never stops watching Hiro; the corruption is in how he holds the look.
+      this.lookAt(camera,T,.85+span(t,3,4.8)*.15);
     }
     if(phase==='threat'){
       seamGlow=.8;T.pitch=.055;T.arm=.06;T.pos.y+=.02;
@@ -167,7 +174,7 @@ export class BaymaxController {
     const red=seq.red;
     // ---------------------------------------------------------------- violence
     if(phase==='ignition')this.ignition(t,T,camera);
-    if(phase==='chase')this.chase(seq,T,camera);
+    if(phase==='chase'){this.watch=camera;this.chase(seq,T,camera);this.watch=null;}
     if(phase==='fracture')this.fracture(t,T,camera);
     if(phase==='pulled'||phase==='handoff'){T.pos.set(1.8,4,-60);T.thrust=0;}
     this.shell.visible=!(phase==='pulled'||phase==='handoff')&&!(phase==='fracture'&&t>4.3);
@@ -175,8 +182,8 @@ export class BaymaxController {
     const P=this.pose,k=(l:number)=>1-Math.exp(-dt*l);
     const fast=['ignition','chase','fracture'].includes(phase)&&!reduced;
     P.pos.lerp(T.pos,k(fast?7:2.6));
-    P.yaw=MathUtils.lerp(P.yaw,T.yaw,k(fast?5:1.8));P.pitch=MathUtils.lerp(P.pitch,T.pitch,k(fast?5:1.6));P.roll=MathUtils.lerp(P.roll,T.roll,k(2));
-    P.head.lerp(T.head,k(phase==='threat'?2.4:1.6));P.look=MathUtils.lerp(P.look,T.look,k(2.2));
+    P.yaw+=wrap(T.yaw-P.yaw)*k(fast?5:1.8);P.yaw=wrap(P.yaw);P.pitch=MathUtils.lerp(P.pitch,T.pitch,k(fast?5:1.6));P.roll=MathUtils.lerp(P.roll,T.roll,k(2));
+    P.head.lerp(T.head,k(fast?4.5:phase==='threat'?2.4:1.6));P.look=MathUtils.lerp(P.look,T.look,k(2.2));
     P.arm=MathUtils.lerp(P.arm,T.arm,k(fast?6:2));if(P.aim.lengthSq()===0)P.aim.copy(T.aim);else P.aim.lerp(T.aim,k(8));
     P.thrust=MathUtils.lerp(P.thrust,T.thrust,k(T.thrust>P.thrust?4:2.5));P.inflate=MathUtils.lerp(P.inflate,T.inflate,k(1.5));P.stand=MathUtils.lerp(P.stand,T.stand,k(fast?3.2:2));
     const breathe=reduced?0:Math.sin(time*1.05)*.004*P.inflate;
@@ -221,16 +228,36 @@ export class BaymaxController {
   private snap(){const P=this.pose,T=this.target;P.pos.copy(T.pos);P.yaw=T.yaw;P.pitch=T.pitch;P.roll=T.roll;P.head.copy(T.head);P.arm=T.arm;P.thrust=0;P.inflate=0;P.stand=0;P.aim.set(0,0,0);}
   /** Turns the head (and a little of the body) toward a world point, Baymax-slow. */
   private lookAt(point:Vector3,T:Pose,weight:number){
-    const dx=point.x-T.pos.x,dz=point.z-T.pos.z,dy=point.y-(T.pos.y+2.98+T.stand*STAND_LIFT);
-    const yaw=Math.atan2(dx,dz)-T.yaw,pitch=-Math.atan2(dy,Math.hypot(dx,dz));
-    T.head.y=MathUtils.lerp(T.head.y,MathUtils.clamp(yaw,-.9,.9),weight);
-    T.head.x=MathUtils.lerp(T.head.x,MathUtils.clamp(pitch,-.4,.5),weight);
+    if(weight<=0)return;
+    // Head height follows the body's own pitch (he pivots near the feet), so aim from where the eyes really are.
+    const lift=2.98+T.stand*STAND_LIFT,headY=T.pos.y+lift*Math.cos(T.pitch),reachZ=lift*Math.sin(T.pitch);
+    const hx=T.pos.x+Math.sin(T.yaw)*reachZ,hz=T.pos.z+Math.cos(T.yaw)*reachZ;
+    const dx=point.x-hx,dz=point.z-hz,dy=point.y-headY;
+    // Relative to the body. What the neck can't reach, the body turns and leans into.
+    const yaw=wrap(Math.atan2(dx,dz)-T.yaw),pitch=-Math.atan2(dy,Math.hypot(dx,dz))-T.pitch;
+    const headYaw=MathUtils.clamp(yaw,-HEAD_YAW,HEAD_YAW),headPitch=MathUtils.clamp(pitch,-HEAD_PITCH_UP,HEAD_PITCH_DOWN);
+    T.yaw=wrap(T.yaw+(yaw-headYaw)*weight);
+    T.pitch=MathUtils.clamp(T.pitch+(pitch-headPitch)*weight,-1.1,1.1);
+    T.head.y=MathUtils.lerp(T.head.y,headYaw,weight);
+    T.head.x=MathUtils.lerp(T.head.x,headPitch,weight);
     T.head.z=MathUtils.lerp(T.head.z,0,weight);
   }
-  private face(point:Vector3,T:Pose,weight=1){T.yaw=MathUtils.lerp(T.yaw,Math.atan2(point.x-T.pos.x,point.z-T.pos.z),weight);}
+  private face(point:Vector3,T:Pose,weight=1){T.yaw=wrap(T.yaw+wrap(Math.atan2(point.x-T.pos.x,point.z-T.pos.z)-T.yaw)*weight);}
+  /** Hiro, while the chase runs: flights keep him in view instead of showing their back. */
+  private watch:Vector3|null=null;
   private flyToward(from:Vector3,to:Vector3,T:Pose,u:number,pitch=.55){
     T.pos.lerpVectors(from,to,ease(u));this.tmp2.subVectors(to,from);
-    T.yaw=Math.atan2(this.tmp2.x,this.tmp2.z);T.pitch=pitch*Math.min(1,Math.sin(Math.PI*Math.min(1,u*1.1))*1.7);T.thrust=1;T.stand=1;T.head.set(-.35*Math.min(1,pitch),0,0);
+    T.yaw=Math.atan2(this.tmp2.x,this.tmp2.z);T.thrust=1;T.stand=1;
+    const lean=pitch*Math.min(1,Math.sin(Math.PI*Math.min(1,u*1.1))*1.7);
+    if(!this.watch){T.pitch=lean;T.head.set(-.35*Math.min(1,pitch),0,0);return;}
+    // Flying at Hiro he leads with his face. Pulling away he turns to keep watching him and
+    // backs off, leaning back on the thruster, instead of showing his back and the soles of his feet.
+    const fx=this.tmp2.x,fz=this.tmp2.z,cx=this.watch.x-T.pos.x,cz=this.watch.z-T.pos.z;
+    const toward=(fx*cx+fz*cz)/Math.max(1e-4,Math.hypot(fx,fz)*Math.hypot(cx,cz));
+    const away=1-span(toward,-.45,.35);
+    this.face(this.watch,T,away);
+    T.pitch=lean*(1-away)-.28*away*Math.min(1,lean*2);
+    T.head.set(0,0,0);this.lookAt(this.watch,T,.9);
   }
   private charging(phase:Phase,t:number,seq:SequenceDirector){
     if(phase==='ignition')return span(t,.55,1.55)*(1-span(t,1.6,1.7));
@@ -245,7 +272,7 @@ export class BaymaxController {
     // He stands. The first thing the corrupted state does is rise to full height over Hiro.
     T.inflate=1;T.pos.y+=.035;T.stand=span(t,0,1.05);
     // Tension, aim, discharge, recoil, spool, launch.
-    this.lookAt(camera,T,1);this.face(camera,T,.45*span(t,0,.6));
+    this.face(camera,T,.45*span(t,0,.6));this.lookAt(camera,T,1);
     T.pitch=.12*span(t,0,.5)-.1*span(t,1.6,1.75)*(1-span(t,1.9,2.3));
     T.arm=span(t,.2,1.05);T.aim.set(1.5,.7,-8.5);
     if(t>1.6&&t<1.85)T.arm=.85;
@@ -257,13 +284,13 @@ export class BaymaxController {
   private chase(seq:SequenceDirector,T:Pose,camera:Vector3){
     const b=seq.beat,u=seq.beatTime,V=(x:number,y:number,z:number)=>this.tmp.set(x,y,z);
     T.inflate=1;T.thrust=1;T.stand=1;
-    if(!b){T.pos.set(5,15,-24);T.pitch=.4;T.yaw=Math.PI;return;}
+    if(!b){T.pos.set(5,15,-24);T.pitch=.15;this.face(camera,T);this.lookAt(camera,T,1);return;}
     if(b!==this.beat){this.beat=b;this.lastBeatTime=0;}
     if(b==='silhouette'){
       // A far shape in the fog, eyes first, then the bolt.
       const from=new Vector3(15,13,-42),hold=new Vector3(8.6,8.2,-31);
       if(u<.6)this.flyToward(from,hold,T,u/.6,.8);else{T.pos.copy(hold);T.pos.y+=Math.sin(u*2)*.12;T.pitch=.12;}
-      if(u>.6&&u<1.3){this.face(camera,T);T.arm=span(u,.2,.8);T.aim.set(4.75,.35,-17.4);}
+      if(u>.6&&u<1.3){this.face(camera,T);this.lookAt(camera,T,span(u,.6,.8));T.arm=span(u,.2,.8);T.aim.set(4.75,.35,-17.4);}
       if(u>1.5)this.flyToward(hold,V(16,17,-44).clone(),T,span(u,1.5,2.8),1);
     }else if(b==='overhead'){
       // A pass directly over Hiro: red light through the dust, the thruster wash shoves him.

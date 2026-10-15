@@ -28,7 +28,7 @@ class RenderBoundary extends Component<{children:ReactNode},{error:boolean}> {
 }
 function Failure(){return <div className="failure"><p>The connection was lost.</p><span>This chapter needs WebGL in a recent browser.</span><button onClick={()=>location.reload()}>RECONNECT ↗</button></div>;}
 
-const CHAPTER_MARK:Record<string,string>={BOOT:'00',AWAKE:'00',THE_SHELL:'01',RED_WAKE:'02',THE_FRACTURE:'03'};
+const ZOOM_HINT_PHASES:Phase[]=['chip-focus','chip-held','chest-focus','panel-opening','socket-ready'];
 const MARKER_PHASES:Phase[]=['discovery','chip-focus','chest-focus'];
 const STREET_BG=new Color('#101c31'),CORRIDOR_BG=new Color('#061420'),STREET_FOG=new Color('#253e59'),CORRIDOR_FOG=new Color('#123349');
 
@@ -116,7 +116,7 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
       readout.current.style.top=`${Math.max(.18,(-projection.y*.5+.5)+.02)*size.height}px`;
     }
     const fx=post.fx;
-    fx.warp=seq.warp;fx.center.copy(seq.warpCenter);fx.flash=seq.flash;fx.white=seq.whiteout;fx.red=seq.red*(phase==='handoff'?0:.8);fx.time=t;
+    fx.action=['ignition','chase','fracture','pulled'].includes(phase);fx.warp=seq.warp;fx.center.copy(seq.warpCenter);fx.flash=seq.flash;fx.white=seq.whiteout;fx.red=seq.red*(phase==='handoff'?0:.8);fx.time=t;
     fx.cyan=phase==='fracture'?seq.corridor*.45:phase==='pulled'?.6:phase==='handoff'?.35:0;
     fx.chroma=seq.warp*.8+(phase==='pulled'?seq.collapse:0)+(phase==='threat'?.12:0);
     fx.aperture=['chip-focus','chip-reaching','chip-held'].includes(phase)?.00042:['chest-focus','panel-opening','socket-ready','inserting','silence'].includes(phase)?.0003:['booting','diagnostic','corrupting','threat'].includes(phase)?.00018:['discovery','inspected'].includes(phase)?.00016:0;
@@ -236,19 +236,25 @@ export function ExperienceDirector(){
     const wheel=(event:WheelEvent)=>{
       const p=useSceneState.getState().phase;
       if(p==='chase'){event.preventDefault();if(event.deltaY>0){input();sprintPulse();}return;}
+      // Handling the chip: the wheel zooms (forward = closer).
+      if(camera.zoomable){event.preventDefault();input();camera.zoomBy(-Math.sign(event.deltaY)*Math.min(.35,Math.abs(event.deltaY)*.0022));return;}
       if(p!=='approaching')return;
       event.preventDefault();input();
       if(firstScroll.current&&event.deltaY>0){firstScroll.current=false;scrollGuard.current=performance.now()+450;useSceneState.getState().move(.065);return;}
       if(performance.now()<scrollGuard.current)return;
       useSceneState.getState().move(Math.max(-.022,Math.min(.034,event.deltaY*.00024)));
     };
-    const holdKeys=['KeyE','Space','Enter'],runKeys=['Space','ArrowUp','KeyW'];
+    const holdKeys=['KeyE','Space','Enter'],runKeys=['Space','ArrowUp','KeyW'],zoomIn=['Equal','NumpadAdd'],zoomOut=['Minus','NumpadSubtract'];
     const down=(event:KeyboardEvent)=>{
       if(event.ctrlKey||event.metaKey||event.altKey)return;
       const p=useSceneState.getState().phase;
       if(event.code==='KeyR'){if(!event.repeat)replayRun();return;}
       if(event.code==='Escape'&&p==='awakening')skip();
       if(event.code==='KeyE'&&p==='discovery')useSceneState.getState().inspect();
+      if(zoomIn.includes(event.code)&&camera.zoomable){event.preventDefault();camera.zoomBy(.25);}
+      if(zoomOut.includes(event.code)&&camera.zoomable){event.preventDefault();camera.zoomBy(-.25);}
+      if(['KeyA','ArrowLeft'].includes(event.code)&&p==='approaching'){event.preventDefault();input();camera.strafeInput=-1;}
+      if(['KeyD','ArrowRight'].includes(event.code)&&p==='approaching'){event.preventDefault();input();camera.strafeInput=1;}
       if(runKeys.includes(event.code)&&p==='approaching'){event.preventDefault();input();camera.holding=true;}
       if(runKeys.includes(event.code)&&p==='chase'){event.preventDefault();input();seq.sprint=true;}
       // Holds work from the keyboard too: E, Space or Enter commit the chip, the seam and the dock.
@@ -256,6 +262,7 @@ export function ExperienceDirector(){
     };
     const up=(event:KeyboardEvent)=>{
       if(runKeys.includes(event.code)){camera.holding=false;seq.sprint=false;}
+      if(['KeyA','ArrowLeft','KeyD','ArrowRight'].includes(event.code))camera.strafeInput=0;
       if(holdKeys.includes(event.code)){if(seq.keyHold)latch();seq.keyHold=false;}
     };
     const move=(event:PointerEvent)=>{
@@ -270,7 +277,7 @@ export function ExperienceDirector(){
     // A quick click on the chip or the seam is read as intent, not as a failed hold.
     const latch=()=>{if(HOLD_PHASES.includes(useSceneState.getState().phase)&&performance.now()-pressedAt.current<400)seq.latch=true;};
     const release=()=>{if(seq.pointerDown)latch();camera.holding=false;seq.pointerDown=false;};
-    const blur=()=>{release();seq.keyHold=false;seq.sprint=false;};
+    const blur=()=>{release();seq.keyHold=false;seq.sprint=false;camera.strafeInput=0;};
     window.addEventListener('wheel',wheel,{passive:false});window.addEventListener('keydown',down);window.addEventListener('keyup',up);window.addEventListener('pointermove',move);window.addEventListener('pointerdown',press);window.addEventListener('blur',blur);window.addEventListener('pointerup',release);
     return ()=>{window.removeEventListener('wheel',wheel);window.removeEventListener('keydown',down);window.removeEventListener('keyup',up);window.removeEventListener('pointermove',move);window.removeEventListener('pointerdown',press);window.removeEventListener('blur',blur);window.removeEventListener('pointerup',release);};
   },[camera,transitions,seq]);
@@ -317,16 +324,17 @@ export function ExperienceDirector(){
       {(phase==='threat'||phase==='ignition')&&<p className="threat-line"><span><DiagnosticLine text="PRIMARY THREAT" delay={1.65}/></span><i/><b><DiagnosticLine text="HIRO HAMADA" delay={2.05}/></b></p>}
     </div>
     {phase==='inspected'&&<div className={`failed-link ${linkVisible?'visible':''}`} aria-live="polite"><span className="fault-dot"/> BAYMAX <span>NO RESPONSE</span></div>}
-    <div className="signature" aria-hidden="true">LAST GATE</div>
+    <div className="signature" aria-hidden="true">LAST GATE <small>PHASE I</small></div>
+    {ZOOM_HINT_PHASES.includes(phase)&&<div className="zoom-hint" aria-hidden="true">SCROLL <span>//</span> ZOOM</div>}
     {phase==='inspected'&&linkVisible&&<button className="replay" onClick={replayRun}>REPLAY OPENING <span>R ↶</span></button>}
     {phase==='handoff'&&<div className="handoff" role="status">
-      <p>LAST GATE</p>
+      <p>LAST GATE <span>//</span> PHASE I</p>
       <p>Hold on, Baymax.</p>
       <small>SIGNAL <b>HIRO HAMADA</b></small>
       <button className="replay-inline" onClick={replayRun}>REPLAY FROM THE BEGINNING <span>R ↶</span></button>
     </div>}
     {error&&<div className="failure"><p>{error}</p><button onClick={()=>location.reload()}>RECONNECT ↗</button></div>}
     <ProductionLayer/>
-    <p className="sr-only">The opening starts automatically. Press Escape to skip awakening. Scroll, hold Space, W, or Arrow Up, or use the move closer button to approach Baymax. Select Baymax or press E to check for a response. Then press and hold the mouse, or hold E, Space or Enter, to pick up the red chip and to release Baymax’s chest access. Move the pointer to guide the chip into the socket, or hold E to guide it automatically. When Baymax attacks, Hiro runs on his own; hold the mouse, Space, W or Arrow Up, or scroll, to sprint. Press R to replay.</p>
+    <p className="sr-only">The opening starts automatically. Press Escape to skip awakening. Scroll, hold Space, W, or Arrow Up, or use the move closer button to approach Baymax. Select Baymax or press E to check for a response. Then press and hold the mouse, or hold E, Space or Enter, to pick up the red chip and to release Baymax’s chest access. Move the pointer to guide the chip into the socket, or hold E to guide it automatically. When Baymax attacks, Hiro runs on his own; hold the mouse, Space, W or Arrow Up, or scroll, to sprint. Press A or D, or the left and right arrows, to step sideways on the approach. While handling the chip, scroll or press plus and minus to zoom. Press R to replay.</p>
   </main>;
 }

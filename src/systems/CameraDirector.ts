@@ -12,6 +12,19 @@ const BLEND:Partial<Record<Phase,number>>={
 };
 const PULL=new CatmullRomCurve3([new Vector3(1.3,1.45,-27.1),new Vector3(1.55,3.4,-30.4),new Vector3(1.8,6.2,-33.8),new Vector3(1.85,7.1,-40),new Vector3(1.9,7.2,-49)]);
 const INSPECT_AIM=new Vector3(4.14,1.3,-9.02);
+/**
+ * How far the viewer can turn Hiro's head with the pointer, per beat (yaw, pitch in radians).
+ * Wide while exploring, tight while a hand is busy or a beat is locked.
+ */
+const LOOK:Partial<Record<Phase,[number,number]>>={
+  awakening:[.18,.1],approaching:[.62,.3],discovery:[.48,.24],inspected:[.48,.24],
+  'chip-focus':[.2,.12],'chip-reaching':[.14,.09],'chip-held':[.16,.1],'chest-focus':[.2,.12],'panel-opening':[.2,.12],
+  'socket-ready':[.08,.05],inserting:[.08,.05],silence:[.22,.12],booting:[.32,.16],diagnostic:[.32,.16],corrupting:[.24,.13],
+  threat:[.1,.06],ignition:[.2,.12],chase:[.34,.14],fracture:[.22,.13],pulled:[.1,.06],handoff:[.4,.22]
+};
+/** Beats where the viewer can zoom in and out on the chip, the seam and the socket. */
+const ZOOM_PHASES:Phase[]=['chip-focus','chip-reaching','chip-held','chest-focus','panel-opening','socket-ready','inserting','silence'];
+export const ZOOM_RANGE=[-1,1] as const;
 export type ShotContext={chest:Vector3;normal:Vector3;chip:Vector3;baymax:Vector3;head:Vector3};
 
 /** Sole owner of the camera. Each phase is a directed shot; impulses come from the sequence. */
@@ -27,10 +40,17 @@ export class CameraDirector {
   private lastPos=new Vector3();private lastLook=new Vector3();private lastRoll=0;
   private v=new Vector3();private v2=new Vector3();private shakeT=0;private focusPoint=new Vector3();
   private run=0;
+  /** Viewer zoom while handling the chip: -1 (pulled back) … 1 (close in). */
+  public zoomTarget=0;private zoom=0;
+  /** Sideways step on the approach (A / D, arrow keys): -1, 0 or 1 while held. */
+  public strafeInput=0;private strafe=0;private strafeGoal=0;
+  private lookRange:[number,number]=[.18,.1];
+  zoomBy(amount:number){if(ZOOM_PHASES.includes(this.phase))this.zoomTarget=MathUtils.clamp(this.zoomTarget+amount,ZOOM_RANGE[0],ZOOM_RANGE[1]);}
+  get zoomable(){return ZOOM_PHASES.includes(this.phase);}
 
   update(camera:PerspectiveCamera,delta:number,_w:number,_h:number,seq?:SequenceDirector,ctx?:ShotContext){
     const state=useSceneState.getState(),dt=Math.min(delta,.1);
-    if(state.replay!==this.replay){this.replay=state.replay;this.progress=0;this.wakeTime=0;this.holding=false;}
+    if(state.replay!==this.replay){this.replay=state.replay;this.progress=0;this.wakeTime=0;this.holding=false;this.zoomTarget=0;this.zoom=0;this.strafe=0;this.strafeGoal=0;}
     this.time+=dt;
     if(state.chapter==='BOOT')return;
     this.wakeTime+=dt;
@@ -43,11 +63,14 @@ export class CameraDirector {
     this.look.x=MathUtils.damp(this.look.x,this.pointer.x,1.8,dt);this.look.y=MathUtils.damp(this.look.y,this.pointer.y,1.8,dt);
     this.gaze.x=MathUtils.damp(this.gaze.x,this.look.x,3,dt);this.gaze.y=MathUtils.damp(this.gaze.y,this.look.y,3,dt);
     this.footfall+=Math.abs(this.velocity)*dt*70;
+    // A free sidestep on the approach; it eases back to the authored line once he arrives.
+    if(state.phase==='approaching')this.strafeGoal=MathUtils.clamp(this.strafeGoal+this.strafeInput*dt*1.3,-1.6,1.6);else this.strafeGoal=0;
+    this.strafe=MathUtils.damp(this.strafe,this.strafeGoal,2.4,dt);
     const breathing=reducedMotion?0:Math.sin(this.time*1.12)*.008;
     const step=reducedMotion?0:Math.sin(this.footfall)*Math.min(.008,Math.abs(this.velocity)*.08);
     // The approach: unchanged from the opening.
-    camera.position.set(MathUtils.lerp(-1.7,1.15,p)+Math.sin(p*Math.PI)*-.6+this.look.x*.07,MathUtils.lerp(1.05,2.48,wake)-p*.24+breathing+step,MathUtils.lerp(8,-4.8,p));
-    this.target.set(MathUtils.lerp(-.65,2.65,p)+this.gaze.x*.52,MathUtils.lerp(.3,2.4,wake)-p*1.25-this.gaze.y*.23,-14+p*2);
+    camera.position.set(MathUtils.lerp(-1.7,1.15,p)+Math.sin(p*Math.PI)*-.6+this.look.x*.07+this.strafe,MathUtils.lerp(1.05,2.48,wake)-p*.24+breathing+step,MathUtils.lerp(8,-4.8,p));
+    this.target.set(MathUtils.lerp(-.65,2.65,p)+this.gaze.x*.52+this.strafe*.6,MathUtils.lerp(.3,2.4,wake)-p*1.25-this.gaze.y*.23,-14+p*2);
     camera.fov=MathUtils.lerp(51,45,p)+(reducedMotion?0:Math.sin(this.time*.9)*.025+(1-wake)*.2);
     let roll=reducedMotion?0:(1-wake)*-.09+Math.sin(this.time*.43)*.0012-this.velocity*.01;
     const directed=seq&&ctx&&!['loading','awakening','approaching'].includes(state.phase);
@@ -59,12 +82,22 @@ export class CameraDirector {
       }
       this.shotTime+=dt*seq.slowmo;
       this.shot(state.phase,this.shotTime,seq,ctx,camera,dt);
+      // Viewer zoom: a dolly along the shot's own line of sight plus a little lens, so the
+      // chip, the seam and the socket can be studied close or seen in context.
+      if(!ZOOM_PHASES.includes(state.phase))this.zoomTarget=0;
+      this.zoom=MathUtils.damp(this.zoom,this.zoomTarget,reducedMotion?20:6,dt);
+      if(Math.abs(this.zoom)>.001){this.v.subVectors(this.pos,this.aim);this.pos.copy(this.aim).addScaledVector(this.v,1-this.zoom*.45);this.fov*=1-this.zoom*.14;}
       const b=reducedMotion?1:span(this.shotTime,0,BLEND[state.phase]??1.2);
       camera.position.lerpVectors(this.fromPos,this.pos,b);this.target.lerpVectors(this.fromLook,this.aim,b);
       camera.fov=MathUtils.lerp(this.fromFov,this.fov,b);roll=MathUtils.lerp(this.fromRoll,this.roll,b);
       this.applyImpulses(camera,seq,dt);
     }else{this.phase=state.phase;}
     camera.lookAt(this.target);
+    // Free look: the pointer turns Hiro's head within limits set by the beat. Damped twice
+    // (look → gaze), so it carries weight instead of tracking the mouse 1:1.
+    const range=LOOK[state.phase]??[.15,.08];
+    this.lookRange[0]=MathUtils.damp(this.lookRange[0],range[0],2,dt);this.lookRange[1]=MathUtils.damp(this.lookRange[1],range[1],2,dt);
+    camera.rotateY(-this.gaze.x*this.lookRange[0]);camera.rotateX(-this.gaze.y*this.lookRange[1]);
     camera.rotateZ(roll);
     cameraRig.apply(camera,dt); // global camera language: motivated shake + transition FOV kicks
     camera.updateProjectionMatrix();camera.updateMatrixWorld();
@@ -208,6 +241,6 @@ export class CameraDirector {
     this.target.x+=n(7)*s*.12;this.target.y+=n(11)*s*.1;
     camera.fov+=seq.fovKick;
   }
-  resetPointer(){this.pointer={x:0,y:0};this.holding=false;}
+  resetPointer(){this.pointer={x:0,y:0};this.holding=false;this.strafeInput=0;this.zoomTarget=0;}
   skipAwakening(){this.wakeTime=12;}
 }
