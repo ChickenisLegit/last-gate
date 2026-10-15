@@ -1,6 +1,6 @@
 # PROJECT // LATTICE — Awake
 
-The first desktop chapter of Path 1. The viewport is Hiro's vision: a blinking awakening, fractured San Fransokyo, a controlled approach to Baymax's silent shell, and a red chip beside his hand. This opening ends before chip insertion or RED_WAKE. Art direction targets 1920×1080. Viewports below 1280px show a desktop-required screen and do not mount WebGL.
+The first desktop chapter of Path 1. The viewport is Hiro's vision: a blinking awakening, fractured San Fransokyo, a controlled approach to Baymax's silent shell, and a red chip beside his hand. The shell sequence continues through red-chip insertion and the corrupted boot. Art direction targets 1920×1080. Smaller viewports use responsive camera framing, touch movement controls and lower initial rendering density. WebGL 2 support is checked before loading the 3D experience.
 
 ## Run
 
