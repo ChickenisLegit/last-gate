@@ -1,10 +1,7 @@
-import React, {useEffect,useState} from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ExperienceDirector } from './experience/ExperienceDirector';
+import { getDebugFinalStage, useFinalEntry } from './scenes/final/entry';
 import './ui/experience.css';
-function DesktopGate(){
-  const [supported,setSupported]=useState(innerWidth>=1280);
-  useEffect(()=>{const resize=()=>setSupported(innerWidth>=1280);window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize);},[]);
-  return supported?<ExperienceDirector/>:<main className="desktop-required"><p>PROJECT <span>//</span> LATTICE</p><h1>DESKTOP EXPERIENCE</h1><span>1280PX+ DISPLAY REQUIRED</span></main>;
-}
-createRoot(document.getElementById('root')!).render(<DesktopGate/>);
+const FinalPhase=lazy(()=>import('./scenes/final/FinalPhase').then(module=>({default:module.FinalPhase})));
+function DesktopGate(){const [supported,setSupported]=useState(innerWidth>=1280);const [debugStage,setDebugStage]=useState(()=>getDebugFinalStage(location.hash));const entry=useFinalEntry();useEffect(()=>{const resize=()=>setSupported(innerWidth>=1280);window.addEventListener('resize',resize);return()=>window.removeEventListener('resize',resize)},[]);useEffect(()=>{if(!import.meta.env.DEV)return;const hash=()=>setDebugStage(getDebugFinalStage(location.hash));window.addEventListener('hashchange',hash);return()=>window.removeEventListener('hashchange',hash)},[]);if(!supported)return <main className="desktop-required"><p>PROJECT <span>//</span> LATTICE</p><h1>DESKTOP EXPERIENCE</h1><span>1280PX+ DISPLAY REQUIRED</span></main>;return entry.active||debugStage?<Suspense fallback={<main style={{position:'fixed',inset:0,background:'#050a10'}}/>}><FinalPhase key={`${entry.run}-${debugStage??entry.initialStage}`} initialStage={debugStage??entry.initialStage}/></Suspense>:<ExperienceDirector/>}createRoot(document.getElementById('root')!).render(<DesktopGate/>);
