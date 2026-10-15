@@ -29,10 +29,10 @@ export function createPortalArt(scene,{mesh,box,materials,rand,mistTexture}){
     box(w,w*.375,.11,mat,x,y,z,root);
     return mat;
   }
-  sign('TRANSIT','SAN FRANSOKYO  /  14', '#81c7dc',-12,6.8,-17.8,3.3);
+  const transit=sign('TRANSIT','SAN FRANSOKYO  /  14', '#81c7dc',-12,6.8,-17.8,3.3);
   const shop=sign('ラーメン','NOODLES • OPEN LATE','#e5ad67',-13.3,2.5,-17.8,2.5);
   const warm=new THREE.PointLight('#ffb96c',7,9,1.7);warm.position.set(-12.3,2.5,-16.8);root.add(warm);
-  sign('海岸通り','COAST AVENUE','#ad5360',17,9,-25,2.6);
+  const coast=sign('海岸通り','COAST AVENUE','#ad5360',17,9,-25,2.6);
   // A surviving amber signal on a broken roadside mast.
   box(.09,3.9,.09,materials.metal,5.2,1.8,-20,root);
   box(.38,1,.25,materials.dark,5.2,3.3,-20,root);
@@ -50,5 +50,18 @@ export function createPortalArt(scene,{mesh,box,materials,rand,mistTexture}){
     const patch=mesh(new THREE.CircleGeometry(rand(.35,.8),9),new THREE.MeshStandardMaterial({color:'#455264',roughness:.48,metalness:.12,transparent:true,opacity:.16,depthWrite:false,polygonOffset:true,polygonOffsetFactor:-1}),rand(-4,4),-.142,rand(-20,2),root);
     patch.rotation.x=-Math.PI/2;patch.scale.y=rand(1,2.8);patch.castShadow=false;
   }
-  return {animatedRoots:[root],update(t){pulses.forEach((p,i)=>{const wave=.94+.06*Math.sin(t*.18+i*2);p.light.intensity=p.power*wave;p.fringe.opacity=.12*wave;p.mist.material.opacity=.2*wave;});shop.emissiveIntensity=1.15+.12*Math.sin(t*.71)*Math.sin(t*1.31);warm.intensity=6.5+.3*Math.sin(t*.71);root.traverse(o=>{if(o.material?.uniforms?.uTime)o.material.uniforms.uTime.value=t;});}};
+  const shafts=[];root.traverse(o=>{if(o.material?.uniforms?.uTime)shafts.push(o.material);});
+  // Impacts make the surviving signs stutter; a hard enough hit kills the amber signal for good.
+  let fault=0,amberAlive=1;
+  return {animatedRoots:[root],
+    flicker(power){fault=Math.min(1.4,fault+power*1.1);if(power>.9)amberAlive=0;},
+    update(t,dt=.016){
+      fault=Math.max(0,fault-dt*.7);
+      const stutter=fault>0?(Math.sin(t*53)*Math.sin(t*31.7)>.1-fault*.4?1:.08):1;
+      pulses.forEach((p,i)=>{const wave=.94+.06*Math.sin(t*.18+i*2);p.light.intensity=p.power*wave*(1+fault*.6);p.fringe.opacity=.12*wave*(1+fault);p.mist.material.opacity=.2*wave;});
+      shop.emissiveIntensity=(1.15+.12*Math.sin(t*.71)*Math.sin(t*1.31))*stutter;warm.intensity=(6.5+.3*Math.sin(t*.71))*stutter;
+      transit.emissiveIntensity=1.35*(fault>.2?(Math.sin(t*41+1)>0?1:.1):1);coast.emissiveIntensity=1.35*(fault>.35?.05:1);
+      amber.emissiveIntensity=THREE.MathUtils.damp(amber.emissiveIntensity,2.4*amberAlive*stutter,6,dt);
+      shafts.forEach(m=>{m.uniforms.uTime.value=t;});
+    }};
 }

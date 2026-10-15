@@ -6,6 +6,7 @@ import { PhaseTwoDirector, type EntryStage, type Stage } from './model';
 import { PhaseTwoRuntime } from './PhaseTwoRuntime';
 import { PhaseTwoAudio } from './PhaseTwoAudio';
 import { enterFracturePhase } from './entry';
+import { enterFinalPhase } from '../scenes/final/entry';
 import './phase-two.css';
 
 const DevPanel = import.meta.env.DEV ? lazy(() => import('./PhaseTwoDebug')) : null;
@@ -45,7 +46,11 @@ export function PhaseTwoExperience({ entry }: { entry: EntryStage }) {
     <div className="p2-subtitle" role="status" aria-live="polite">{snapshot.caption && <p key={snapshot.caption}><small>HIRO</small>{snapshot.caption}</p>}</div><div className="p2-telemetry" key={snapshot.message} aria-live="polite">{snapshot.message}</div>
     {snapshot.stage === 'descent' && <div className="p2-requirement"><span>MODEL INCOMPLETE</span><small>HIGH-ENERGY DISPLACEMENT REQUIRED</small></div>}
     {snapshot.action && <button className="p2-action" onClick={() => director.act()} onPointerDown={() => { director.recording = true; }} onPointerUp={() => { director.recording = false; }} onPointerLeave={() => { director.recording = false; }}>{snapshot.action}</button>}
-    {snapshot.stage === 'build' && <span className="p2-rotate">Q / R ROTATE <i>SCROLL TO TURN</i></span>}{snapshot.stage === 'ready' && <button className="p2-replay" onClick={enterFracturePhase}>REPLAY PHASE II <span>↻</span></button>}
+    {snapshot.stage === 'build' && <span className="p2-rotate">Q / R ROTATE <i>SCROLL TO TURN</i></span>}
+    {snapshot.stage === 'ready' && <>
+      <button className="p2-action" onClick={enterFinalPhase}>CONTINUE // MAXIMUM ATTACK</button>
+      <button className="p2-replay" onClick={enterFracturePhase}>REPLAY PHASE II <span>↻</span></button>
+    </>}
     {error && <div className="p2-error"><p>{error}</p><button onClick={() => location.reload()}>RECONNECT</button></div>}
     <p className="sr-only">Desktop experience. Point at the stable line to scan, or press E. Assemble three physical components by dragging them together, or press E for magnetic assistance. In Falling City press W or scroll to move forward. Focus on the attack scar or hold E to record it, then press E to follow it. The final scene ends with Baymax preparing his maximum attack.</p>
     {DevPanel && <Suspense fallback={null}><DevPanel director={director} /></Suspense>}

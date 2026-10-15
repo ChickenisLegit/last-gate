@@ -1,4 +1,4 @@
-﻿import { MathUtils, PerspectiveCamera, Scene, Vector2, WebGLRenderer } from 'three';
+import { MathUtils, type Line, type Material, type Mesh, type Object3D, PerspectiveCamera, type Points, Scene, type Sprite, Vector2, WebGLRenderer } from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
@@ -8,73 +8,80 @@ import { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js';
 import { GTAOPass } from 'three/addons/postprocessing/GTAOPass.js';
 import { SMAAPass } from 'three/addons/postprocessing/SMAAPass.js';
 import { reducedMotion } from '../config/experience';
-import type { Quality } from '../systems/RenderQuality';
+import { cinematicSignals } from './CinematicSignals';
+import { useQuality, type QualityPreset } from '../performance/Quality';
 
 export class CinematicPost {
   readonly composer:EffectComposer;
-  private bokeh?:BokehPass;
-  private grade?:ShaderPass;
-  private bloom?:UnrealBloomPass;
-  private ao?:GTAOPass;
-  private smaa?:SMAAPass;
-  private width:number;
-  private height:number;
-  private elapsed=0;
-  private stage=0;
-  private quality:Quality='HIGH';
-
-  constructor(private gl:WebGLRenderer,private scene:Scene,private camera:PerspectiveCamera){
-    this.width=gl.domElement.clientWidth;this.height=gl.domElement.clientHeight;
+  private bokeh:BokehPass;
+  private grade:ShaderPass;
+  private bloom:UnrealBloomPass;
+  private ao:GTAOPass;
+  private width=1920;private height=1080;
+  private preset:QualityPreset=useQuality.getState().preset;
+  private unsubscribe:()=>void;
+  private dpr=0;
+  constructor(private gl:WebGLRenderer,scene:Scene,camera:PerspectiveCamera){
     this.composer=new EffectComposer(gl);
     this.composer.addPass(new RenderPass(scene,camera));
-    this.composer.addPass(new OutputPass());
+    this.ao=new GTAOPass(scene,camera,960,540);this.ao.blendIntensity=.38;
+    this.ao.updateGtaoMaterial({radius:.38,thickness:.12,distanceExponent:1.5,samples:12});
+    this.ao.updatePdMaterial({radius:5,samples:8});this.composer.addPass(this.ao);
+    this.bokeh=new BokehPass(scene,camera,{focus:3,aperture:.0012,maxblur:.018});this.composer.addPass(this.bokeh);
+    // AO normals and DOF depth come only from opaque surfaces. Sprites, glows, tears and other
+    // transparent layers would otherwise stamp flat squares into both buffers.
+    const cache:Object3D[]=[];
+    const hide=()=>{scene.traverse(o=>{const m=(o as Mesh).material as Material|undefined;
+      if(o.visible&&((o as Sprite).isSprite||(o as Points).isPoints||(o as Line).isLine||(m&&!Array.isArray(m)&&m.transparent))){o.visible=false;cache.push(o);}});};
+    const restore=()=>{cache.forEach(o=>{o.visible=true;});cache.length=0;};
+    const ao=this.ao as unknown as {_overrideVisibility:()=>void;_restoreVisibility:()=>void};ao._overrideVisibility=hide;ao._restoreVisibility=restore;
+    const bokehRender=this.bokeh.render.bind(this.bokeh);
+    this.bokeh.render=(...args:Parameters<BokehPass['render']>)=>{hide();bokehRender(...args);restore();};
+    this.bloom=new UnrealBloomPass(new Vector2(1920,1080),.18,.55,1.65);this.composer.addPass(this.bloom);
+    this.grade=new ShaderPass({uniforms:{tDiffuse:{value:null},instability:{value:0},uWarp:{value:0},uCenter:{value:new Vector2(.5,.5)},uTime:{value:0},uFlash:{value:0},uWhite:{value:0},uRed:{value:0},uCyan:{value:0},uChroma:{value:0},uAspect:{value:16/9}},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',fragmentShader:`uniform sampler2D tDiffuse;uniform float instability;uniform float uWarp;uniform vec2 uCenter;uniform float uTime;uniform float uFlash;uniform float uWhite;uniform float uRed;uniform float uCyan;uniform float uChroma;uniform float uAspect;varying vec2 vUv;
+      void main(){
+        vec2 uv=vUv;
+        // Shockwave lens: a single expanding ring of refraction around the impact, used only on hits.
+        vec2 q=(uv-uCenter)*vec2(uAspect,1.);float r=length(q);float front=(1.-uWarp)*1.25;
+        float ring=exp(-pow((r-front)*9.,2.))*uWarp;uv-=normalize(q+1e-4)/vec2(uAspect,1.)*ring*.035;
+        vec2 d=uv-.5;float ca=instability+uChroma*.012+ring*.02;vec2 offset=d*dot(d,d)*ca*4.;
+        vec3 c=texture2D(tDiffuse,uv).rgb;c.r=texture2D(tDiffuse,uv+offset).r;c.b=texture2D(tDiffuse,uv-offset).b;
+        float lum=dot(c,vec3(.299,.587,.114));
+        // Red intrudes from the edges inward; cyan floods from the fracture.
+        float edge=smoothstep(.25,.85,length(d*vec2(1.2,1.)));
+        c=mix(c,c*vec3(1.18,.84,.82)+vec3(.035,0.,0.)*lum,uRed*(.35+edge*.65));
+        c=mix(c,c*vec3(.86,1.04,1.16)+vec3(0.,.02,.04),uCyan);
+        c+=vec3(1.,.93,.88)*uFlash*.55;
+        c=mix(c,vec3(.93,.98,1.),uWhite);
+        gl_FragColor=vec4(max(c,0.),1.);}`});this.composer.addPass(this.grade);this.composer.addPass(new SMAAPass());this.composer.addPass(new OutputPass());
+    // Quality presets (performance/Quality) own resolution-dependent cost; FrameGovernor switches them.
+    this.unsubscribe=useQuality.subscribe(s=>this.applyQuality(s.preset));this.applyQuality(this.preset);
   }
-  setQuality(level:Quality){
-    this.quality=level;
-    this.composer.setPixelRatio(level==='LOW'?.75:level==='MEDIUM'?1:1.25);
-    if(this.ao){this.ao.enabled=level==='HIGH';this.ao.updateGtaoMaterial({samples:level==='HIGH'?12:8});}
-    if(this.bloom){this.bloom.enabled=level!=='LOW';this.bloom.strength=level==='HIGH'?.18:.09;}
-    if(this.smaa)this.smaa.enabled=level!=='LOW';
+  applyQuality(preset:QualityPreset){
+    this.preset=preset;
+    this.ao.updateGtaoMaterial({samples:preset.aoSamples});this.bloom.strength=.18*preset.bloom;
     this.resize(this.width,this.height);
   }
-  resize(width:number,height:number){
-    this.width=width;this.height=height;
-    this.composer.setSize(width,height);
-    this.ao?.setSize(Math.ceil(width*.5),Math.ceil(height*.5));
-  }
-  // Allocate and warm one effect at a time, after the model is visible.
-  private addEffect(){
-    this.stage++;
-    if(this.quality==='LOW')return;
-    let pass;
-    if(this.stage===1&&this.quality==='HIGH'){
-      this.ao=new GTAOPass(this.scene,this.camera,this.width*.5,this.height*.5);
-      this.ao.blendIntensity=.38;
-      this.ao.updateGtaoMaterial({radius:.38,thickness:.12,distanceExponent:1.5,samples:12});
-      this.ao.updatePdMaterial({radius:5,samples:8});pass=this.ao;
-    }else if(this.stage===2){
-      this.bokeh=new BokehPass(this.scene,this.camera,{focus:3,aperture:.0012,maxblur:.018});pass=this.bokeh;
-    }else if(this.stage===3){
-      this.bloom=new UnrealBloomPass(new Vector2(this.width,this.height),this.quality==='HIGH'?.18:.09,.55,1.65);pass=this.bloom;
-    }else if(this.stage===4){
-      this.grade=new ShaderPass({uniforms:{tDiffuse:{value:null},instability:{value:0}},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',fragmentShader:`uniform sampler2D tDiffuse;uniform float instability;varying vec2 vUv;void main(){vec2 d=vUv-.5;vec2 offset=d*dot(d,d)*instability;vec3 c=texture2D(tDiffuse,vUv).rgb;c.r=texture2D(tDiffuse,vUv+offset).r;c.b=texture2D(tDiffuse,vUv-offset).b;gl_FragColor=vec4(max(c,0.),1.);}`});pass=this.grade;
-    }else if(this.stage===5){this.smaa=new SMAAPass();pass=this.smaa;}
-    if(pass){this.composer.insertPass(pass,this.composer.passes.length-1);this.resize(this.width,this.height);}
-  }
+  resize(width:number,height:number){this.width=width;this.height=height;this.grade.uniforms.uAspect.value=width/Math.max(1,height);this.composer.setSize(width,height);const scale=this.preset.aoScale;this.ao.setSize(Math.ceil(width*scale),Math.ceil(height*scale));}
+  /** Sequence grade, written each frame by the scene. */
+  fx={warp:0,center:new Vector2(.5,.5),flash:0,white:0,red:0,cyan:0,chroma:0,aperture:-1,time:0};
   render(dt:number,wake:number,progress:number,focus:number){
-    this.elapsed+=dt;
-    if(this.elapsed>.35&&this.stage<5){this.elapsed=0;this.addEffect();}
+    const dpr=this.gl.getPixelRatio();if(dpr!==this.dpr){this.dpr=dpr;this.composer.setPixelRatio(dpr);this.resize(this.width,this.height);}
     const recovering=!reducedMotion&&wake<1;
-    if(this.bokeh){
-      this.bokeh.enabled=this.quality!=='LOW'&&(recovering||progress>.48);
-      const uniforms=this.bokeh.uniforms as Record<string,{value:number}>;
-      uniforms.focus.value=recovering?MathUtils.lerp(2.8,focus,MathUtils.smoothstep(wake,.55,1)):focus;
-      uniforms.aperture.value=recovering?MathUtils.lerp(.0013,.000045,wake):MathUtils.lerp(.000025,.00013,MathUtils.smoothstep(progress,.48,1));
-      uniforms.maxblur.value=recovering?.018:.006;
-    }
-    if(this.grade)this.grade.uniforms.instability.value=recovering?(1-wake)*.003:0;
-    this.gl.toneMappingExposure=recovering?MathUtils.lerp(.74,1.08,wake):1.08;
+    const signal=cinematicSignals;
+    this.bokeh.enabled=this.preset.dof&&(recovering||progress>.48||signal.blur>.01);
+    const uniforms=this.bokeh.uniforms as Record<string,{value:number}>;
+    uniforms.focus.value=recovering?MathUtils.lerp(2.8,focus,MathUtils.smoothstep(wake,.55,1)):focus;
+    uniforms.aperture.value=recovering?MathUtils.lerp(.0013,.000045,wake):MathUtils.lerp(.000025,.00013,MathUtils.smoothstep(progress,.48,1));
+    uniforms.maxblur.value=(recovering?.018:.006)+signal.blur*.012;uniforms.aperture.value+=signal.blur*.0006;
+    this.grade.uniforms.instability.value=(recovering?(1-wake)*.003:0)+signal.instability;
+    const g=this.grade.uniforms,fx=this.fx;
+    g.uWarp.value=fx.warp;g.uCenter.value.copy(fx.center);g.uFlash.value=fx.flash;g.uWhite.value=fx.white;g.uRed.value=fx.red;g.uCyan.value=fx.cyan;g.uChroma.value=fx.chroma;g.uTime.value=fx.time;
+    // Shell beats isolate the subject with a shallower field; the chase opens it back up.
+    if(fx.aperture>=0&&!recovering){this.bokeh.enabled=this.preset.dof&&fx.aperture>0;uniforms.aperture.value=fx.aperture;uniforms.maxblur.value=.009;}
+    this.gl.toneMappingExposure=(recovering?MathUtils.lerp(.74,1.08,wake):1.08)+signal.exposure;
+    this.gl.domElement.dataset.quality=useQuality.getState().name;
     this.composer.render(dt);
   }
-  dispose(){for(const pass of this.composer.passes)pass.dispose?.();this.composer.dispose();}
+  dispose(){this.unsubscribe();for(const pass of this.composer.passes)pass.dispose?.();this.composer.dispose();}
 }

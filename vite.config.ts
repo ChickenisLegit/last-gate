@@ -1,2 +1,17 @@
 import { defineConfig } from 'vite';
-export default defineConfig({build:{rollupOptions:{output:{manualChunks(id){if(/node_modules[\\/]three[\\/]build[\\/]/.test(id))return 'three-core';if(/node_modules[\\/]@react-three[\\/]/.test(id))return 'react-three';if(/node_modules[\\/]gsap[\\/]/.test(id))return 'animation';if(/node_modules[\\/](react|react-dom|scheduler)[\\/]/.test(id))return 'react';}}}}});
+
+// Production hardening: no debug logging or debugger statements ship, three.js is split
+// into its own long-cached chunk, and dev-only modules are tree-shaken by import.meta.env.
+export default defineConfig(({ command }) => ({
+  esbuild: command === 'build' ? { drop: ['debugger'], pure: ['console.log', 'console.info', 'console.debug', 'console.trace'] } : {},
+  build: {
+    target: 'es2022',
+    sourcemap: false,
+    chunkSizeWarningLimit: 900,
+    rollupOptions: {
+      output: {
+        manualChunks: id => (id.includes('node_modules/three/') ? 'three' : id.includes('node_modules/') ? 'vendor' : undefined),
+      },
+    },
+  },
+}));
