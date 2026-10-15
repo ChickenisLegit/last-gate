@@ -21,6 +21,7 @@ try {
  if(await page.getByRole('textbox').inputValue()!=='Check the chip before proceeding.')throw Error('Notes lost');
  if(!await page.evaluate(()=>window.recoveryCanvas===document.querySelector('canvas')))throw Error('Viewport remounted');
  await page.getByRole('button',{name:'Overview',exact:true}).click();
+ if (await page.locator('.recovery-arrival').evaluate(node => getComputedStyle(node).opacity) !== '0') throw Error('Arrival cover blocks reduced-motion viewport');
  if (process.env.CHECK_SCREENSHOT) {
    await page.waitForTimeout(2500);
    await page.screenshot({path:process.env.CHECK_SCREENSHOT});
