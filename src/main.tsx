@@ -1,8 +1,5 @@
 import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { usePhaseTwoEntry } from './phase2/entry';
-import { PhaseTwoHost } from './phase2/PhaseTwoHost';
-import { enterRecovery } from './recovery/state';
 
 import { useSceneState } from './state/SceneStateManager';
 import { Failure } from './ui/Failure';
@@ -33,24 +30,11 @@ class AppBoundary extends Component<{ children: ReactNode }, { error: boolean }>
 
 function DesktopGate() {
   const [supported, setSupported] = useState(innerWidth >= 1280);
-  const phase = useSceneState(state => state.phase);
-  const phaseTwoEntry = usePhaseTwoEntry();
 
   useEffect(() => {
     const resize = () => setSupported(innerWidth >= 1280);
     window.addEventListener('resize', resize);
     return () => window.removeEventListener('resize', resize);
-  }, []);
-
-  useEffect(() => {
-    if (phase !== 'handoff') return;
-    const timer = window.setTimeout(enterRecovery, 6500);
-    return () => window.clearTimeout(timer);
-  }, [phase]);
-
-  // Dev shortcut: open the Baymax recovery phase directly, mirroring ?phase2=.
-  useEffect(() => {
-    if (import.meta.env.DEV && new URLSearchParams(location.search).get('recovery') === '1') enterRecovery();
   }, []);
 
   useEffect(() => {
@@ -60,14 +44,9 @@ function DesktopGate() {
       if ((event.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable="true"]')) return;
       event.preventDefault();
 
-      if (phaseTwoEntry.active) return;
-
+      // Phase 1 is the whole of this branch: the handoff card is where it ends.
       const current = useSceneState.getState();
-      if (current.phase === 'loading') return;
-      if (current.phase === 'handoff') {
-        enterRecovery();
-        return;
-      }
+      if (current.phase === 'loading' || current.phase === 'handoff') return;
       const redWakePhases = ['booting', 'diagnostic', 'corrupting', 'threat', 'ignition', 'chase', 'fracture', 'pulled'];
       if (redWakePhases.includes(current.phase)) {
         useSceneState.setState({ chapter: 'THE_FRACTURE', phase: 'handoff', subtitle: '' });
@@ -77,7 +56,7 @@ function DesktopGate() {
     };
     window.addEventListener('keydown', skipPhase);
     return () => window.removeEventListener('keydown', skipPhase);
-  }, [phaseTwoEntry.active]);
+  }, []);
 
   if (!supported) {
     return <main className="desktop-required"><p>LAST GATE</p><h1>DESKTOP EXPERIENCE</h1><span>1280PX+ DISPLAY REQUIRED</span></main>;
@@ -85,7 +64,7 @@ function DesktopGate() {
 
   return <AppBoundary>
     <Suspense fallback={<main className="boot" role="status">LOADING EXPERIENCE…</main>}>
-      <PhaseTwoHost><Experience /></PhaseTwoHost>
+      <Experience />
     </Suspense>
   </AppBoundary>;
 }

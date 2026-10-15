@@ -9,28 +9,41 @@ Requires Node.js 20.19+ or 22.12+. Run `npm install`, then `npm run dev`, and op
 ## Controls
 
 - Awakening starts automatically. Escape or **Skip awakening** skips the blink sequence.
-- Move the pointer to look around slightly.
+- Move the pointer to look around; how far Hiro can turn depends on the moment. On the approach, A / D or the left and right arrows step sideways.
 - Scroll, hold Space / W / Arrow Up, or use the subtle move closer control to approach Baymax.
 - Click Baymax, select the response marker, or press E to check for a response.
 - Press and hold (mouse, or E / Space / Enter) on the chip to pick it up, and on the chest seam to release the access bay.
-- Move the pointer to guide the chip toward the keyed socket; it aligns magnetically and seats itself. Click once it is close, or hold E to let the socket draw it in.
+- Move the pointer to guide the chip toward the keyed socket; it aligns magnetically and seats itself. Click once it is close, or hold E to let the socket draw it in. While handling the chip, scroll or press + / − to zoom.
 - During the attack Hiro keeps running on his own. Hold the mouse, Space, W or Arrow Up, or scroll, to sprint.
 - Enable original synthesized ambience through the upper-right sound control. Audio starts only after a user gesture.
 - Press R, or select **Replay** on the chapter card, to restart.
 
 The sequence respects reduced motion. Keyboard operation, live captions, and asset/WebGL failure messages are included. A small MOVE // SCROLL hint appears only after inactivity. The first wheel input produces a small teaching step.
 
+## Branches
+
+Each phase lives on its own branch, and each branch builds on the one before it, so a phase's code is only ever added by its own branch:
+
+| Branch | Adds | Plays |
+|---|---|---|
+| `main` | Phase 1: awakening, the shell, the chip, RED_WAKE, the fracture corridor | Phase 1 |
+| `phase2` | Phase 2: Baymax recovery (harbour street, discovery, repair workspace, ending) | Phases 1–2 |
+| `phase3` | Phase 3: the final sequence (Max Attack → vector capture → exit vector → escape → home → epilogue) | Phases 1–3 |
+| `phase4` | Phase 4: the north service district power limiter | Phases 1–4 |
+
+Fixes to a phase go on that phase's branch; rebase the later branches onto it afterwards.
+
 ## Chapter flow
 
-The Phase 1 opening runs through RED_WAKE and the fracture-corridor handoff. Once its 6.5-second handoff transition completes, the experience enters BAYMAX_RECOVERY directly: the damaged harbour street shown in Phase 2, with Baymax lying ahead. Move closer to find him, then approach Baymax to open the engineering workspace. Overview / outer-shell / chest-access inspection views and temporary field notes are available; repairs and later missions are not implemented.
+This branch is Phase 1 only. The opening runs through RED_WAKE and the fracture corridor and ends on the PHASE I handoff card, which offers a replay. Phase 2 starts from that handoff on the `phase2` branch.
 
-The old build puzzle, Falling City, Null Chamber and final-escape sequence have been removed from the source entirely. Development supports `?phase2=fracture`, `?phase2=afterimage` and `?recovery=1` for direct scene previews. Production exposes no chapter shortcuts.
+In development, **Ctrl+M** skips ahead: to RED_WAKE, then to the handoff card.
 
 ## Architecture
 
-React, TypeScript, Vite, Three.js, React Three Fiber, Zustand, and GSAP. One Canvas and one experience controller coordinate BOOT → AWAKE → THE_SHELL → RED_WAKE → THE_FRACTURE, then `PhaseTwoHost` mounts BAYMAX_RECOVERY when the handoff completes. The phase graph lives in `SceneStateManager`; authored beat lengths, hold time and diagnostic lines live in `config/shell.ts`.
+React, TypeScript, Vite, Three.js, React Three Fiber, Zustand, and GSAP. One Canvas and one experience controller coordinate BOOT → AWAKE → THE_SHELL → RED_WAKE → THE_FRACTURE. The phase graph lives in `SceneStateManager`; authored beat lengths, hold time and diagnostic lines live in `config/shell.ts`.
 
-- **SequenceDirector** is the shared per-frame state: hold progress, chase progress along an authored spline, the attack schedule (charge, discharge, impact, tear), camera impulses, and grade signals. Systems subscribe to its events; the completed handoff routes directly to BAYMAX_RECOVERY.
+- **SequenceDirector** is the shared per-frame state: hold progress, chase progress along an authored spline, the attack schedule (charge, discharge, impact, tear), camera impulses, and grade signals. Systems subscribe to its events; nothing is triggered from React.
 - **CameraDirector** exclusively owns the camera. Every phase after the approach is an authored shot that cross-blends from wherever the previous shot left the camera; shake, shoves and FOV punches come only from sequence impulses.
 - **BaymaxController** articulates the shell (shoulder-hinged arms, head tracking, inflation, thruster) and carries corruption through eyes, armour emissive, chest seam and posture rather than twitching.
 - **ChestAccess** builds the medical bay: an iris of three leaves, a real cavity opened with a depth mask, and a keyed dock whose outline repeats the chip's. **RedChip** and **ChipController** own the chip from asphalt to socket, including magnetic guidance.
@@ -38,7 +51,7 @@ React, TypeScript, Vite, Three.js, React Three Fiber, Zustand, and GSAP. One Can
 - **AudioDirector** is fully synthesized: phase-mixed layers (air, breath, internal hum, corrupted hum, thrusters, corridor) and authored one-shots for each tactile and violent beat.
 - TransitionDirector owns the eye-opening timeline. AssetManager loads the shell GLB once. The environment uses instanced windows, repeated details and drifting debris; particles render in a single point cloud.
 
-The source is grouped into `src/experience`, `src/state`, `src/systems`, `src/characters`, `src/environment`, `src/transitions`, `src/audio`, `src/ui`, `src/config`, `src/phase2`, and `src/scenes/final`. `PhaseTwoHost` receives the corridor handoff, and the Null Chamber's continue control enters the final sequence. Shared transition and performance infrastructure lives in `src/core` and `src/performance`.
+The shared source is grouped into `src/experience`, `src/state`, `src/systems`, `src/characters`, `src/environment`, `src/transitions`, `src/audio`, `src/ui` and `src/config`, with transition and performance infrastructure in `src/core` and `src/performance`. Each later phase adds its own folders on its own branch: `src/phase2` and `src/recovery` (phase2), `src/scenes/final` (phase3), and `src/phase4` (phase4).
 
 ## Cinematic polish
 
