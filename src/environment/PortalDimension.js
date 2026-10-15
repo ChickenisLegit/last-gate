@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import {createGeometryKit} from '../systems/GeometryKit.js';
 import {createCinematicDetails} from './CinematicDetails.js';
 import {createPortalArt} from './PortalArt.js';
+import {patchWarpTree,warpUniforms} from '../effects/WorldWarp.js';
 export function createPortalDimension(){
 const scene=new THREE.Group();scene.name='PortalDimension';
 const {mesh,box,cylinderBetween,materials,random,rand}=createGeometryKit(scene);
@@ -14,7 +15,7 @@ for(let i=0;i<13;i++){gx.beginPath();let x=rand(0,512),y=rand(0,512);gx.moveTo(x
 const groundTexture=new THREE.CanvasTexture(groundCanvas);groundTexture.wrapS=groundTexture.wrapT=THREE.RepeatWrapping;groundTexture.repeat.set(3,12);groundTexture.colorSpace=THREE.SRGBColorSpace;
 groundTexture.anisotropy=8;
 const groundMat=new THREE.MeshStandardMaterial({map:groundTexture,bumpMap:groundTexture,bumpScale:.045,color:'#8b929e',roughness:.94,metalness:0,envMapIntensity:.025});
-box(10.8,.7,40,groundMat,0,-.5,-8);
+const road=mesh(new THREE.BoxGeometry(10.8,.7,40,36,1,120),groundMat,0,-.5,-8);road.name='road';
 box(10.5,1.2,39,materials.edge,.1,-1.3,-8.1);
 for(let i=0;i<22;i++){
   const side=i%2===0?-1:1,z=rand(-26,11),x=side*rand(4.6,6.8);
@@ -109,11 +110,6 @@ for(let i=0;i<46;i++){
   floating.push({obj:g,y:g.position.y,speed:rand(.15,.35),phase:rand(0,6.3),amp:rand(.1,.5)});
 }
 
-const chip=new THREE.Group();scene.add(chip);chip.position.set(4.05,-.108,-10.45);chip.rotation.set(-Math.PI/2,0,-.38);chip.scale.setScalar(1.25);
-box(.23,.32,.045,materials.red,0,0,0,chip);
-box(.14,.18,.008,new THREE.MeshStandardMaterial({color:'#3a1a18',metalness:.5,roughness:.4}),0,0,.026,chip);
-for(let i=0;i<4;i++)box(.023,.055,.025,new THREE.MeshStandardMaterial({color:'#cda46a',metalness:.8,roughness:.35}),-.08+i*.053,-.18,0,chip);
-const chipLight=new THREE.PointLight('#d94329',.72,2,1.7);chipLight.position.set(4.05,.17,-10.45);scene.add(chipLight);
 // A ruined wall gives the body a grounded resting place.
 box(4.2,1.6,.65,materials.concrete,3.05,.65,-13.05).rotation.z=.04;
 box(1.4,2.6,.7,materials.concrete,4.8,1.05,-13.1).rotation.z=-.15;
@@ -126,10 +122,10 @@ function softTexture(){
 const mistTexture=softTexture();
 const mistLayers=[];
 const skyMaterial=new THREE.ShaderMaterial({
-  uniforms:{uTime:{value:0}},depthWrite:false,
+  uniforms:{uTime:{value:0},uTear:{value:0}},depthWrite:false,
   vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
   fragmentShader:`
-    varying vec2 vUv; uniform float uTime;
+    varying vec2 vUv; uniform float uTime; uniform float uTear;
     float hash(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}
     float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
     float fbm(vec2 p){float n=0.;float a=.5;for(int i=0;i<5;i++){n+=noise(p)*a;p=p*2.05+vec2(3.1,7.2);a*=.5;}return n;}
@@ -142,6 +138,10 @@ const skyMaterial=new THREE.ShaderMaterial({
       float fold=pow(max(0.,n-.3),2.)*ring;
       col+=vec3(.29,.07,.31)*fold*1.8;
       col+=vec3(.06,.16,.22)*exp(-r*r*13.)*.65;
+      // Attacks open hairline fractures across the sky, cyan cores with violet bleed.
+      float crack=fbm(vUv*vec2(3.,5.)+vec2(7.,uTime*.01));float ridge=1.-smoothstep(0.,.012+uTear*.012,abs(crack-.5));
+      float reach=smoothstep(1.,.15,length(vUv-vec2(.52,.5))*(1.6-uTear));
+      col+=mix(vec3(.55,.9,1.),vec3(.62,.32,.95),n)*ridge*reach*uTear*1.4;
       gl_FragColor=vec4(col,1.);
     }`
 });
@@ -197,7 +197,7 @@ const details=createCinematicDetails(scene,{mesh,box,materials,rand,building,mis
 const art=createPortalArt(scene,{mesh,box,materials,rand,mistTexture});
 
 // Collapse repeated static windows and details into GPU instances.
-const animatedRoots=new Set([...floating.map(f=>f.obj),signGroup,...details.animatedRoots,...art.animatedRoots,chip]);
+const animatedRoots=new Set([...floating.map(f=>f.obj),signGroup,...details.animatedRoots,...art.animatedRoots]);
 scene.updateMatrixWorld(true);
 const instanceGroups=new Map();
 scene.traverse(obj=>{
@@ -215,30 +215,30 @@ for(const objects of instanceGroups.values()){
 
 
 let lastShadow=0;
-let chipPhase='ground',chipPhaseStart=0;
-const chipBase=chip.position.clone(),chipTarget=new THREE.Vector3(),chipQuat=new THREE.Quaternion();
-function ease(t){t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);}
-return {group:scene,chip,dispose(){const geos=new Set(),mats=new Set(),textures=new Set();scene.traverse(obj=>{if(obj.geometry)geos.add(obj.geometry);if(obj.material){for(const mat of Array.isArray(obj.material)?obj.material:[obj.material]){mats.add(mat);for(const value of Object.values(mat))if(value?.isTexture)textures.add(value);}}});geos.forEach(g=>g.dispose());textures.forEach(t=>t.dispose());mats.forEach(m=>m.dispose());},update(t,dt,reduced,progress=0,phase='approaching'){
- if(phase!==chipPhase){chipPhase=phase;chipPhaseStart=t;}
- if(!reduced){floating.forEach((f,i)=>{f.obj.position.y=f.y+Math.sin(t*f.speed+f.phase)*f.amp;f.obj.rotation.y+=dt*.006;f.obj.updateMatrix();debris.setMatrixAt(i,f.obj.matrix);});debris.instanceMatrix.needsUpdate=true;dust.rotation.y=t*.001;riftGroup.rotation.z=-.45+Math.sin(t*.04)*.015;skyMaterial.uniforms.uTime.value=t;}
+// Every lit material shares the warp patch; compiled once with the rest of the scene.
+patchWarpTree(scene);
+const mistBase=mistLayers.map(h=>h.sprite.position.clone());
+let dustSpin=1,dustKick=0,mistPush=0;const pushFrom=new THREE.Vector3();
+const keyOffset=key.position.clone().sub(key.target.position);
+return {group:scene,anomaly,anomalyLight,signs:art,
+ /** Impact response outside the warp shader: particles reverse, fog is shoved, signs fail. */
+ impulse(position,power){dustSpin=-1;dustKick=Math.min(1.5,dustKick+power);mistPush=Math.min(1,mistPush+power);pushFrom.copy(position);art.flicker(power);},
+ dispose(){const geos=new Set(),mats=new Set(),textures=new Set();scene.traverse(obj=>{if(obj.geometry)geos.add(obj.geometry);if(obj.material){for(const mat of Array.isArray(obj.material)?obj.material:[obj.material]){mats.add(mat);for(const value of Object.values(mat))if(value?.isTexture)textures.add(value);}}});geos.forEach(g=>g.dispose());textures.forEach(t=>t.dispose());mats.forEach(m=>m.dispose());},
+ /** @param {number} t @param {number} dt @param {boolean} reduced @param {number} [progress] @param {string} [phase] @param {any} [seq] @param {any} [focus] */
+ update(t,dt,reduced,progress=0,phase='approaching',seq=null,focus=null){
+ if(!reduced){floating.forEach((f,i)=>{f.obj.position.y=f.y+Math.sin(t*f.speed+f.phase)*f.amp;f.obj.rotation.y+=dt*.006;f.obj.updateMatrix();debris.setMatrixAt(i,f.obj.matrix);});debris.instanceMatrix.needsUpdate=true;riftGroup.rotation.z=-.45+Math.sin(t*.04)*.015;skyMaterial.uniforms.uTime.value=t;}
+ // Dust drifts one way; an impact briefly reverses it, then it recovers.
+ dustSpin=THREE.MathUtils.damp(dustSpin,1,.8,dt);dustKick=Math.max(0,dustKick-dt*.9);
+ if(!reduced){dust.rotation.y+=dt*.001*dustSpin+dustKick*dt*.012*dustSpin;dust.position.y=Math.sin(t*.7)*dustKick*.25;}
  details.update(t,dt,reduced,progress);
- art.update(reduced?0:t);
- if(!reduced){sign.rotation.z=-.08+Math.sin(t*.21)*.009;mistLayers.forEach((h,i)=>{h.sprite.position.x=h.x+Math.sin(t*.04+i)*.7;h.sprite.material.opacity=.12*(1-progress*.65);});anomaly.rotation.y=Math.sin(t*.07)*.012;anomaly.position.x=1.8+Math.sin(t*.035)*.035;}
- dust.material.opacity=.44*(1-progress*.72);
- const held=['chip-reaching','chip-held','panel-opening','socket-ready','inserting'].includes(phase);
- chip.visible=!['sealing','silence','booting','diagnostic','threat','corrupted'].includes(phase);
- if(held){
-   const u=ease((t-chipPhaseStart)/1.55);
-   if(phase==='chip-reaching'){chipTarget.set(3.05,.72,-10.45);chip.position.lerpVectors(chipBase,chipTarget,u);}
-   else if(phase==='chip-held'){chipTarget.set(3.02,1.14,-10.63);chip.position.lerp(chipTarget,.22);}
-   else if(phase==='panel-opening'){chipTarget.set(3.04,1.55,-10.94);chip.position.lerp(chipTarget,.16);}
-   else if(phase==='socket-ready'){chipTarget.set(3.08,1.78,-11.16);chip.position.lerp(chipTarget,.18);}
-   else {chipTarget.set(3.11,1.96,-11.29);chip.position.lerp(chipTarget,.18);}
-   chip.rotation.z=-.38+u*.38;chip.rotation.x=-Math.PI/2-u*.08;
- }
- const pulse=reduced?0:Math.pow(Math.max(0,Math.sin(t*.63)),12);
- chipLight.intensity=.58+pulse*.42;materials.red.emissiveIntensity=1.05+pulse*.45;
- if(t-lastShadow>.18){key.shadow.needsUpdate=true;lastShadow=t;}
+ art.update(reduced?0:t,dt);
+ mistPush=Math.max(0,mistPush-dt*.35);
+ if(!reduced){sign.rotation.z=-.08+Math.sin(t*.21)*.009;mistLayers.forEach((h,i)=>{const base=mistBase[i];const away=base.x-pushFrom.x;h.sprite.position.x=base.x+Math.sin(t*.04+i)*.7+Math.sign(away||1)*mistPush*2.5;h.sprite.position.y=base.y+mistPush*.6;h.sprite.material.opacity=.12*(1-progress*.65)*(1+mistPush*.8);});anomaly.rotation.y=Math.sin(t*.07)*.012;anomaly.position.x=1.8+Math.sin(t*.035)*.035;}
+ dust.material.opacity=.44*(1-progress*.72)*(1+dustKick*.4);
+ const tear=seq?seq.tear:0;skyMaterial.uniforms.uTear.value=tear;warpUniforms.uWarpTime.value=t;
+ // The key light travels with the action so the chase keeps its shadows.
+ if(focus){key.target.position.set(focus.x*.5,0,focus.z-3);key.position.copy(key.target.position).add(keyOffset);}
+ const busy=['ignition','chase','fracture','pulled'].includes(phase);
+ if(t-lastShadow>(busy?.05:.18)){key.shadow.needsUpdate=true;lastShadow=t;}
 }};
 }
-
