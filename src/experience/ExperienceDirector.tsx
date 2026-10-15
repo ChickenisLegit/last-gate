@@ -12,6 +12,9 @@ import { TransitionDirector } from '../transitions/TransitionDirector';
 import { useSceneState } from '../state/SceneStateManager';
 import { reducedMotion } from '../config/experience';
 import { SHELL_ACTIONS, SHELL_DURATIONS } from '../config/shell';
+import { RuntimeBridge } from '../core/RuntimeBridge';
+import { ProductionLayer } from '../core/ProductionLayer';
+import { useQuality } from '../performance/Quality';
 
 class RenderBoundary extends Component<{children:ReactNode},{error:boolean}> {
   state={error:false};
@@ -78,6 +81,7 @@ export function ExperienceDirector(){
   const aperture=useRef<SVGPathElement>(null),marker=useRef<HTMLButtonElement>(null);
   const [idleHint,setIdleHint]=useState(false);
   const firstScroll=useRef(true),scrollGuard=useRef(0),idleTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
+  const dpr=useQuality(s=>s.dpr);
   const camera=useMemo(()=>new CameraDirector(),[]),transitions=useMemo(()=>new TransitionDirector(),[]),audio=useMemo(()=>new AudioDirector(),[]);
 
   useEffect(()=>{
@@ -154,8 +158,9 @@ export function ExperienceDirector(){
   };
   return <main className={`experience phase-${phase}`} aria-label="PROJECT LATTICE: Hiro’s vision inside the portal dimension">
     <div className="world">
-      <RenderBoundary><Canvas camera={{fov:49,near:.1,far:280,position:[-1.4,.72,7]}} dpr={1.25} shadows gl={{antialias:true,powerPreference:'high-performance',toneMapping:ACESFilmicToneMapping,outputColorSpace:SRGBColorSpace}} onCreated={({gl})=>{gl.toneMappingExposure=1.12;}} fallback={<span aria-hidden="true"/>}>
+      <RenderBoundary><Canvas camera={{fov:49,near:.1,far:280,position:[-1.4,.72,7]}} dpr={dpr} shadows gl={{antialias:false,stencil:false,powerPreference:'high-performance',toneMapping:ACESFilmicToneMapping,outputColorSpace:SRGBColorSpace}} onCreated={({gl})=>{gl.toneMappingExposure=1.12;}} fallback={<span aria-hidden="true"/>}>
         <AwakeScene director={camera} marker={marker} audio={audio}/>
+        <RuntimeBridge/>
       </Canvas></RenderBoundary>
     </div>
     <div className="lens-vignette" aria-hidden="true"/><div className="film-grain" aria-hidden="true"/>
@@ -179,6 +184,7 @@ export function ExperienceDirector(){
     <div className="signature" aria-hidden="true">PROJECT <span>//</span> LATTICE <i>{chapter==='THE_SHELL'?'01':'00'}</i></div>
     {phase==='inspected'&&linkVisible&&<button className="replay" onClick={()=>{camera.resetPointer();useSceneState.getState().restart();}}>REPLAY OPENING <span>R ↶</span></button>}
     {error&&<div className="failure"><p>{error}</p><button onClick={()=>location.reload()}>RECONNECT ↗</button></div>}
+    <ProductionLayer/>
     <p className="sr-only">The opening starts automatically. Press Escape to skip awakening. Scroll, hold Space, W, or Arrow Up, or use the move closer button to approach Baymax. Select Baymax or press E to check for a response. Press R to replay. The red-chip activation is the next chapter.</p>
   </main>;
 }

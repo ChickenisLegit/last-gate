@@ -1,6 +1,7 @@
 import { MathUtils, PerspectiveCamera, Vector3 } from 'three';
 import { useSceneState } from '../state/SceneStateManager';
 import { reducedMotion } from '../config/experience';
+import { cameraRig } from './CameraRig';
 
 export class CameraDirector {
   private progress=0;
@@ -58,6 +59,7 @@ export class CameraDirector {
       this.focusDistance=camera.position.distanceTo(this.target);
     }else{this.shellPhase='';this.shellTime=0;}
     camera.rotateZ(reducedMotion?0:(1-wake)*-.09+Math.sin(this.time*.43)*.0012-this.velocity*.01);
+    cameraRig.apply(camera,dt); // global camera language: motivated shake + transition FOV kicks
     camera.updateProjectionMatrix();
     camera.updateMatrixWorld();
     this.visualProgress=p;this.wake=wake;

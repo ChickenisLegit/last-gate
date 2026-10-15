@@ -1,0 +1,87 @@
+// Master narrative state definition for the whole experience.
+// Every chapter of every phase branch maps onto exactly one of these states.
+// This file is pure data: no scene imports, no side effects, safe for every branch to read.
+
+export const EXPERIENCE_STATES = [
+  'BOOT', 'AWAKE', 'SHELL', 'CHIP', 'BOOT_FAILURE', 'RED_WAKE', 'FRACTURE',
+  'AFTERIMAGE', 'LATTICE', 'VECTOR_HUNT', 'NULL_CHAMBER', 'MAX_ATTACK',
+  'EXIT_VECTOR', 'FINAL_ESCAPE', 'HOME', 'EPILOGUE',
+] as const;
+export type ExperienceState = typeof EXPERIENCE_STATES[number];
+
+// Internal recovery points. Never rendered as navigation.
+export const CHECKPOINTS: readonly ExperienceState[] = [
+  'AWAKE', 'SHELL', 'RED_WAKE', 'FRACTURE', 'LATTICE', 'VECTOR_HUNT',
+  'NULL_CHAMBER', 'MAX_ATTACK', 'EXIT_VECTOR', 'HOME', 'EPILOGUE',
+];
+
+export type TransitionType =
+  | 'CUT' | 'BLINK' | 'RED_SCAN' | 'DEBRIS_OCCLUSION' | 'MICROBOT_SWARM' | 'DIMENSION_FOLD'
+  | 'PORTAL_OVEREXPOSURE' | 'FOG_PASS' | 'DEPTH_COLLAPSE' | 'CAMERA_OCCLUSION';
+
+export type CameraMode =
+  | 'RECOVERY' | 'EXPLORATION' | 'INTERACTION' | 'CHASE' | 'OBSERVATION' | 'WEIGHTLESS' | 'FINAL_RUN' | 'HOME';
+
+export type AudioMixName =
+  | 'SILENT' | 'AWAKE' | 'SHELL' | 'CHIP' | 'BOOT' | 'CORRUPTION' | 'CHASE' | 'FRACTURE'
+  | 'LATTICE' | 'VECTOR_HUNT' | 'NULL_CHAMBER' | 'MAX_ATTACK' | 'ESCAPE' | 'HOME' | 'EPILOGUE';
+
+export type StateProfile = {
+  camera: CameraMode;
+  mix: AudioMixName;
+  /** Default way INTO this state. Each is used once or twice across the arc, never everywhere. */
+  enterWith: TransitionType;
+  /** States whose assets should be warmed while this one plays. */
+  preload: ExperienceState[];
+};
+
+export const STATE_PROFILES: Record<ExperienceState, StateProfile> = {
+  BOOT:         { camera: 'RECOVERY',    mix: 'SILENT',       enterWith: 'CUT',                 preload: ['AWAKE'] },
+  AWAKE:        { camera: 'RECOVERY',    mix: 'AWAKE',        enterWith: 'BLINK',               preload: ['SHELL', 'CHIP'] },
+  SHELL:        { camera: 'EXPLORATION', mix: 'SHELL',        enterWith: 'CUT',                 preload: ['CHIP', 'BOOT_FAILURE'] },
+  CHIP:         { camera: 'INTERACTION', mix: 'CHIP',         enterWith: 'CUT',                 preload: ['RED_WAKE'] },
+  BOOT_FAILURE: { camera: 'OBSERVATION', mix: 'BOOT',         enterWith: 'CUT',                 preload: ['RED_WAKE'] },
+  RED_WAKE:     { camera: 'CHASE',       mix: 'CORRUPTION',   enterWith: 'RED_SCAN',            preload: ['FRACTURE'] },
+  FRACTURE:     { camera: 'OBSERVATION', mix: 'FRACTURE',     enterWith: 'DEBRIS_OCCLUSION',    preload: ['AFTERIMAGE', 'LATTICE'] },
+  AFTERIMAGE:   { camera: 'WEIGHTLESS',  mix: 'FRACTURE',     enterWith: 'DIMENSION_FOLD',      preload: ['LATTICE'] },
+  LATTICE:      { camera: 'EXPLORATION', mix: 'LATTICE',      enterWith: 'MICROBOT_SWARM',      preload: ['VECTOR_HUNT'] },
+  VECTOR_HUNT:  { camera: 'CHASE',       mix: 'VECTOR_HUNT',  enterWith: 'CAMERA_OCCLUSION',    preload: ['NULL_CHAMBER'] },
+  NULL_CHAMBER: { camera: 'WEIGHTLESS',  mix: 'NULL_CHAMBER', enterWith: 'DEPTH_COLLAPSE',      preload: ['MAX_ATTACK', 'EXIT_VECTOR'] },
+  MAX_ATTACK:   { camera: 'CHASE',       mix: 'MAX_ATTACK',   enterWith: 'RED_SCAN',            preload: ['EXIT_VECTOR'] },
+  EXIT_VECTOR:  { camera: 'FINAL_RUN',   mix: 'ESCAPE',       enterWith: 'FOG_PASS',            preload: ['FINAL_ESCAPE', 'HOME'] },
+  FINAL_ESCAPE: { camera: 'FINAL_RUN',   mix: 'ESCAPE',       enterWith: 'CAMERA_OCCLUSION',    preload: ['HOME'] },
+  HOME:         { camera: 'HOME',        mix: 'HOME',         enterWith: 'PORTAL_OVEREXPOSURE', preload: ['EPILOGUE'] },
+  EPILOGUE:     { camera: 'OBSERVATION', mix: 'EPILOGUE',     enterWith: 'BLINK',               preload: [] },
+};
+
+export const stateIndex = (state: ExperienceState) => EXPERIENCE_STATES.indexOf(state);
+export const isCheckpoint = (state: ExperienceState) => CHECKPOINTS.includes(state);
+
+export function nextCheckpoint(from: ExperienceState): ExperienceState | null {
+  const index = stateIndex(from);
+  return CHECKPOINTS.find(state => stateIndex(state) > index) ?? null;
+}
+export function checkpointFor(state: ExperienceState): ExperienceState {
+  const index = stateIndex(state);
+  let found: ExperienceState = 'AWAKE';
+  for (const checkpoint of CHECKPOINTS) if (stateIndex(checkpoint) <= index) found = checkpoint;
+  return found;
+}
+
+// Bridge from the existing chapter/phase store to master states.
+// Phase branches add their phases here (one line each) instead of touching the director.
+const PHASE_STATE: Record<string, ExperienceState> = {
+  loading: 'BOOT', awakening: 'AWAKE', approaching: 'AWAKE', discovery: 'SHELL', inspected: 'SHELL',
+  'chip-focus': 'CHIP', 'chip-reaching': 'CHIP', 'chip-held': 'CHIP', 'panel-opening': 'CHIP',
+  'socket-ready': 'CHIP', inserting: 'CHIP', sealing: 'CHIP',
+  silence: 'BOOT_FAILURE', booting: 'BOOT_FAILURE', diagnostic: 'BOOT_FAILURE',
+  threat: 'RED_WAKE', corrupted: 'RED_WAKE', ignition: 'RED_WAKE', chase: 'RED_WAKE',
+  fracture: 'FRACTURE', pulled: 'FRACTURE', handoff: 'FRACTURE',
+};
+const CHAPTER_STATE: Record<string, ExperienceState> = {
+  BOOT: 'BOOT', AWAKE: 'AWAKE', THE_SHELL: 'SHELL', RED_WAKE: 'RED_WAKE', THE_FRACTURE: 'FRACTURE',
+};
+export function registerPhaseStates(map: Record<string, ExperienceState>) { Object.assign(PHASE_STATE, map); }
+export function resolveLegacyState(chapter: string, phase: string): ExperienceState {
+  return PHASE_STATE[phase] ?? CHAPTER_STATE[chapter] ?? (EXPERIENCE_STATES.includes(chapter as ExperienceState) ? chapter as ExperienceState : 'BOOT');
+}

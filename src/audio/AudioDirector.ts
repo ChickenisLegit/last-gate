@@ -1,3 +1,5 @@
+import { audioEngine } from './AudioMix';
+
 export class AudioDirector {
   private ctx:AudioContext|null=null;
   private master:GainNode|null=null;
@@ -13,8 +15,9 @@ export class AudioDirector {
     this.master.gain.setTargetAtTime(enabled?.3:0,this.ctx.currentTime,.25);
   }
   private create(){
-    const ctx=new AudioContext();this.ctx=ctx;
-    this.master=ctx.createGain();this.master.gain.value=0;this.master.connect(ctx.destination);
+    // Shared context + mix bus (AudioMix): narrative snapshots, silence beats and cleanup apply here too.
+    const ctx=audioEngine.ensure();if(!ctx)throw new Error('Web Audio unavailable');this.ctx=ctx;
+    this.master=ctx.createGain();this.master.gain.value=0;this.master.connect(audioEngine.bus('LEGACY')!);
     const buffer=ctx.createBuffer(1,ctx.sampleRate*6,ctx.sampleRate),data=buffer.getChannelData(0);let last=0;
     for(let i=0;i<data.length;i++){last=(last+.025*(Math.random()*2-1))/1.025;data[i]=last*3.5;}
     const wind=ctx.createBufferSource();wind.buffer=buffer;wind.loop=true;
@@ -54,5 +57,5 @@ export class AudioDirector {
     const f=frequencies[kind];o.frequency.setValueAtTime(f,t);o.frequency.exponentialRampToValueAtTime(f*(kind==='lock'?.62:kind==='fault'?.45:1.18),t+(kind==='boot'?.8:.18));
     g.gain.setValueAtTime(.0001,t);g.gain.linearRampToValueAtTime(kind==='boot'?.018:.012,t+.018);g.gain.exponentialRampToValueAtTime(.0001,t+(kind==='boot'?1.1:.32));o.connect(g);g.connect(this.master);o.start();o.stop(t+(kind==='boot'?1.15:.36));
   }
-  dispose(){void this.ctx?.close();this.ctx=null;this.master=null;}
+  dispose(){this.master?.disconnect();this.ctx=null;this.master=null;}
 }
