@@ -22,18 +22,15 @@ The sequence respects reduced motion. Keyboard operation, live captions, and ass
 
 ## Chapter flow
 
-The experience is two phases:
+The Phase 1 opening runs through RED_WAKE and the fracture-corridor handoff. Once its 6.5-second handoff transition completes, the experience enters BAYMAX_RECOVERY directly: the damaged harbour street shown in Phase 2, with Baymax lying ahead. Move closer to find him, then approach Baymax to open the engineering workspace. Overview / outer-shell / chest-access inspection views and temporary field notes are available; repairs and later missions are not implemented.
 
-1. **RED_WAKE → Fracture → Afterimage.** The opening awakening, corruption, directed chase and fracture-corridor handoff flow into the Afterimage event. Focus the still line (or press E) to scan and store the trace.
-2. **Baymax recovery.** Following the stored trace opens a portal into BAYMAX_RECOVERY: a damaged harbour district in the same San Fransokyo, with Baymax lying on the street. Approach Baymax to open a DOM engineering workspace around the same 3D model. Overview / outer-shell / chest-access inspection views and temporary field notes are available; repairs and later missions are not implemented.
-
-The old build puzzle, Falling City, Null Chamber and final-escape sequence have been removed from the source entirely. Development supports only `?phase2=fracture` and `?phase2=afterimage`. Production exposes no chapter shortcuts.
+The old build puzzle, Falling City, Null Chamber and final-escape sequence have been removed from the source entirely. Development supports `?phase2=fracture`, `?phase2=afterimage` and `?recovery=1` for direct scene previews. Production exposes no chapter shortcuts.
 
 ## Architecture
 
-React, TypeScript, Vite, Three.js, React Three Fiber, Zustand, and GSAP. One Canvas and one experience controller coordinate BOOT → AWAKE → THE_SHELL → RED_WAKE → THE_FRACTURE. The phase graph lives in `SceneStateManager`; authored beat lengths, hold time and diagnostic lines live in `config/shell.ts`.
+React, TypeScript, Vite, Three.js, React Three Fiber, Zustand, and GSAP. One Canvas and one experience controller coordinate BOOT → AWAKE → THE_SHELL → RED_WAKE → THE_FRACTURE, then `PhaseTwoHost` mounts BAYMAX_RECOVERY when the handoff completes. The phase graph lives in `SceneStateManager`; authored beat lengths, hold time and diagnostic lines live in `config/shell.ts`.
 
-- **SequenceDirector** is the shared per-frame state: hold progress, chase progress along an authored spline, the attack schedule (charge, discharge, impact, tear), camera impulses, and grade signals. Systems subscribe to its events; nothing is triggered from React.
+- **SequenceDirector** is the shared per-frame state: hold progress, chase progress along an authored spline, the attack schedule (charge, discharge, impact, tear), camera impulses, and grade signals. Systems subscribe to its events; the completed handoff routes directly to BAYMAX_RECOVERY.
 - **CameraDirector** exclusively owns the camera. Every phase after the approach is an authored shot that cross-blends from wherever the previous shot left the camera; shake, shoves and FOV punches come only from sequence impulses.
 - **BaymaxController** articulates the shell (shoulder-hinged arms, head tracking, inflation, thruster) and carries corruption through eyes, armour emissive, chest seam and posture rather than twitching.
 - **ChestAccess** builds the medical bay: an iris of three leaves, a real cavity opened with a depth mask, and a keyed dock whose outline repeats the chip's. **RedChip** and **ChipController** own the chip from asphalt to socket, including magnetic guidance.
