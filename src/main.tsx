@@ -2,6 +2,7 @@ import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from '
 import { createRoot } from 'react-dom/client';
 import { enterFracturePhase, usePhaseTwoEntry } from './phase2/entry';
 import { PhaseTwoHost } from './phase2/PhaseTwoHost';
+import { enterRecovery } from './recovery/state';
 
 import { useSceneState } from './state/SceneStateManager';
 import { Failure } from './ui/Failure';
@@ -46,6 +47,11 @@ function DesktopGate() {
     const timer = window.setTimeout(enterFracturePhase, 6500);
     return () => window.clearTimeout(timer);
   }, [phase]);
+
+  // Dev shortcut: open the Baymax recovery phase directly, mirroring ?phase2=.
+  useEffect(() => {
+    if (import.meta.env.DEV && new URLSearchParams(location.search).get('recovery') === '1') enterRecovery();
+  }, []);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
