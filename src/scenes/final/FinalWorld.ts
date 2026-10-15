@@ -24,7 +24,7 @@ export class FinalWorld {
  private point:T.Mesh;private redPoint:T.Mesh;private initialPos=v();private look=v();
  white=0;distortion=0;selected=0;private lastStage='';
  constructor(readonly runtime:FinalRuntime,readonly scene:T.Scene,readonly camera:T.PerspectiveCamera){
-  this.root.name='PROJECT LATTICE / final phase';scene.add(this.root);scene.fog=this.fog;scene.background=this.voidColor;
+  this.root.name='LAST GATE / final phase';scene.add(this.root);scene.fog=this.fog;scene.background=this.voidColor;
   this.root.add(this.chamber,this.vectorGroup,this.baymax.group,this.portal.group,this.portal.home.group,this.redLight,this.portalLight,this.ambient,this.sun);
   this.sun.position.set(-16,38,12);this.portalLight.position.set(0,4,-21);
   this.anchorLight=new T.MeshBasicMaterial({color:'#a8efff',transparent:true,opacity:.8});

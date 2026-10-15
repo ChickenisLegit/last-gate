@@ -7,7 +7,7 @@ import '../ui/production.css';
 //  - presentation recovery + dev diagnostics, compiled in ONLY for dev builds or
 //    builds made with VITE_PRESENTATION=1. A normal production build contains none of it.
 
-const RECOVERY_ENABLED = import.meta.env.DEV || import.meta.env.VITE_PRESENTATION === '1';
+const RECOVERY_ENABLED = import.meta.env.DEV;
 const DevTools = RECOVERY_ENABLED ? lazy(() => import('../debug/DevTools')) : null;
 
 const CURSOR_IDLE_MS = 2200;

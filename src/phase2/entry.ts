@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import type { EntryStage } from './model';
 
 const devStage = import.meta.env.DEV ? new URLSearchParams(location.search).get('phase2') : null;
-const entries:EntryStage[] = ['fracture','afterimage','build','hunt','null'];
+const entries:EntryStage[] = ['fracture','afterimage'];
 const initial = entries.includes(devStage as EntryStage) ? devStage as EntryStage : null;
 
 /** The only Phase I -> Phase II integration call. No Phase I state is read or changed. */

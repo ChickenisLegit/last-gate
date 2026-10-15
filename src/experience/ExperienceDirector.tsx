@@ -281,7 +281,7 @@ export function ExperienceDirector(){
   };
   const action=SHELL_ACTIONS[phase];
   const diagnosticVisible=['diagnostic','corrupting','threat','ignition'].includes(phase);
-  return <main className={`experience phase-${phase}`} aria-label="PROJECT LATTICE: Hiro’s vision inside the portal dimension">
+  return <main className={`experience phase-${phase}`} aria-label="LAST GATE: Hiro’s vision inside the portal dimension">
     <div className="world">
       <RenderBoundary><Canvas camera={{fov:49,near:.05,far:280,position:[-1.4,.72,7]}} dpr={dpr} shadows gl={{antialias:false,stencil:false,powerPreference:'high-performance',toneMapping:ACESFilmicToneMapping,outputColorSpace:SRGBColorSpace}} onCreated={({gl})=>{gl.toneMappingExposure=1.12;}} fallback={<span aria-hidden="true"/>}>
         <AwakeScene director={camera} seq={seq} marker={marker} readout={readout} audio={audio}/>
@@ -317,12 +317,12 @@ export function ExperienceDirector(){
       {(phase==='threat'||phase==='ignition')&&<p className="threat-line"><span><DiagnosticLine text="PRIMARY THREAT" delay={1.65}/></span><i/><b><DiagnosticLine text="HIRO HAMADA" delay={2.05}/></b></p>}
     </div>
     {phase==='inspected'&&<div className={`failed-link ${linkVisible?'visible':''}`} aria-live="polite"><span className="fault-dot"/> BAYMAX <span>NO RESPONSE</span></div>}
-    <div className="signature" aria-hidden="true">PROJECT <span>//</span> LATTICE <i>{CHAPTER_MARK[chapter]}</i></div>
+    <div className="signature" aria-hidden="true">LAST GATE</div>
     {phase==='inspected'&&linkVisible&&<button className="replay" onClick={replayRun}>REPLAY OPENING <span>R ↶</span></button>}
     {phase==='handoff'&&<div className="handoff" role="status">
-      <p>PROJECT <span>//</span> LATTICE</p>
-      <h1><i>03</i>THE FRACTURE CORRIDOR</h1>
-      <small>SIGNAL <b>HIRO HAMADA</b> // PURSUIT CONTINUES DEEPER</small>
+      <p>LAST GATE</p>
+      <p>Hold on, Baymax.</p>
+      <small>SIGNAL <b>HIRO HAMADA</b></small>
       <button className="replay-inline" onClick={replayRun}>REPLAY FROM THE BEGINNING <span>R ↶</span></button>
     </div>}
     {error&&<div className="failure"><p>{error}</p><button onClick={()=>location.reload()}>RECONNECT ↗</button></div>}

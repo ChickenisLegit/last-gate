@@ -4,15 +4,14 @@
 
 export const EXPERIENCE_STATES = [
   'BOOT', 'AWAKE', 'SHELL', 'CHIP', 'BOOT_FAILURE', 'RED_WAKE', 'FRACTURE',
-  'AFTERIMAGE', 'LATTICE', 'VECTOR_HUNT', 'NULL_CHAMBER', 'MAX_ATTACK',
+  'AFTERIMAGE', 'BAYMAX_RECOVERY', 'LATTICE', 'VECTOR_HUNT', 'NULL_CHAMBER', 'MAX_ATTACK',
   'EXIT_VECTOR', 'FINAL_ESCAPE', 'HOME', 'EPILOGUE',
 ] as const;
 export type ExperienceState = typeof EXPERIENCE_STATES[number];
 
 // Internal recovery points. Never rendered as navigation.
 export const CHECKPOINTS: readonly ExperienceState[] = [
-  'AWAKE', 'SHELL', 'RED_WAKE', 'FRACTURE', 'LATTICE', 'VECTOR_HUNT',
-  'NULL_CHAMBER', 'MAX_ATTACK', 'EXIT_VECTOR', 'HOME', 'EPILOGUE',
+  'AWAKE', 'SHELL', 'RED_WAKE', 'FRACTURE', 'BAYMAX_RECOVERY',
 ];
 
 export type TransitionType =
@@ -42,8 +41,9 @@ export const STATE_PROFILES: Record<ExperienceState, StateProfile> = {
   CHIP:         { camera: 'INTERACTION', mix: 'CHIP',         enterWith: 'CUT',                 preload: ['RED_WAKE'] },
   BOOT_FAILURE: { camera: 'OBSERVATION', mix: 'BOOT',         enterWith: 'CUT',                 preload: ['RED_WAKE'] },
   RED_WAKE:     { camera: 'CHASE',       mix: 'CORRUPTION',   enterWith: 'RED_SCAN',            preload: ['FRACTURE'] },
-  FRACTURE:     { camera: 'OBSERVATION', mix: 'FRACTURE',     enterWith: 'DEBRIS_OCCLUSION',    preload: ['AFTERIMAGE', 'LATTICE'] },
-  AFTERIMAGE:   { camera: 'WEIGHTLESS',  mix: 'FRACTURE',     enterWith: 'DIMENSION_FOLD',      preload: ['LATTICE'] },
+  FRACTURE:     { camera: 'OBSERVATION', mix: 'FRACTURE',     enterWith: 'DEBRIS_OCCLUSION',    preload: ['AFTERIMAGE'] },
+  AFTERIMAGE:   { camera: 'WEIGHTLESS',  mix: 'FRACTURE',     enterWith: 'DIMENSION_FOLD',      preload: ['BAYMAX_RECOVERY'] },
+  BAYMAX_RECOVERY: { camera: 'INTERACTION', mix: 'SHELL', enterWith: 'DIMENSION_FOLD', preload: [] },
   LATTICE:      { camera: 'EXPLORATION', mix: 'LATTICE',      enterWith: 'MICROBOT_SWARM',      preload: ['VECTOR_HUNT'] },
   VECTOR_HUNT:  { camera: 'CHASE',       mix: 'VECTOR_HUNT',  enterWith: 'CAMERA_OCCLUSION',    preload: ['NULL_CHAMBER'] },
   NULL_CHAMBER: { camera: 'WEIGHTLESS',  mix: 'NULL_CHAMBER', enterWith: 'DEPTH_COLLAPSE',      preload: ['MAX_ATTACK', 'EXIT_VECTOR'] },

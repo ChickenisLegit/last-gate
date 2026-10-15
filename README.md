@@ -1,4 +1,4 @@
-# PROJECT // LATTICE — Awake
+# Last Gate
 
 The first desktop chapters of Path 1. The viewport is Hiro's vision: a blinking awakening, fractured San Fransokyo, a controlled approach to Baymax's silent shell, and a red chip beside his hand. Hiro picks it up, opens Baymax's chest bay and seats the chip. After a held silence Baymax wakes, seems himself for a moment, finds his healthcare directive missing, and locks onto Hiro as a threat. His attacks tear the portal city apart during a directed chase until a fracture corridor opens; Baymax is taken into it and Hiro is pulled through after him. Art direction targets 1920×1080. Viewports below 1280px show a desktop-required screen and do not mount WebGL.
 
@@ -22,7 +22,9 @@ The sequence respects reduced motion. Keyboard operation, live captions, and ass
 
 ## Chapter flow
 
-The opening and RED_WAKE sequence flow into Phase II 6.5 seconds after the fracture-corridor handoff card appears. Phase II runs through AFTERIMAGE, the build, Falling City, and the Null Chamber; select **CONTINUE // MAXIMUM ATTACK** at its conclusion to enter the final sequence. In development, press **Ctrl+M** to skip to RED_WAKE, then Phase II, then the final sequence; subsequent presses advance through final-sequence stages. `?phase2=fracture` starts Phase II directly and `#final` opens the final sequence; `#final/EXIT_VECTOR` starts at a specific final beat.
+The opening and RED_WAKE sequence retain the fracture-corridor handoff and existing Afterimage event. Following the recorded trace now enters BAYMAX_RECOVERY: a damaged harbour district in the same San Fransokyo, with Baymax lying on the street. Approach Baymax to open a DOM engineering workspace around the same 3D model. Inspection views and temporary field notes are available; repairs and later missions are not implemented.
+
+The old build, Falling City, Null Chamber and final sequence are disconnected. Their reusable modules remain in source. Development supports only `?phase2=fracture` and `?phase2=afterimage`; old chapter URLs do not activate those scenes. Production does not expose chapter shortcuts.
 
 ## Architecture
 

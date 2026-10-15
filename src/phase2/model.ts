@@ -1,3 +1,4 @@
+import { enterRecovery } from '../recovery/state';
 export type EntryStage = 'fracture' | 'afterimage' | 'build' | 'hunt' | 'null';
 export type Stage = EntryStage | 'lattice' | 'descent' | 'ready';
 export type LatticeMode = 'swarm' | 'shield' | 'decoy' | 'trace' | 'anchor' | 'crossing';
@@ -86,7 +87,7 @@ export class PhaseTwoDirector {
   act() {
     const s = this.snapshot;
     if (s.stage === 'afterimage') {
-      if (s.stored) this.enter('build');
+      if (s.stored) enterRecovery();
       else if (!s.scanning) {
         this.scanTime = 0;
         this.patch({ scanning: true, action: 'RECORDING LOCAL STABILITY...' });

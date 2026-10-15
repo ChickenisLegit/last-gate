@@ -6,7 +6,7 @@ export type LatticeBuildWorld = ChapterWorld & { pickables: T.Object3D[]; compon
 
 /** Sheltered wreckage pocket used for the tactile assembly and first swarm reveal. */
 export function createLatticeBuild(director: PhaseTwoDirector): LatticeBuildWorld {
-  const k = new SceneKit('13 / PROJECT LATTICE');
+  const k = new SceneKit('13 / LAST GATE');
   const random = seeded(1307);
   k.box({ p: [0, -1.55, -1.5], s: [17, .55, 12], r: [0, -.08, -.025] }, k.edge);
   k.box({ p: [-4.7, .2, -4.7], s: [4.5, 5.2, .5], r: [.14, .2, -.08] }, k.concrete);
@@ -19,7 +19,7 @@ export function createLatticeBuild(director: PhaseTwoDirector): LatticeBuildWorl
   });
   k.instances(wreckage, k.metal);
   k.label('SHELTER POCKET // 02', { p: [-6.6, 3.1, -4.7], r: [0, .42, .02] }, 4.8);
-  k.label('PROJECT // LATTICE', { p: [-2.4, 3.35, -2.2], r: [0, 0, 0] }, 4.4, '#c8f3ff');
+  k.label('LAST GATE', { p: [-2.4, 3.35, -2.2], r: [0, 0, 0] }, 4.4, '#c8f3ff');
 
   const target = new T.Vector3(0, .35, -1.7);
   const components: T.Group[] = [];

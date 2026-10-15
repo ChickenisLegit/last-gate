@@ -18,7 +18,7 @@ export const FINAL_BEATS:Partial<Record<FinalStage,FinalBeat[]>>={
  FINAL_ESCAPE:[{at:0,id:'escape'}, {at:2,id:'baymax-recover'}, {at:5,id:'conflict'}, {at:10,id:'sacrifice'}, {at:13,id:'run'}, {at:18,id:'near-catch'}, {at:20.5,id:'crossing'}],
  HOME:[{at:0,id:'home'}, {at:7,id:'stillness'}],
  EPILOGUE:[{at:2,id:'unknown',text:'UNKNOWN VECTOR DETECTED'}, {at:7,id:'lost',text:'CONNECTION LOST'}, {at:10,id:'clear'}],
- FINAL_BLACK:[{at:1.8,id:'brand',text:'PROJECT // LATTICE'}]
+ FINAL_BLACK:[{at:1.8,id:'brand',text:'LAST GATE'}]
 };
 export const ease=(x:number)=>{const t=Math.max(0,Math.min(1,x));return t*t*(3-2*t)};
 export const clamp=(x:number,a=0,b=1)=>Math.max(a,Math.min(b,x));
