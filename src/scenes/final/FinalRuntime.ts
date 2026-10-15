@@ -16,6 +16,7 @@ export class FinalRuntime {
   this.aligned=[done,done,done,done];this.offsets=done?[[0,0],[0,0],[0,0],[0,0]]:[[1.45,.7],[-1.2,.65],[.85,-.8],[-.9,-.65]];
  }
  enter(stage:FinalStage,time=0){this.stage=stage;this.time=time;this.seen.clear();this.beat='';this.dragging=-1;this.alignmentHold=0;this.prepare(stage);this.emit('','');this.tickBeats(false);}
+ skip(){const next=FINAL_NEXT[this.stage];if(next)this.enter(next);}
  update(dt:number){
   if(this.paused||document.hidden)return;
   this.time+=Math.min(dt,.05);this.total+=Math.min(dt,.05);this.tickBeats(true);this.audio.update(this.stage,this.time);

@@ -1,8 +1,8 @@
 import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { enterFracturePhase } from './phase2/entry';
+import { enterFracturePhase, usePhaseTwoEntry } from './phase2/entry';
 import { PhaseTwoHost } from './phase2/PhaseTwoHost';
-import { getDebugFinalStage, useFinalEntry } from './scenes/final/entry';
+import { enterFinalPhase, getDebugFinalStage, useFinalEntry } from './scenes/final/entry';
 import { useSceneState } from './state/SceneStateManager';
 import { Failure } from './ui/Failure';
 import './ui/experience.css';
@@ -35,6 +35,7 @@ function DesktopGate() {
   const [supported, setSupported] = useState(innerWidth >= 1280);
   const [debugStage, setDebugStage] = useState(() => getDebugFinalStage(location.hash));
   const phase = useSceneState(state => state.phase);
+  const phaseTwoEntry = usePhaseTwoEntry();
   const finalEntry = useFinalEntry();
 
   useEffect(() => {
@@ -56,6 +57,43 @@ function DesktopGate() {
     return () => window.clearTimeout(timer);
   }, [phase, finalEntry.active, debugStage]);
 
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    const skipPhase = (event: KeyboardEvent) => {
+      if (!event.ctrlKey || event.altKey || event.shiftKey || event.metaKey || event.code !== 'KeyM') return;
+      if ((event.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      event.preventDefault();
+
+      if (debugStage) {
+        window.dispatchEvent(new Event('lattice:skip-phase'));
+        return;
+      }
+      if (finalEntry.active) {
+        window.dispatchEvent(new Event('lattice:skip-phase'));
+        return;
+      }
+      if (phaseTwoEntry.active) {
+        enterFinalPhase();
+        return;
+      }
+
+      const current = useSceneState.getState();
+      if (current.phase === 'loading') return;
+      if (current.phase === 'handoff') {
+        enterFracturePhase();
+        return;
+      }
+      const redWakePhases = ['booting', 'diagnostic', 'corrupting', 'threat', 'ignition', 'chase', 'fracture', 'pulled'];
+      if (redWakePhases.includes(current.phase)) {
+        useSceneState.setState({ chapter: 'THE_FRACTURE', phase: 'handoff', subtitle: '' });
+        return;
+      }
+      useSceneState.setState({ chapter: 'RED_WAKE', phase: 'booting', subtitle: '' });
+    };
+    window.addEventListener('keydown', skipPhase);
+    return () => window.removeEventListener('keydown', skipPhase);
+  }, [debugStage, finalEntry.active, phaseTwoEntry.active]);
+
   if (!supported) {
     return <main className="desktop-required"><p>PROJECT <span>//</span> LATTICE</p><h1>DESKTOP EXPERIENCE</h1><span>1280PX+ DISPLAY REQUIRED</span></main>;
   }
@@ -67,6 +105,7 @@ function DesktopGate() {
         ? <FinalPhase key={`${finalEntry.run}-${finalStage}`} initialStage={finalStage} />
         : <PhaseTwoHost><Experience /></PhaseTwoHost>}
     </Suspense>
+    {import.meta.env.DEV && <div className="phase-skip-hint" aria-hidden="true">CTRL + M <span>//</span> SKIP PHASE</div>}
   </AppBoundary>;
 }
 

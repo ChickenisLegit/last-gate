@@ -22,7 +22,7 @@ The sequence respects reduced motion. Keyboard operation, live captions, and ass
 
 ## Chapter flow
 
-The opening and RED_WAKE sequence flow into Phase II 6.5 seconds after the fracture-corridor handoff card appears. Phase II runs through AFTERIMAGE, the build, Falling City, and the Null Chamber; select **CONTINUE // MAXIMUM ATTACK** at its conclusion to enter the final sequence. In development, `?phase2=fracture` starts Phase II directly and `#final` opens the final sequence; `#final/EXIT_VECTOR` starts at a specific final beat.
+The opening and RED_WAKE sequence flow into Phase II 6.5 seconds after the fracture-corridor handoff card appears. Phase II runs through AFTERIMAGE, the build, Falling City, and the Null Chamber; select **CONTINUE // MAXIMUM ATTACK** at its conclusion to enter the final sequence. In development, press **Ctrl+M** to skip to RED_WAKE, then Phase II, then the final sequence; subsequent presses advance through final-sequence stages. `?phase2=fracture` starts Phase II directly and `#final` opens the final sequence; `#final/EXIT_VECTOR` starts at a specific final beat.
 
 ## Architecture
 

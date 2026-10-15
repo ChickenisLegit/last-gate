@@ -52,4 +52,6 @@
 .replay-inline{pointer-events:auto;margin-top:40px;font-size:7px;letter-spacing:.16em;color:#a9c6cf;padding:12px 0;opacity:.7}
 .replay-inline:hover{opacity:1}
 .replay-inline span{margin-left:14px;color:#6f95a1}
+.phase-skip-hint{position:fixed;right:28px;top:22px;z-index:40;font:7px 'IBM Plex Mono',monospace;letter-spacing:.15em;color:#a9c6cf;opacity:.62;pointer-events:none}
+.phase-skip-hint span{margin:0 7px;color:#6f95a1}
 @media(prefers-reduced-motion:reduce){.diagnostic p,.handoff{opacity:1}}
