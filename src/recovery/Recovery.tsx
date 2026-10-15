@@ -1,112 +1,41 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, useFrame } from '@react-three/fiber';
-import { Box3, CanvasTexture, Group, Mesh, Vector3 } from 'three';
-import { assets } from '../systems/AssetManager';
-import { createPortalDimension } from '../environment/PortalDimension.js';
-import { SceneKit } from '../phase2/SceneKit';
-import { reducedMotion } from '../config/experience';
+import { Canvas } from '@react-three/fiber';
+import { InspectionScene } from './InspectionScene';
+import { isComplete, reading, SYSTEMS, useDiagnostics, type SystemId, type ViewMode } from './diagnostics';
 import './recovery.css';
-
-type Focus = 'overview' | 'shell' | 'chest';
-const observations: Record<Focus, {title: string; detail: string}> = {
-  overview: {title: 'Baymax is unresponsive', detail: 'He came through the rupture. No pursuit response is visible. His armour and outer shell show damage from the confrontation.'},
-  shell: {title: 'Outer shell', detail: 'Impact damage is visible around the armour. A closer inspection is needed before anything can be moved safely.'},
-  chest: {title: 'Chest access', detail: 'The combat chip is still inside. The access bay remains closed. No override or repair has been attempted.'},
-};
-function District({workspace, focus, onReady, onError}: {workspace: boolean; focus: Focus; onReady: () => void; onError: () => void}) {
-  const city = useMemo(() => createPortalDimension(), []);
-  const landmarks = useMemo(() => {
-    const k = new SceneKit('Harbour service district');
-    k.label('SAN FRANSOKYO / HARBOUR\nSERVICE ROAD  /  通行止', {p: [-4, 3, -9], r: [0, .2, -.15]}, 4);
-    k.box({p: [-4, 1.4, -9.1], s: [.12, 3, .12], r: [0, 0, -.15]}, k.metal);
-    // A derailed streetcar and a fallen service gantry distinguish this district.
-    k.box({p: [3.9, .8, -15], s: [2.5, 2.1, 6], r: [.05, -.24, -.2]}, k.concrete);
-    for (let i = 0; i < 4; i++) k.box({p: [2.55, 1.2, -13-i*1.2], s: [.05, .65, .8]}, k.dim);
-    k.box({p: [-2, .3, -12], s: [6, .25, .3], r: [0, .3, -.07]}, k.metal);
-    return k;
-  }, []);
-  const contactShadow = useMemo(() => {
-    const canvas = document.createElement('canvas'); canvas.width = canvas.height = 64;
-    const ctx = canvas.getContext('2d')!;
-    const gradient = ctx.createRadialGradient(32, 32, 5, 32, 32, 32);
-    gradient.addColorStop(0, 'rgba(0,0,0,.55)'); gradient.addColorStop(1, 'rgba(0,0,0,0)');
-    ctx.fillStyle = gradient; ctx.fillRect(0, 0, 64, 64);
-    return new CanvasTexture(canvas);
-  }, []);
-  const [model, setModel] = useState<Group | null>(null);
-  const target = useMemo(() => new Vector3(), []);
-  const look = useRef(new Vector3(0, .8, -4));
-  useEffect(() => {
-    let alive = true;
-    assets.cloneBaymax().then(shell => {
-      if (!alive) return;
-      // Unfold the seated legs before laying the damaged shell on its back.
-      const meshes: Mesh[] = [];
-      shell.traverse(node => { if (node instanceof Mesh) meshes.push(node); });
-      for (const side of [-1, 1]) {
-        const hip = new Group();
-        hip.position.set(side*.53, .55, .28);
-        shell.add(hip);
-        shell.updateMatrixWorld(true);
-        for (const mesh of meshes) {
-          const p = mesh.position, sx = side*p.x;
-          const thigh = Math.abs(sx-.57)<.06 && Math.abs(p.y-.48)<.06;
-          const foot = Math.abs(sx-.71)<.06 && (Math.abs(p.y-.26)<.06 || Math.abs(p.y-.04)<.06) && p.z>1.2;
-          if (thigh || foot) hip.attach(mesh);
-        }
-        hip.rotation.x = 1.45;
-      }
-      shell.name = 'Baymax / damaged recovery';
-      shell.position.set(0, 0, 0);
-      shell.rotation.order = 'YXZ';
-      shell.rotation.set(-Math.PI / 2, -.35, -.08);
-      // Disable residual combat lights without changing the cached source model.
-      shell.traverse(node => { if (node.type === 'PointLight' || node.type === 'Sprite') node.visible = false; });
-      shell.updateMatrixWorld(true);
-      const bounds = new Box3();
-      shell.traverseVisible(node => {
-        if (!(node instanceof Mesh)) return;
-        bounds.union(new Box3().setFromObject(node, true));
-      });
-      const center = bounds.getCenter(new Vector3());
-      shell.position.set(-center.x, -.12-bounds.min.y, -4-center.z);
-      setModel(shell); onReady();
-    }).catch(() => {if (alive) onError();});
-    return () => {alive = false;};
-  }, [onReady, onError]);
-  useEffect(() => () => {city.dispose(); landmarks.dispose(); contactShadow.dispose();}, [city, landmarks, contactShadow]);
-  useFrame(({camera, clock}, delta) => {
-    const dt = Math.min(delta, .05);
-    city.update(clock.elapsedTime, dt, reducedMotion, 0, 'approaching');
-    const close = workspace;
-    target.set(close ? -1 : 1.2, close ? (focus === 'chest' ? 3.1 : 4.3) : 2.7, close ? .5 : 8);
-    camera.position.lerp(target, reducedMotion ? 1 : 1-Math.exp(-dt*1.8));
-    target.set(close ? 1.4 : 0, .8, -4);
-    look.current.lerp(target, reducedMotion ? 1 : 1-Math.exp(-dt*2));
-    camera.lookAt(look.current);
-  });
-  return <>
-    <color attach="background" args={['#101c31']} /><fogExp2 attach="fog" args={['#253e59', .023]} />
-    <group position={[0, 0, 7]}> <primitive object={city.group} /></group>
-    <primitive object={landmarks.root} />
-    <hemisphereLight args={['#b6d9ec', '#172132', 2]} /><directionalLight position={[-3, 8, 5]} intensity={1.5} color="#c3e7f5" />
-    <mesh position={[0, -.125, -4]} rotation={[-Math.PI/2, 0, 0]} scale={[1, 1.5, 1]}><planeGeometry args={[4, 4]} /><meshBasicMaterial map={contactShadow} transparent depthWrite={false} /></mesh>
-    {model && <primitive object={model} dispose={null} />}
-  </>;
+const MODES:ViewMode[]=['exterior','internal','isolate'];
+function RepairBench({id}:{id:SystemId}){
+ const s=useDiagnostics();
+ if(id==='power')return <section className="service-operation" aria-label="Power routing"><p className="mono">SERVICE / POWER ROUTING</p><h3>Bypass the damaged connection.</h3><p>Disconnect rail A before closing the intact supply path.</p><label className="switch-row"><input type="checkbox" checked={s.isolated} onChange={e=>s.isolate(e.target.checked)}/> Isolate damaged primary branch</label><div className="route-diagram"><span>CORE<br/><b>62%</b></span><div><button aria-pressed={s.route==='original'} onClick={()=>s.reroute('original')}>A · damaged connection <i>×</i></button><button aria-pressed={s.route==='bypass'} onClick={()=>s.reroute('bypass')}>B · auxiliary rail <i>→</i></button></div><span>BUS<br/><b>{s.route==='bypass'?'LIVE':'FAULT'}</b></span></div><p className="operation-result">{s.route==='bypass'?'Auxiliary path closed. Power distribution is stable.':'Original branch interrupted by impact damage.'}</p></section>;
+ if(id==='left')return <section className="service-operation" aria-label="Thruster connector"><p className="mono">SERVICE / CONTROL LINE</p><h3>Key the plug. Seat the connector.</h3><p>The socket accepts a vertical key at 90°. A mismatched plug will stop before engagement.</p><svg viewBox="0 0 300 100" role="img" aria-label={s.thrusterFixed?'Control plug connected':'Disconnected keyed control plug'}><path d="M16 50 H270" stroke="#b1bcb9" strokeWidth="2" strokeDasharray="4 5"/><rect x="238" y="24" width="40" height="52" fill="#354a4a"/><path d="M246 32v36" stroke="#e7eeeb" strokeWidth="4"/><g transform={`translate(${40+s.connectorDepth*1.8},50)`}><rect x="-14" y="-18" width="28" height="36" fill={s.thrusterFixed?'#3d8070':'#d2914e'}/><path d="M-10 0h20" stroke="#fff" strokeWidth="3" transform={`rotate(${s.connectorAngle})`}/></g></svg><label>Connector rotation <output>{s.connectorAngle}°</output><input aria-label="Connector rotation" type="range" min="0" max="270" step="90" value={s.connectorAngle} disabled={s.thrusterFixed} onChange={e=>s.rotateConnector(+e.target.value)}/></label><label>Connector insertion <output>{s.thrusterFixed?'SEATED':s.connectorDepth>=35&&s.connectorAngle!==90?'KEY BLOCKED':'UNSEATED'}</output><input aria-label="Connector insertion" type="range" min="0" max="100" value={s.connectorDepth} disabled={s.thrusterFixed} onChange={e=>s.insertConnector(+e.target.value)}/></label><p className="operation-result">{s.thrusterFixed?'Control line reconnected. Left nozzle indicator responds; thrust remains limited.':'Rotate with the first control; drag the second control toward the socket. Arrow keys also adjust the connector.'}</p></section>;
+ if(id==='arm')return <section className="service-operation" aria-label="Actuator calibration"><p className="mono">SERVICE / NEUTRAL REFERENCE</p><h3>Align the encoder witness marks.</h3><p>Match the measured angle to the 12° reference. Allowed tolerance: ±2°.</p><svg viewBox="0 0 300 125" role="img" aria-label={`Actuator angle ${s.neutral} degrees; reference 12 degrees`}><path d="M55 102 A95 95 0 0 1 245 102" fill="none" stroke="#abb8b4" strokeWidth="2"/><g transform="translate(150,102)"><path d="M0 0v-90" stroke="#af722f" strokeWidth="2" transform="rotate(12)"/><path d="M0 0v-83" stroke="#2e7065" strokeWidth="4" transform={`rotate(${s.neutral})`}/><circle r="8" fill="#354b48"/></g><text x="188" y="25" fill="#845a2d" fontSize="12">12° REF</text></svg><label>Encoder angle <output>{s.neutral}°</output><input aria-label="Encoder angle" type="range" min="-40" max="40" value={s.neutral} disabled={s.actuatorFixed} onChange={e=>s.setNeutral(+e.target.value)}/></label><button className="primary-action" disabled={s.actuatorFixed||s.route!=='bypass'} onClick={s.calibrate}>{s.actuatorFixed?'Reference stored':'Store neutral position'}</button>{s.route!=='bypass'&&<p>Stabilize power distribution before storing a reference.</p>}</section>;
+ return null;
 }
-export function Recovery() {
-  const [workspace, setWorkspace] = useState(false), [ready, setReady] = useState(false), [error, setError] = useState(false);
-  const [focus, setFocus] = useState<Focus>('overview');
-  const [notes, setNotes] = useState('');
-  const heading = useRef<HTMLHeadingElement>(null);
-  const callbacks = useMemo(() => ({ready: () => setReady(true), error: () => setError(true)}), []);
-  useEffect(() => {if (workspace) heading.current?.focus();}, [workspace]);
-  return <main className={`recovery ${workspace ? 'workspace' : ''}`} aria-label="Last Gate — Baymax recovery" data-state="BAYMAX_RECOVERY">
-    <div className="recovery-world"><Canvas camera={{position: [1.2, 2.7, 8], fov: 49}} dpr={[1, 1.5]} gl={{antialias: true}}><District workspace={workspace} focus={focus} onReady={callbacks.ready} onError={callbacks.error} /></Canvas></div>
-    <div className="recovery-arrival" aria-hidden="true" />
-    <header className="recovery-brand">LAST GATE <span>San Fransokyo · Harbour district</span></header>
-    {!workspace && <section className="recovery-entry"><p>He made it through.</p><h1>Baymax.</h1><p>Another street. The same broken city.<br />For the first time, he isn’t moving toward you.</p><button disabled={!ready} onClick={() => setWorkspace(true)}>{ready ? 'Approach Baymax' : 'Locating Baymax…'}</button></section>}
-    {workspace && <aside className="recovery-panel" aria-label="Engineering workspace"><p className="recovery-eyebrow">Engineering workspace</p><h1 ref={heading} tabIndex={-1}>Baymax / initial inspection</h1><p className="recovery-status">Unresponsive · Assessment pending</p><nav aria-label="Inspection views">{(['overview', 'shell', 'chest'] as Focus[]).map(item => <button key={item} aria-pressed={focus === item} onClick={() => setFocus(item)}>{item === 'overview' ? 'Overview' : item === 'shell' ? 'Outer shell' : 'Chest access'}</button>)}</nav><section aria-live="polite"><h2>{observations[focus].title}</h2><p>{observations[focus].detail}</p></section><label className="recovery-notes">Field notes<textarea value={notes} onChange={event => setNotes(event.target.value)} placeholder="Record what you notice…" rows={4} /></label><p className="recovery-footnote">Visual observations only. Notes stay here until this page is closed.</p><button className="recovery-back" onClick={() => setWorkspace(false)}>Return to street view</button></aside>}
-    {error && <div className="recovery-error" role="alert">Baymax could not be loaded. <button onClick={() => location.reload()}>Reload</button></div>}
-  </main>;
+function Workspace({onStreet,onReset,notes,setNotes}:{onStreet:()=>void;onReset:()=>void;notes:string;setNotes:(text:string)=>void}){
+ const s=useDiagnostics();const complete=isComplete(s);
+ const item=SYSTEMS.find(x=>x.id===s.selected);const tested=!!s.selected&&s.tested.includes(s.selected);
+ const result=tested?reading(s.selected!,s):null;
+ const title=useRef<HTMLHeadingElement>(null);
+ useEffect(()=>{title.current?.focus();},[]);
+ return <>
+  <header className="engineering-header"><div><span className="mono">LAST GATE / HIRO HAMADA</span><h1 ref={title} tabIndex={-1}>Baymax recovery<span> / Service bench</span></h1></div><div className="session-status"><i/> ACTUATION INHIBITED<span>Combat program not cleared</span></div><button onClick={onStreet}>Street view ↗</button></header>
+  <aside className="systems-rail" aria-label="Subsystem navigator"><p className="mono">INSPECT A SYSTEM</p><nav>{SYSTEMS.map(x=><button key={x.id} className={s.selected===x.id?'selected':''} aria-pressed={s.selected===x.id} onClick={()=>s.select(x.id)}><span>{x.name}</span><small>{s.tested.includes(x.id)?reading(x.id,s).status:'NOT TESTED'}</small><i className={s.tested.includes(x.id)?'tested':''}/></button>)}</nav><div className="inspection-key"><p><i className="tested"/> Test recorded</p><p>Choose a system here or select its physical region on Baymax.</p></div><label className="field-notes">FIELD NOTES<textarea aria-label="Field notes" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Record an observation…" rows={4}/></label></aside>
+  <div className="viewport-toolbar" aria-label="3D view modes"><div>{MODES.map(mode=><button key={mode} aria-pressed={s.mode===mode} disabled={mode==='isolate'&&!s.selected} onClick={()=>s.setMode(mode)}>{mode}</button>)}</div><button onClick={onReset}>Reset view</button></div>
+  <div className="viewport-label"><span className="mono">BM–01 / {s.mode.toUpperCase()}</span><span>{item?item.name:'Select a physical region'}</span></div>
+  {s.selected==='core'&&tested&&<div className="bay-legend"><span>LEFT SOCKET / HEALTHCARE ABSENT</span><span>RIGHT SOCKET / COMBAT OCCUPIED</span></div>}
+  <div className="viewport-help">Drag to orbit · Scroll to zoom · Select a region<span>Calibrated service model · No actuation commands</span></div>
+  <aside className="diagnostic-rail" aria-label="System diagnostics"><p className="mono">SUBSYSTEM / INSPECTION</p>{item?<><h2>{item.name}</h2><p className="diagnostic-intro">{tested?'Recorded observations and service access.':'Select the physical region, then read its test points. No repairs are applied by testing.'}</p><button className="primary-action" onClick={s.probe}>{s.selected==='core'?(tested?'Reinspect program bay':'Open program bay'):(tested?'Repeat subsystem test':'Read test points')}</button>{result&&<><p className={`readout-status ${s.selected==='core'?'critical':''}`}>{result.status}</p><dl className="readings">{result.facts.map(([key,value])=><div key={key}><dt>{key}</dt><dd>{value}</dd></div>)}</dl><p className="diagnostic-detail">{result.detail}</p><RepairBench id={s.selected!}/></>}</>:<div className="empty-diagnostic"><h2>Start with what survived.</h2><p>Rotate the model and choose a physical system. Open the program bay to determine whether Baymax’s original directive is still present.</p><p>Repairs are limited to the connections and calibration that can be recovered here.</p></div>}{s.notice&&<p className="service-notice" role="status">{s.notice}</p>}</aside>
+  <footer className={`assessment-strip ${complete?'complete':''}`} aria-live="polite">{complete?<><div><span className="mono">ASSESSMENT COMPLETE</span><h2>Physical systems partially restored.</h2><p>Limited movement and thrust are available. Baymax is still unsafe.</p></div><dl><div><dt>COMBAT CORE</dt><dd>ACTIVE</dd></div><div><dt>HEALTHCARE DIRECTIVE</dt><dd>UNAVAILABLE / CHIP ABSENT</dd></div><div><dt>DIRECT CONTROL</dt><dd>UNAVAILABLE</dd></div></dl></>:<><div><span className="mono">INVESTIGATION IN PROGRESS</span><h2>{s.tested.includes('core')?'Healthcare chip is physically absent.':'What is wrong with Baymax?'}</h2><p>{s.tested.includes('core')?'Physical repairs cannot restore the missing healthcare logic.':'Inspect the systems. Recover the connections that can still be saved.'}</p></div><ol aria-label="Service log">{s.log.slice(0,3).map((line,i)=><li key={`${i}-${line}`}>{line}</li>)}</ol></>}</footer>
+ </>;
+}
+export function Recovery(){
+ const [workspace,setWorkspace]=useState(import.meta.env.DEV && new URLSearchParams(location.search).get('recovery')==='diagnostics'),[ready,setReady]=useState(false),[error,setError]=useState(false),[reset,setReset]=useState(0);
+ const [notes,setNotes]=useState('');
+ const callbacks=useMemo(()=>({ready:()=>setReady(true),error:()=>setError(true)}),[]);
+ return <main className={`recovery ${workspace?'workspace':''}`} aria-label="Last Gate — Baymax diagnostics" data-state="BAYMAX_RECOVERY">
+  <div className="recovery-world"><Canvas frameloop="demand" dpr={1} camera={{position:[1.2,2.7,8],fov:45,near:.1,far:220}} gl={{antialias:true}} onCreated={({gl})=>{gl.domElement.setAttribute('aria-label','Interactive 3D Baymax inspection');gl.domElement.setAttribute('tabindex','0');}}><InspectionScene workspace={workspace} viewReset={reset} onReady={callbacks.ready} onError={callbacks.error}/></Canvas></div>
+  <div className="recovery-arrival" aria-hidden="true"/>
+  {!workspace?<><header className="recovery-brand">LAST GATE<span>San Fransokyo · Harbour district</span></header><section className="recovery-entry"><p>He made it through.</p><h1>Baymax.</h1><p>Another street. The same broken city.<br/>There’s finally a chance to find out what’s wrong.</p><button disabled={!ready} onClick={()=>setWorkspace(true)}>{ready?'Approach Baymax':'Locating Baymax…'}</button></section></>:<Workspace notes={notes} setNotes={setNotes} onStreet={()=>setWorkspace(false)} onReset={()=>setReset(n=>n+1)}/>}
+  {error&&<div className="recovery-error" role="alert">Baymax could not be loaded. <button onClick={()=>location.reload()}>Reload</button></div>}
+ </main>;
 }

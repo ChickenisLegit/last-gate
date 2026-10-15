@@ -22,9 +22,9 @@ The sequence respects reduced motion. Keyboard operation, live captions, and ass
 
 ## Chapter flow
 
-The opening and RED_WAKE sequence retain the fracture-corridor handoff and existing Afterimage event. Following the recorded trace now enters BAYMAX_RECOVERY: a damaged harbour district in the same San Fransokyo, with Baymax lying on the street. Approach Baymax to open a DOM engineering workspace around the same 3D model. Inspection views and temporary field notes are available; repairs and later missions are not implemented.
+The opening and RED_WAKE sequence retain their dimensional handoff, which now enters BAYMAX_RECOVERY directly. The floating Afterimage line-scan step is removed. Hiro lands in another damaged district of the same San Fransokyo, approaches prone Baymax, and opens a DOM engineering workspace around the same 3D model. Rotate, zoom and select physical regions; use exterior, internal and isolate views; investigate eight subsystems; reroute power, reconnect the keyed left-thruster line and recalibrate the arm actuator. The assessment ends with limited physical recovery, an absent healthcare chip, active combat logic and unavailable direct control.
 
-The old build, Falling City, Null Chamber and final sequence are disconnected. Their reusable modules remain in source. Development supports only `?phase2=fracture` and `?phase2=afterimage`; old chapter URLs do not activate those scenes. Production does not expose chapter shortcuts.
+The old build, Falling City, Null Chamber and final sequence remain disconnected. Reusable modules are retained in source. Development previews: `?recovery=entry` and `?recovery=diagnostics`. Old fracture/Afterimage development query entries redirect to recovery. Production does not expose chapter shortcuts. See `docs/BAYMAX_RECOVERY.md` for the repair rules, stop point and verification commands.
 
 ## Architecture
 
@@ -38,7 +38,7 @@ React, TypeScript, Vite, Three.js, React Three Fiber, Zustand, and GSAP. One Can
 - **AudioDirector** is fully synthesized: phase-mixed layers (air, breath, internal hum, corrupted hum, thrusters, corridor) and authored one-shots for each tactile and violent beat.
 - TransitionDirector owns the eye-opening timeline. AssetManager loads the shell GLB once. The environment uses instanced windows, repeated details and drifting debris; particles render in a single point cloud.
 
-The source is grouped into `src/experience`, `src/state`, `src/systems`, `src/characters`, `src/environment`, `src/transitions`, `src/audio`, `src/ui`, `src/config`, `src/phase2`, and `src/scenes/final`. `PhaseTwoHost` receives the corridor handoff, and the Null Chamber's continue control enters the final sequence. Shared transition and performance infrastructure lives in `src/core` and `src/performance`.
+The opening lives in `src/experience`, with shared systems in `src/core`, `src/systems`, `src/characters` and `src/performance`. `src/recovery` owns the entry district, interactive inspection model, diagnostic state and DOM workspace. Legacy `src/phase2` and later scene modules remain source references; their old story scenes are not mounted in production.
 
 ## Cinematic polish
 

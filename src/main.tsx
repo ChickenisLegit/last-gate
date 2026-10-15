@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { enterFracturePhase, usePhaseTwoEntry } from './phase2/entry';
+import { usePhaseTwoEntry } from './phase2/entry';
+import { enterRecovery } from './recovery/state';
 import { PhaseTwoHost } from './phase2/PhaseTwoHost';
 
 import { useSceneState } from './state/SceneStateManager';
@@ -43,7 +44,7 @@ function DesktopGate() {
 
   useEffect(() => {
     if (phase !== 'handoff') return;
-    const timer = window.setTimeout(enterFracturePhase, 6500);
+    const timer = window.setTimeout(enterRecovery, 6500);
     return () => window.clearTimeout(timer);
   }, [phase]);
 
@@ -59,7 +60,7 @@ function DesktopGate() {
       const current = useSceneState.getState();
       if (current.phase === 'loading') return;
       if (current.phase === 'handoff') {
-        enterFracturePhase();
+        enterRecovery();
         return;
       }
       const redWakePhases = ['booting', 'diagnostic', 'corrupting', 'threat', 'ignition', 'chase', 'fracture', 'pulled'];

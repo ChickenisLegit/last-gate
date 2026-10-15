@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { experience } from '../core/ExperienceFlow';
 
-export const useRecovery = create<{active: boolean}>(() => ({active: false}));
+export const useRecovery = create<{active: boolean}>(() => ({active: import.meta.env.DEV && new URLSearchParams(location.search).has('recovery')}));
 export function enterRecovery() {
   if (useRecovery.getState().active) return;
   experience.observe('BAYMAX_RECOVERY');
