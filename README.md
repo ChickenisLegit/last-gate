@@ -27,11 +27,11 @@ Each phase lives on its own branch, and each branch builds on the one before it,
 | Branch | Adds | Plays |
 |---|---|---|
 | `main` | Phase 1: awakening, the shell, the chip, RED_WAKE, the fracture corridor | Phase 1 |
-| `phase2` | Phase 2: Baymax recovery (harbour street, discovery, repair workspace, ending) | Phases 1–2 |
-| `phase3` | Phase 3: the final sequence (Max Attack → vector capture → exit vector → escape → home → epilogue) | Phases 1–3 |
-| `phase4` | Phase 4: the north service district power limiter | Phases 1–4 |
+| `phase2` | Phase 2: a new district and the landing page (THE LAST GATE · START JOURNEY) | Phases 1–2 |
+| `phase3` | Phase 3: the Baymax engineering board (inspection, three physical repairs) | Phases 1–3 |
+| `phase4` | Phase 4: the walk to Bay 6, the district search and the power-limiter build | Phases 1–4 |
 
-Fixes to a phase go on that phase's branch; rebase the later branches onto it afterwards.
+Fixes to a phase go on that phase's branch; rebase the later branches onto it afterwards. Later phases plug in through small registries (`src/recovery/journey.ts`, `src/engineering/exit.ts`), so earlier phases never import later ones.
 
 ## Chapter flow
 
