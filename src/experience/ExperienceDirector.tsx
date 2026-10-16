@@ -213,7 +213,10 @@ export function ExperienceDirector(){
   const camera=useMemo(()=>new CameraDirector(),[]),transitions=useMemo(()=>new TransitionDirector(),[]),audio=useMemo(()=>new AudioDirector(),[]),seq=useMemo(()=>new SequenceDirector(),[]);
 
   useEffect(()=>{
-    if(phase==='awakening'&&aperture.current){firstScroll.current=true;transitions.awaken(aperture.current);}
+    if(!aperture.current)return;
+    // The blink now plays on the hurt re-entry; the escape opens on open eyes.
+    if(phase==='awakening'){firstScroll.current=true;transitions.awaken(aperture.current);}
+    else if(phase==='portal-sighted')transitions.open(aperture.current);
   },[phase,replay,transitions]);
   useEffect(()=>{
     useSceneState.setState({chapter:'BOOT',phase:'loading',targetProgress:0,subtitle:'',error:null,sound:false});
@@ -264,7 +267,7 @@ export function ExperienceDirector(){
       if(p==='chase'){event.preventDefault();if(event.deltaY>0){input();sprintPulse();}return;}
       // Handling the chip: the wheel zooms (forward = closer).
       if(camera.zoomable){event.preventDefault();input();camera.zoomBy(-Math.sign(event.deltaY)*Math.min(.35,Math.abs(event.deltaY)*.0022));return;}
-      if(p!=='approaching'&&p!=='to-portal')return;
+      if(p!=='approaching')return;
       event.preventDefault();input();
       if(firstScroll.current&&event.deltaY>0){firstScroll.current=false;scrollGuard.current=performance.now()+450;useSceneState.getState().move(.065);return;}
       if(performance.now()<scrollGuard.current)return;
@@ -281,7 +284,7 @@ export function ExperienceDirector(){
       if(zoomOut.includes(event.code)&&camera.zoomable){event.preventDefault();camera.zoomBy(-.25);}
       if(['KeyA','ArrowLeft'].includes(event.code)&&p==='approaching'){event.preventDefault();input();camera.strafeInput=-1;}
       if(['KeyD','ArrowRight'].includes(event.code)&&p==='approaching'){event.preventDefault();input();camera.strafeInput=1;}
-      if(runKeys.includes(event.code)&&(p==='approaching'||p==='to-portal')){event.preventDefault();input();camera.holding=true;}
+      if(runKeys.includes(event.code)&&p==='approaching'){event.preventDefault();input();camera.holding=true;}
       if(runKeys.includes(event.code)&&p==='chase'){event.preventDefault();input();seq.sprint=true;}
       // Holds work from the keyboard too: E, Space or Enter commit the chip, the seam and the dock.
       if(holdKeys.includes(event.code)&&([...HOLD_PHASES,'socket-ready'] as Phase[]).includes(p)){event.preventDefault();if(!seq.keyHold)pressedAt.current=performance.now();seq.keyHold=true;}
@@ -335,9 +338,6 @@ export function ExperienceDirector(){
     <div className="suit-readout" aria-label="Suit location status"><span>LOCATION <b>UNRESOLVED</b></span><span>EXIT SIGNAL <b>— — —</b></span><i>PERSONAL LINK / OFFLINE</i></div>
     <div className="subtitle" role="status" aria-live="polite">{subtitle&&<p key={subtitle} className={speaker==='BAYMAX'?'baymax':''}><span>{speaker}</span>{subtitle}</p>}</div>
     {phase==='awakening'&&<button className="skip" onClick={skip}>SKIP AWAKENING <span>ESC</span></button>}
-    {phase==='to-portal'&&<button className="approach" onClick={()=>useSceneState.getState().move(.07)} aria-label="Walk to the portal">
-      TO THE PORTAL <span>//</span> SCROLL · HOLD
-    </button>}
     {phase==='approaching'&&idleHint&&<button className="approach" onClick={()=>{setIdleHint(false);useSceneState.getState().move(.065);}} aria-label="Move closer to Baymax">
       MOVE <span>//</span> SCROLL
     </button>}

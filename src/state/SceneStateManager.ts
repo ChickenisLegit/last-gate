@@ -30,7 +30,7 @@ const chapterOf=(phase:Phase,current:Chapter):Chapter=>
 /** Phases where the player commits by holding (pointer on the focus, or E / Space). */
 export const HOLD_PHASES:Phase[]=['chip-focus','chest-focus'];
 /** Phases where the player walks forward along an authored line (scroll / hold / W). */
-export const WALK_PHASES:Phase[]=['to-portal','approaching'];
+export const WALK_PHASES:Phase[]=['approaching'];
 type ExperienceState = {
   chapter: Chapter; phase: Phase; targetProgress: number; subtitle: string; speaker:Speaker;
   sound: boolean; error: string | null; replay: number; started: boolean;

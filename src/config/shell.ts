@@ -2,7 +2,7 @@ import type { Phase } from '../state/SceneStateManager';
 /** Authored beat lengths in seconds. Interactive phases (chip-focus, chest-focus, socket-ready, chase) have none. */
 export const SHELL_DURATIONS:Partial<Record<Phase,number>> = {
   // Escape attempt (to-portal is interactive, so it has no fixed length).
-  'portal-sighted':3.4,'call-baymax':3.2,'through-portal':2,'sf-arrival':4,'sf-turnback':4.6,'back-decision':2.8,'back-through':2.2,reentry:2.8,
+  'portal-sighted':3.4,'call-baymax':3.2,'to-portal':4.4,'through-portal':2,'sf-arrival':4,'sf-turnback':4.6,'back-decision':2.8,'back-through':2.2,reentry:2.8,
   inspected:3.2,'chip-reaching':2.1,'chip-held':2.7,'panel-opening':4.6,inserting:1.55,
   silence:2.4,booting:5.6,diagnostic:6.6,corrupting:4.8,threat:4.9,ignition:4.6,
   fracture:5.6,pulled:4.8
