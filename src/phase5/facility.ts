@@ -13,9 +13,50 @@ export function createFacility() {
   const k = new SceneKit('telemetry-facility');
   const random = seeded(5150), rand = (a: number, b: number) => a + random() * (b - a);
   const city = createPortalDimension();
-  city.group.position.set(-6, -6, -112); city.group.scale.setScalar(1.25);
+  // Keep the skyline close behind the receiver on the same sightline, without intersecting the dish.
+  city.group.position.set(-6, -.6, -52); city.group.scale.setScalar(1.25);
   city.group.traverse(o => { o.castShadow = false; });
   k.root.add(city.group);
+
+  // A grounded service apron connects the broken wall to the receiver tower.
+  k.box({ p: [1.6, -.42, -10.5], s: [13, .22, 12] }, k.concrete);
+  k.box({ p: [1.6, -.28, -16.5], s: [9.5, .08, 13] }, k.edge);
+  for (const x of [-5.4, 8.6]) k.box({ p: [x, .65, -17], s: [1.2, 2.1, 7] }, k.dark);
+  for (const [x, z, w, h] of [[-3.8, -24, 4.5, 6], [7.2, -27, 5.5, 8], [-8.5, -31, 6, 10]] as const) {
+    k.box({ p: [x, h / 2 - .35, z], s: [w, h, 5] }, k.standard('#465563', .82, .12));
+    k.box({ p: [x, h + .02, z], s: [w + .18, .16, 5.18] }, k.edge);
+    for (let y = 1.4; y < h - .4; y += 1.55) {
+      k.box({ p: [x, y, z - 2.53], s: [w - .35, .055, .06] }, k.dark);
+    }
+  }
+
+  // Small service details give the apron scale and tie the relay room to the dish.
+  const apronLight = k.ownMaterial(new T.MeshBasicMaterial({ color: '#d9b56c', toneMapped: false }));
+  for (const x of [-4.8, 8]) {
+    k.box({ p: [x, 1.9, -9.3], s: [.12, 3.8, .12] }, k.metal);
+    k.mesh(new T.SphereGeometry(.16, 12, 8), apronLight, { p: [x, 3.85, -9.3] });
+    k.box({ p: [x, .08, -9.3], s: [.55, .16, .55] }, k.dark);
+  }
+  for (const x of [-3.9, -2.7, 6.1, 7.3]) {
+    k.box({ p: [x, .12, -15.7], s: [.22, .24, .22] }, k.metal);
+    k.box({ p: [x, .34, -15.7], s: [.3, .08, .3] }, k.edge);
+  }
+  for (const x of [-3.7, -2.8, 6.2, 7.1]) {
+    k.box({ p: [x, .2, -18.2], s: [.8, .4, .7] }, k.ivory);
+    k.box({ p: [x, .43, -18.2], s: [.65, .04, .55] }, k.edge);
+  }
+  const apronCable = new T.CatmullRomCurve3([
+    new T.Vector3(-7.6, .08, -6.5), new T.Vector3(-6.2, .08, -9.5), new T.Vector3(-3.4, .08, -11.6),
+    new T.Vector3(-1.2, .08, -13.1), new T.Vector3(1.5, .08, -14.2), new T.Vector3(1.6, .08, -15.3),
+  ]);
+  k.mesh(k.ownGeometry(new T.TubeGeometry(apronCable, 30, .035, 6)), k.dark, { p: [0, 0, 0] });
+  for (const z of [-8.2, -11.2, -14.1]) k.box({ p: [1.6, .04, z], s: [2.2, .08, .035] }, k.edge);
+  for (const z of [-8.2, -11.2, -14.1]) k.line(new T.CatmullRomCurve3([
+    new T.Vector3(-7.6, .09, z), new T.Vector3(-4.5, .06, z + .25), new T.Vector3(-1.6, .09, z),
+  ]).getPoints(12), '#27343b', .75);
+  k.box({ p: [5.4, .32, -12.8], s: [1.4, .64, 1.1] }, k.dark);
+  k.box({ p: [5.4, .68, -12.8], s: [1.15, .05, .85] }, k.edge);
+  k.box({ p: [5.4, .98, -12.8], s: [.07, .62, .72] }, k.metal);
 
   const screenOff = new T.Color('#0b1a22'), screenOn = new T.Color('#5fd2ff');
   const screenMat = new T.MeshBasicMaterial({ color: screenOff.clone(), toneMapped: false });

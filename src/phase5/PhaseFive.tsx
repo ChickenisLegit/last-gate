@@ -6,6 +6,7 @@ import { createBay, type Bay } from './bay';
 import { createFacility } from './facility';
 import type { PhaseFiveStep } from './entry';
 import { reducedMotion } from '../config/experience';
+import { ZoomController } from '../systems/ZoomController';
 import './phase-five.css';
 
 /**
@@ -58,7 +59,9 @@ function useCentreBesidePanel() {
 }
 
 function BayScene() {
-  const { scene, camera } = useThree();
+  const { scene, camera, gl } = useThree();
+  const zoom = useMemo(() => new ZoomController({ min: .82, max: 1.2, step: .01 }, 1), []);
+  useEffect(() => { const off = zoom.bind(gl.domElement); zoom.setEnabled(true); return () => { off(); zoom.dispose(); }; }, [gl, zoom]);
   const [bay, setBay] = useState<Bay | null>(null);
   const look = useRef(new T.Vector3());
   const centre = useCentreBesidePanel();
@@ -76,7 +79,8 @@ function BayScene() {
     bay.update(t, dt, { fitted: s.fitted, power: s.power, held: s.stage === 'held' });
     // Side-on from the lane, like the board's overview: all of him, the limiter between him and Hiro.
     const b = bay.body, close = s.stage === 'testing' || s.stage === 'held' ? 1 : 0;
-    const pos = b.clone().addScaledVector(bay.side, 6.4 - close * .7).addScaledVector(bay.axis, -.6);
+    const distance = zoom.update(dt, reducedMotion ? 20 : 7);
+    const pos = b.clone().addScaledVector(bay.side, (6.4 - close * .7) * distance).addScaledVector(bay.axis, -.6);
     pos.y = b.y + 3.6 - close * .3 + pointer.y * .15; pos.addScaledVector(bay.axis, pointer.x * .3);
     camera.position.lerp(pos, reducedMotion ? 1 : 1 - Math.exp(-dt * 2));
     look.current.lerp(b.clone().addScaledVector(bay.side, .9).setY(b.y - .2), reducedMotion ? 1 : 1 - Math.exp(-dt * 2.4));
@@ -90,9 +94,9 @@ const FACILITY_SHOTS: Record<Task | 'done', [[number, number, number], [number, 
   power: [[1.6, 1.8, 3.6], [7.7, 1.5, .4]],
   patch: [[2.2, 1.8, 4.6], [7.8, 1.7, 2.6]],
   spectrum: [[-.9, 1.75, 1.7], [0, 1.4, -1.95]],
-  dish: [[-.8, 1.9, 3.4], [1.6, 6.5, -14]],
-  trace: [[-1.2, 1.7, 3.8], [-3, 12, -50]],
-  done: [[-1.2, 1.6, 4.2], [-6, 20, -70]],
+  dish: [[8, 12.2, -23], [1.6, 6.9, -14]],
+  trace: [[30, 24, 12], [-4, 14, -55]],
+  done: [[26, 26, 8], [-5, 20, -62]],
 };
 function FacilityScene() {
   const { scene, camera } = useThree();
@@ -158,12 +162,14 @@ function PatchTask({ done }: { done: () => void }) {
   };
   const y = (i: number) => 26 + i * 52;
   return <>
-    <svg className="p5-patch" viewBox="0 0 300 160" aria-hidden="true">
-      {OUTS.map((o, i) => pairs[o.id] && <line key={o.id} x1={86} y1={y(i)} x2={214} y2={y(INS.findIndex(n => n.id === pairs[o.id]))} />)}
-    </svg>
-    <div className="p5-patchgrid">
-      <div>{OUTS.map(o => <button key={o.id} aria-pressed={picked === o.id} disabled={!!pairs[o.id]} onClick={() => setPicked(o.id)}><b>{o.label}</b><span>{o.type}</span></button>)}</div>
-      <div>{INS.map(i => <button key={i.id} disabled={Object.values(pairs).includes(i.id)} onClick={() => connect(i.id)}><b>{i.label}</b><span>{i.type}</span></button>)}</div>
+    <div className="p5-patch-wrap">
+      <svg className="p5-patch" viewBox="0 0 300 160" aria-hidden="true">
+        {OUTS.map((o, i) => pairs[o.id] && <line key={o.id} x1={86} y1={y(i)} x2={214} y2={y(INS.findIndex(n => n.id === pairs[o.id]))} />)}
+      </svg>
+      <div className="p5-patchgrid">
+        <div>{OUTS.map(o => <button key={o.id} aria-pressed={picked === o.id} disabled={!!pairs[o.id]} onClick={() => setPicked(o.id)}><b>{o.label}</b><span>{o.type}</span></button>)}</div>
+        <div>{INS.map(i => <button key={i.id} disabled={Object.values(pairs).includes(i.id)} onClick={() => connect(i.id)}><b>{i.label}</b><span>{i.type}</span></button>)}</div>
+      </div>
     </div>
     <p className="p5-note" role="status">{note}</p>
   </>;
