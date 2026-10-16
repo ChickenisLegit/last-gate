@@ -35,9 +35,9 @@ Fixes to a phase go on that phase's branch; rebase the later branches onto it af
 
 ## Chapter flow
 
-This branch is Phase 1 only. The opening runs through RED_WAKE and the fracture corridor and ends on the PHASE I handoff card, which offers a replay. Phase 2 starts from that handoff on the `phase2` branch.
+Phase 1 runs through RED_WAKE and the fracture corridor. 6.5 seconds after its handoff card, the displacement drops Hiro in another part of the same city: a damaged harbour service district, with Baymax lying in a robotics bay. This is the landing page: **THE LAST GATE** on the left and **START JOURNEY**. Pressing it shrinks the title into the corner and moves the camera to Baymax without a reload; on this branch the journey ends there.
 
-In development, **Ctrl+M** skips ahead: to RED_WAKE, then to the handoff card.
+Development supports `?recovery=1` to open the landing directly (`?recovery=journey` skips past it), and **Ctrl+M** skips ahead (RED_WAKE → handoff → landing).
 
 ## Architecture
 
