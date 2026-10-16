@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import { Box3, MathUtils, type Material, type Mesh, type Object3D, Raycaster, Vector3 } from 'three';
+import { Box3, CircleGeometry, MathUtils, Mesh, MeshBasicMaterial, type Material, type Object3D, Raycaster, Vector3 } from 'three';
 import type { JourneyWorld } from '../recovery/journey';
 import { reducedMotion } from '../config/experience';
 import { createInternals } from './internals';
 import { hotspotElements, SYSTEMS, useBoard, type SystemId } from './state';
+import { ZoomController } from '../systems/ZoomController';
 
 const SHELL_OPACITY = { exterior: 1, internal: .13, isolate: .06 } as const;
 /** How often (s) the board re-checks what stands between the camera and Baymax. */
@@ -25,6 +26,15 @@ export function BoardScene({ world }: { world: JourneyWorld }) {
     return list;
   }, [internals, world]);
   const body = useMemo(() => new Box3().setFromObject(world.baymax).getCenter(new Vector3()), [world]);
+  const grounded = useMemo(() => {
+    const mesh = new Mesh(new CircleGeometry(1.85, 48), new MeshBasicMaterial({ color: '#02070b', transparent: true, opacity: .4, depthWrite: false, depthTest: false }));
+    mesh.rotation.x = -Math.PI / 2;
+    mesh.position.set(world.baymax.position.x, -1.22, world.baymax.position.z);
+    mesh.scale.set(1.55, .72, 1);
+    mesh.renderOrder = -1;
+    world.baymax.parent?.add(mesh);
+    return mesh;
+  }, [world]);
   // `home` is the overview angle: side-on from the lane, looking down on his chest. Dragging takes over.
   const orbit = useRef({ az: 0, el: .6, dist: 5, ready: false, homeAz: 0, homeEl: .92, user: false });
   const target = useRef(new Vector3()), desired = useRef(new Vector3()), tmp = useRef(new Vector3()), projected = useRef(new Vector3());
@@ -37,15 +47,17 @@ export function BoardScene({ world }: { world: JourneyWorld }) {
   }, [world]);
   const hidden = useRef(new Set<Object3D>()), ray = useMemo(() => new Raycaster(), []), sinceCheck = useRef(0);
   const viewShift = useRef(0), sinceLayout = useRef(1);
+  const zoomController = useMemo(() => new ZoomController({ min: .5, max: 1.3, step: .012 }, 1), []);
 
   useEffect(() => () => {
-    internals.dispose(); shellMats.forEach(m => { m.opacity = 1; m.depthWrite = true; });
+    internals.dispose(); grounded.removeFromParent(); grounded.geometry.dispose(); (grounded.material as MeshBasicMaterial).dispose(); shellMats.forEach(m => { m.opacity = 1; m.depthWrite = true; });
     hidden.current.forEach(o => { o.visible = true; }); hidden.current.clear();
     if ('clearViewOffset' in camera) (camera as unknown as { clearViewOffset: () => void }).clearViewOffset();
   }, [internals, shellMats, camera]);
 
   // Orbit input: drag on the world rotates, the wheel zooms. Panels sit above and keep their own input.
   useEffect(() => {
+    zoomController.setEnabled(true);
     const el = gl.domElement; let drag: { x: number; y: number } | null = null;
     const down = (e: PointerEvent) => { if (e.button !== 0) return; drag = { x: e.clientX, y: e.clientY }; el.setPointerCapture(e.pointerId); };
     const move = (e: PointerEvent) => {
@@ -57,12 +69,11 @@ export function BoardScene({ world }: { world: JourneyWorld }) {
     const up = () => { drag = null; };
     const wheel = (e: WheelEvent) => {
       e.preventDefault();
-      const zoom = MathUtils.clamp(useBoard.getState().zoom * (1 + Math.sign(e.deltaY) * .1), .5, 1.3);
-      useBoard.setState({ zoom });
+      zoomController.add(-Math.sign(e.deltaY) * .08);
     };
     el.addEventListener('pointerdown', down); el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up);
     el.addEventListener('wheel', wheel, { passive: false });
-    return () => { el.removeEventListener('pointerdown', down); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); el.removeEventListener('wheel', wheel); };
+    return () => { el.removeEventListener('pointerdown', down); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); el.removeEventListener('wheel', wheel); zoomController.dispose(); };
   }, [gl]);
 
   const anchor = (system: SystemId, out: Vector3) => system === 'chip' ? out.copy(world.bay.dockWorld()) : internals.anchorWorld(system, out);
@@ -84,7 +95,8 @@ export function BoardScene({ world }: { world: JourneyWorld }) {
     if (s.selected) anchor(s.selected, desired.current); else desired.current.copy(body);
     const k = (l: number) => reducedMotion ? 1 : 1 - Math.exp(-l * dt);
     target.current.lerp(desired.current, k(2.6));
-    const dist = (s.selected ? (s.selected === 'chip' ? 1.8 : 2.9) : 7.4) * s.zoom;
+    const zoom = zoomController.update(dt, reducedMotion ? 20 : 8);
+    const dist = (s.selected ? (s.selected === 'chip' ? 1.8 : 2.9) : 7.4) * zoom;
     o.dist += (dist - o.dist) * k(2.2);
     camera.position.set(
       target.current.x + Math.sin(o.az) * Math.cos(o.el) * o.dist,

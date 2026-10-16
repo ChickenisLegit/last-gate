@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Box3, Group, Mesh, PointLight, Vector3 } from 'three';
+import { Box3, CircleGeometry, Group, Mesh, MeshBasicMaterial, PointLight, Vector3 } from 'three';
 import { assets } from '../systems/AssetManager';
 import { mountChestBay } from '../characters/ChestBay';
 import { createDistrict, type District } from './district';
@@ -40,7 +40,7 @@ function Scene({ intent, journey, onReady, onError }: {
     assets.cloneBaymax().then(model => {
       if (!alive) return;
       // Unfold the seated legs, then lay the damaged shell on its back by the robotics bay.
-      const meshes: Mesh[] = []; model.traverse(n => { if (n instanceof Mesh) meshes.push(n); });
+      const meshes: Mesh[] = []; model.traverse(n => { if (n instanceof Mesh) { n.castShadow = true; n.receiveShadow = true; meshes.push(n); } });
       for (const side of [-1, 1]) {
         const hip = new Group(); hip.name = side < 0 ? 'hip-left' : 'hip-right'; hip.position.set(side * .53, .55, .28); model.add(hip); model.updateMatrixWorld(true);
         for (const mesh of meshes) {
@@ -57,7 +57,19 @@ function Scene({ intent, journey, onReady, onError }: {
       const bounds = new Box3().setFromObject(model);
       const center = bounds.getCenter(new Vector3());
       const a = district.baymaxAnchor;
-      model.position.set(a.x - center.x, -1.0 - bounds.min.y, a.z - center.z);
+      model.position.set(a.x - center.x, -1.22 - bounds.min.y, a.z - center.z);
+      model.updateMatrixWorld(true);
+      // Re-align from the transformed bounds so the soft shell cannot hover after rotation.
+      const contactBounds = new Box3().setFromObject(model);
+      model.position.y += -1.22 - contactBounds.min.y;
+      // Keep the collapsed shell visibly grounded even when the landing camera settles in.
+      const contactShadow = new Mesh(new CircleGeometry(1.85, 48), new MeshBasicMaterial({ color: '#02070b', transparent: true, opacity: .4, depthWrite: false, depthTest: false }));
+      contactShadow.name = 'Baymax contact shadow';
+      contactShadow.rotation.x = -Math.PI / 2;
+      contactShadow.position.set(a.x, -1.04, a.z);
+      contactShadow.scale.set(1.55, .72, 1);
+      contactShadow.renderOrder = 2;
+      district.group.add(contactShadow);
       model.updateMatrixWorld(true);
       // The exact Phase 1 chest bay, closed over the seated combat chip.
       const bay = mountChestBay(model);
