@@ -152,12 +152,12 @@ const PHASE_CUES:Partial<Record<Phase,[number,(audio:AudioDirector)=>void][]>>={
   handoff:[[1.2,a=>a.arrival()]]
 };
 const PHASE_LINES:Partial<Record<Phase,[number,string,('HIRO'|'BAYMAX')?][]>>={
-  'chip-focus':[[1.4,'Your chip. Maybe this brings you back.']],
-  'socket-ready':[[.6,'Come on, buddy.']],
-  booting:[[4.3,'Baymax!']],
-  threat:[[3.4,'…Baymax?']],
-  ignition:[[.35,'No— wait—']],
-  fracture:[[2.6,'BAYMAX!']]
+  'chip-focus':[[1.4,'The combat chip is still in you.']],
+  'socket-ready':[[.6,'Healthcare chip is gone… but I can get you running.']],
+  booting:[[4.3,'Baymax—come on.']],
+  threat:[[3.4,'The combat chip is taking over.']],
+  ignition:[[.35,'No—stay with me!']],
+  fracture:[[2.6,'We’re going home, Baymax!']]
 };
 const LINE_TIMES=[.5,1.55,2.45,3.35,4.55];
 const SCRAMBLE='▚▞░▒/\\#*+=_';
@@ -329,8 +329,8 @@ export function ExperienceDirector(){
     {phase==='inspected'&&linkVisible&&<button className="replay" onClick={replayRun}>REPLAY OPENING <span>R ↶</span></button>}
     {phase==='handoff'&&<div className="handoff" role="status">
       <p>LAST GATE <span>//</span> PHASE I</p>
-      <p>Hold on, Baymax.</p>
-      <small>SIGNAL <b>HIRO HAMADA</b></small>
+      <p>We’re going home, Baymax.</p>
+      <small>LINK <b>HIRO HAMADA</b></small>
       <button className="replay-inline" onClick={replayRun}>REPLAY FROM THE BEGINNING <span>R ↶</span></button>
     </div>}
     {error&&<div className="failure"><p>{error}</p><button onClick={()=>location.reload()}>RECONNECT ↗</button></div>}

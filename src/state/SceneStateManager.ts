@@ -29,9 +29,9 @@ type ExperienceState = {
 export const useSceneState = create<ExperienceState>((set, get) => ({
   chapter:'BOOT',phase:'loading',targetProgress:0,subtitle:'',speaker:'HIRO',sound:false,error:null,replay:0,started:false,
   ready:()=>set({chapter:'AWAKE',phase:'awakening',started:true}),
-  finishAwakening:()=>{if(get().phase==='awakening')set({phase:'approaching',subtitle:'Baymax…?',speaker:'HIRO'});},
+  finishAwakening:()=>{if(get().phase==='awakening')set({phase:'approaching',subtitle:'Baymax… where are you?',speaker:'HIRO'});},
   move:(amount)=>{if(get().phase==='approaching')set({targetProgress:Math.max(0,Math.min(1,get().targetProgress+amount))});},
-  arrive:()=>{if(get().phase==='approaching')set({chapter:'THE_SHELL',phase:'discovery',subtitle:'It’s me. Hiro.',speaker:'HIRO'});},
+  arrive:()=>{if(get().phase==='approaching')set({chapter:'THE_SHELL',phase:'discovery',subtitle:'Baymax. You’re here.',speaker:'HIRO'});},
   inspect:()=>{if(get().phase==='discovery')get().advance('discovery');},
   interact:()=>{const p=get().phase;if(['discovery',...HOLD_PHASES,'socket-ready'].includes(p))get().advance(p);},
   advance:(from)=>{const to=next[from];if(get().phase!==from||!to)return;set({phase:to,chapter:chapterOf(to,get().chapter),subtitle:'',speaker:'HIRO'});},
