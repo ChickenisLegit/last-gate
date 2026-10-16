@@ -184,14 +184,16 @@ const seamCurve=new THREE.CatmullRomCurve3([
   new THREE.Vector3(-.35,-5.8,.2),new THREE.Vector3(.1,-2.2,0),new THREE.Vector3(-.18,1.5,.05),
   new THREE.Vector3(.42,5.2,-.02),new THREE.Vector3(.08,9.4,.02),new THREE.Vector3(.55,13.4,0)
 ]);
-const seamFringe=new THREE.MeshBasicMaterial({color:'#9e73c6',transparent:true,opacity:.2,blending:THREE.AdditiveBlending,depthWrite:false});
+const seamFringe=new THREE.MeshBasicMaterial({color:'#756b9e',transparent:true,opacity:.12,blending:THREE.AdditiveBlending,depthWrite:false});
 const seamHalo=new THREE.MeshBasicMaterial({color:'#72c9ef',transparent:true,opacity:.1,blending:THREE.AdditiveBlending,depthWrite:false,side:THREE.DoubleSide});
-const seamCore=new THREE.Mesh(new THREE.TubeGeometry(seamCurve,48,.075,7,false),new THREE.MeshBasicMaterial({color:'#dcf7ff',toneMapped:false}));anomaly.add(seamCore);
-anomaly.add(new THREE.Mesh(new THREE.TubeGeometry(seamCurve,48,.22,7,false),seamFringe));
-for(const [x,y,rot,s] of [[-.75,1.2,-.16,1.2],[.7,4.9,.19,.8]]){
-  const shard=new THREE.Mesh(new THREE.PlaneGeometry(1.45,7),seamHalo);shard.position.set(x,y,-.08);shard.rotation.z=rot;shard.scale.set(s,1,1);anomaly.add(shard);
+// A narrow, layered spatial cut: a dark core, offset refractive planes and a restrained cyan edge.
+const seamCore=new THREE.Mesh(new THREE.TubeGeometry(seamCurve,64,.12,7,false),new THREE.MeshBasicMaterial({color:'#07111d',transparent:true,opacity:.94,depthWrite:false}));anomaly.add(seamCore);
+const seamEdge=new THREE.Mesh(new THREE.TubeGeometry(seamCurve,64,.035,6,false),new THREE.MeshBasicMaterial({color:'#e2f8ff',toneMapped:false}));anomaly.add(seamEdge);
+anomaly.add(new THREE.Mesh(new THREE.TubeGeometry(seamCurve,64,.24,8,false),seamFringe));
+for(const [x,y,rot,s,z] of [[-.8,1.2,-.16,1.2,-.14],[.75,4.9,.19,.8,-.22],[-.35,8.1,-.08,.62,-.3]]){
+  const shard=new THREE.Mesh(new THREE.PlaneGeometry(1.2,7.4),seamHalo);shard.position.set(x,y,z);shard.rotation.z=rot;shard.scale.set(s,1,1);anomaly.add(shard);
 }
-const anomalyLight=new THREE.PointLight('#b6eaff',3.1,16,2);anomalyLight.position.set(.1,3.7,.2);anomaly.add(anomalyLight);
+const anomalyLight=new THREE.PointLight('#a9e7ff',2.2,20,2);anomalyLight.position.set(.1,3.7,.2);anomaly.add(anomalyLight);
 for(let i=0;i<25;i++){
   const m=new THREE.SpriteMaterial({map:mistTexture,color:i%5===0?'#836eae':'#65a8cd',transparent:true,opacity:rand(.05,.16),depthWrite:false,blending:THREE.AdditiveBlending});
   const s=new THREE.Sprite(m);s.position.set(rand(-70,70),rand(-5,35),rand(-150,-55));s.scale.set(rand(25,70),rand(10,40),1);scene.add(s);
@@ -260,6 +262,7 @@ let lastShadow=0;
 patchWarpTree(scene);
 const mistBase=mistLayers.map(h=>h.sprite.position.clone());
 let dustSpin=1,dustKick=0,mistPush=0;const pushFrom=new THREE.Vector3();
+let instability=0;
 const keyOffset=key.position.clone().sub(key.target.position);
 return {group:scene,anomaly,anomalyLight,signs:art,
  /** Impact response outside the warp shader: particles reverse, fog is shoved, signs fail. */
@@ -267,14 +270,16 @@ return {group:scene,anomaly,anomalyLight,signs:art,
  dispose(){const geos=new Set(),mats=new Set(),textures=new Set();scene.traverse(obj=>{if(obj.geometry)geos.add(obj.geometry);if(obj.material){for(const mat of Array.isArray(obj.material)?obj.material:[obj.material]){mats.add(mat);for(const value of Object.values(mat))if(value?.isTexture)textures.add(value);}}});geos.forEach(g=>g.dispose());textures.forEach(t=>t.dispose());mats.forEach(m=>m.dispose());},
  /** @param {number} t @param {number} dt @param {boolean} reduced @param {number} [progress] @param {string} [phase] @param {any} [seq] @param {any} [focus] */
  update(t,dt,reduced,progress=0,phase='approaching',seq=null,focus=null){
- if(!reduced){floating.forEach((f,i)=>{f.obj.position.y=f.y+Math.sin(t*f.speed+f.phase)*f.amp;f.obj.rotation.y+=dt*.006;f.obj.updateMatrix();debris.setMatrixAt(i,f.obj.matrix);});debris.instanceMatrix.needsUpdate=true;riftGroup.rotation.z=-.45+Math.sin(t*.04)*.015;skyMaterial.uniforms.uTime.value=t;}
+ const charged=['ignition','chase','fracture','pulled'].includes(phase)?1:0;
+ instability=THREE.MathUtils.damp(instability,charged?THREE.MathUtils.clamp((seq?.tear??0)*.82+(phase==='chase'?.2:0),0,1):0,charged?1.15:2.4,dt);
+ if(!reduced){floating.forEach((f,i)=>{const pull=instability*Math.max(0,1-Math.abs(f.obj.position.z+34)/55);f.obj.position.y=f.y+Math.sin(t*f.speed+f.phase)*f.amp+pull*Math.sin(t*1.7+f.phase)*.32;f.obj.position.x+=Math.sign(1.8-f.obj.position.x)*pull*dt*.18;f.obj.rotation.y+=dt*(.006+pull*.05);f.obj.updateMatrix();debris.setMatrixAt(i,f.obj.matrix);});debris.instanceMatrix.needsUpdate=true;riftGroup.rotation.z=-.45+Math.sin(t*.04)*.015+instability*Math.sin(t*5.3)*.018;skyMaterial.uniforms.uTime.value=t;}
  // Dust drifts one way; an impact briefly reverses it, then it recovers.
  dustSpin=THREE.MathUtils.damp(dustSpin,1,.8,dt);dustKick=Math.max(0,dustKick-dt*.9);
  if(!reduced){dust.rotation.y+=dt*.001*dustSpin+dustKick*dt*.012*dustSpin;dust.position.y=Math.sin(t*.7)*dustKick*.25;}
  details.update(t,dt,reduced,progress);
  art.update(reduced?0:t,dt);
  mistPush=Math.max(0,mistPush-dt*.35);
- if(!reduced){sign.rotation.z=-.08+Math.sin(t*.21)*.009;mistLayers.forEach((h,i)=>{const base=mistBase[i];const away=base.x-pushFrom.x;h.sprite.position.x=base.x+Math.sin(t*.04+i)*.7+Math.sign(away||1)*mistPush*2.5;h.sprite.position.y=base.y+mistPush*.6;h.sprite.material.opacity=.12*(1-progress*.65)*(1+mistPush*.8);});anomaly.rotation.y=Math.sin(t*.07)*.012;anomaly.position.x=1.8+Math.sin(t*.035)*.035;}
+ if(!reduced){sign.rotation.z=-.08+Math.sin(t*.21)*.009;mistLayers.forEach((h,i)=>{const base=mistBase[i];const away=base.x-pushFrom.x;h.sprite.position.x=base.x+Math.sin(t*.04+i)*.7+Math.sign(away||1)*mistPush*2.5+Math.sign(1.8-base.x)*instability*.7;h.sprite.position.y=base.y+mistPush*.6+instability*.18;h.sprite.material.opacity=.12*(1-progress*.65)*(1+mistPush*.8+instability*.55);});anomaly.rotation.y=Math.sin(t*.07)*.012+instability*Math.sin(t*6.1)*.014;anomaly.rotation.x=instability*Math.sin(t*4.3)*.009;anomaly.position.x=1.8+Math.sin(t*.035)*.035+instability*Math.sin(t*5.7)*.055;anomalyLight.intensity=2.2+instability*(.6+.45*Math.sin(t*8.4));seamEdge.material.opacity=1-instability*.18;seamFringe.opacity=.12+instability*.12;}
  dust.material.opacity=.44*(1-progress*.72)*(1+dustKick*.4);
  const tear=seq?seq.tear:0;skyMaterial.uniforms.uTear.value=tear;warpUniforms.uWarpTime.value=t;
  // The key light travels with the action so the chase keeps its shadows.

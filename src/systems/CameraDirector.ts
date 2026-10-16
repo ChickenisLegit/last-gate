@@ -192,11 +192,13 @@ export class CameraDirector {
         CHASE_PATH.getPointAt(u,P);
         const speed=seq.chaseSpeed*CHASE_PATH.getLength();
         this.run+=dt*speed*2.2;
+        const instability=span(t,1.8,5.2);
         const bob=reducedMotion?0:Math.abs(Math.sin(this.run))*.07*Math.min(1,speed/2.2),side=reducedMotion?0:Math.sin(this.run*.5)*.04*Math.min(1,speed/2.2);
         P.y=MathUtils.lerp(.52,P.y,rise)+bob;P.x+=side;
         // Look well down the line; near the end, the seam itself becomes the destination.
         CHASE_PATH.getPointAt(Math.min(1,u+.16),A);A.y=MathUtils.lerp(A.y+.9,A.y+.15,rise);
         A.lerp(this.v2.set(1.8,3.4,-34),span(u,.7,1)*.6);
+        if(!reducedMotion&&instability>0){P.x+=Math.sin(t*2.1)*.018*instability;P.y+=Math.sin(t*1.7)*.012*instability;A.x+=Math.sin(t*1.3+1)*.055*instability;this.roll+=Math.sin(t*1.1)*.012*instability;}
         // Glances: the director pulls Hiro's eyes to Baymax when he is the threat on screen.
         const w=this.glance(seq);if(w>0){A.lerp(this.v.copy(ctx.baymax).setY(ctx.baymax.y+1.4),w);}
         // Never crane straight up: keep the street, and whatever is about to hit it, in frame.
@@ -206,8 +208,11 @@ export class CameraDirector {
         this.focusDistance=12;break;
       }
       case 'fracture':{
-        const k=span(t,0,5.6);P.set(1.3+(reducedMotion?0:Math.sin(t*23)*.01*k),1.46,-27.1+span(t,1.2,3)*.35);
-        A.set(1.85,MathUtils.lerp(3.2,5.4,k),-31.5);this.fov=MathUtils.lerp(48,60,k);this.focusDistance=6;break;
+        const k=span(t,0,5.6),disorient=span(t,.8,4.8);
+        P.set(1.3+(reducedMotion?0:Math.sin(t*23)*(.01+.055*disorient)*k),1.46+(reducedMotion?0:Math.sin(t*19)*.035*disorient),-27.1+span(t,1.2,3)*.35);
+        A.set(1.85,MathUtils.lerp(3.2,5.4,k),-31.5);
+        if(!reducedMotion){A.x+=Math.sin(t*14)*.18*disorient;this.roll=Math.sin(t*9)*.09*disorient;}
+        this.fov=MathUtils.lerp(48,60,k);this.focusDistance=6;break;
       }
       case 'pulled':{
         const resist=span(t,0,.9),drag=Math.pow(span(t,.9,4.4),1.7);
@@ -235,10 +240,10 @@ export class CameraDirector {
   /** Shake is noise, not random jitter; kicks are damped shoves; FOV punches on hits. */
   private applyImpulses(camera:PerspectiveCamera,seq:SequenceDirector,dt:number){
     if(reducedMotion){camera.fov+=seq.fovKick*.2;return;}
-    this.shakeT+=dt*(18+seq.shake*14);const s=seq.shake*seq.shake;
-    const n=(o:number)=>Math.sin(this.shakeT*1.13+o)*.6+Math.sin(this.shakeT*2.37+o*2.1)*.4;
-    camera.position.x+=n(0)*s*.06+seq.kick.x;camera.position.y+=n(3)*s*.05+seq.kick.y*.6;camera.position.z+=seq.kick.z;
-    this.target.x+=n(7)*s*.12;this.target.y+=n(11)*s*.1;
+    this.shakeT+=dt*(7+seq.shake*4);const s=seq.shake*seq.shake;
+    const n=(o:number)=>Math.sin(this.shakeT*.72+o)*.68+Math.sin(this.shakeT*1.31+o*2.1)*.32;
+    camera.position.x+=n(0)*s*.035+seq.kick.x;camera.position.y+=n(3)*s*.03+seq.kick.y*.6;camera.position.z+=seq.kick.z;
+    this.target.x+=n(7)*s*.065;this.target.y+=n(11)*s*.055;
     camera.fov+=seq.fovKick;
   }
   resetPointer(){this.pointer={x:0,y:0};this.holding=false;this.strafeInput=0;this.zoomTarget=0;}
