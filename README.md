@@ -35,9 +35,9 @@ Fixes to a phase go on that phase's branch; rebase the later branches onto it af
 
 ## Chapter flow
 
-Phase 1 runs through RED_WAKE and the fracture corridor and hands off to the Phase 2 landing. **START JOURNEY** opens the engineering board around the same 3D Baymax: rotate, zoom, switch EXTERIOR / INTERNAL / ISOLATE, and inspect the power system, thrusters, motor system, sensors and chip bay. Three physical repairs (reroute power, reconnect the thruster control line, reset the jammed actuator) leave him at BODY PARTIALLY RESTORED · MOVEMENT AVAILABLE · COMBAT SYSTEM ACTIVE · HEALTHCARE SYSTEM ABSENT.
+Phase 1 → the Phase 2 landing → the Phase 3 engineering board. When the assessment ends, **SEARCH THE DISTRICT** starts Phase 4: Hiro walks the corrupted streets, following the live service cables to Bay 6, then searches the maintenance yard for the manual, the high-current relay, the motor governor and the field clamp, assembles them and calibrates a temporary 35% output limit.
 
-Development supports `?recovery=1` and `?recovery=journey` (straight to the board).
+Development supports `?recovery=1`, `?recovery=journey`, `?phase4=walk` and `?phase4=district`.
 
 ## Architecture
 

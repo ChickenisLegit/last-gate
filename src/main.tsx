@@ -4,6 +4,7 @@ import { usePhaseTwoEntry } from './phase2/entry';
 import { PhaseTwoHost } from './phase2/PhaseTwoHost';
 import { enterRecovery } from './recovery/state';
 import './engineering';
+import { DistrictHost } from './phase4';
 
 import { useSceneState } from './state/SceneStateManager';
 import { Failure } from './ui/Failure';
@@ -86,7 +87,7 @@ function DesktopGate() {
 
   return <AppBoundary>
     <Suspense fallback={<main className="boot" role="status">LOADING EXPERIENCE…</main>}>
-      <PhaseTwoHost><Experience /></PhaseTwoHost>
+      <DistrictHost><PhaseTwoHost><Experience /></PhaseTwoHost></DistrictHost>
     </Suspense>
   </AppBoundary>;
 }
