@@ -30,14 +30,15 @@ Each phase lives on its own branch, and each branch builds on the one before it,
 | `phase2` | Phase 2: a new district and the landing page (THE LAST GATE · START JOURNEY) | Phases 1–2 |
 | `phase3` | Phase 3: the Baymax engineering board (inspection, three physical repairs) | Phases 1–3 |
 | `phase4` | Phase 4: the walk to Bay 6, the district search and the power-limiter build | Phases 1–4 |
+| `phase5` | Phase 5: the limiter test on Baymax and the telemetry trace of the healthcare chip | Phases 1–5 |
 
-Fixes to a phase go on that phase's branch; rebase the later branches onto it afterwards. Later phases plug in through small registries (`src/recovery/journey.ts`, `src/engineering/exit.ts`), so earlier phases never import later ones.
+Fixes to a phase go on that phase's branch; rebase the later branches onto it afterwards. Later phases plug in through small registries (`src/recovery/journey.ts`, `src/engineering/exit.ts`, `src/phase4/exit.ts`), so earlier phases never import later ones.
 
 ## Chapter flow
 
-Phase 1 → the Phase 2 landing → the Phase 3 engineering board. When the assessment ends, **SEARCH THE DISTRICT** starts Phase 4: Hiro walks the corrupted streets, following the live service cables to Bay 6, then searches the maintenance yard for the manual, the high-current relay, the motor governor and the field clamp, assembles them and calibrates a temporary 35% output limit.
+Phase 1 → the Phase 2 landing → the Phase 3 engineering board → Phase 4's walk and power-limiter build. The district result's **FIT THE LIMITER TO BAYMAX** starts Phase 5: back at the harbour bay the limiter is fitted and tested (Baymax comes back up, still hostile, held to 35%), then Hiro moves deeper into the city to a telemetry relay. Five console repairs (power within the battery's limit, the signal patch, notching out interference, aiming the dish, ordering the signal fixes) recover the healthcare chip's last transmission: outbound, across the portal boundary, no local signal.
 
-Development supports `?recovery=1`, `?recovery=journey`, `?phase4=walk` and `?phase4=district`.
+Development supports `?recovery=1`, `?recovery=journey`, `?phase4=walk`, `?phase4=district`, `?phase5=1` and `?phase5=facility`.
 
 ## Architecture
 
