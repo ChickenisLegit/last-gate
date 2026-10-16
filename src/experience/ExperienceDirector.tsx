@@ -5,6 +5,8 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CinematicPost } from '../effects/CinematicPost';
 import { createPortalDimension } from '../environment/PortalDimension.js';
 import { createRuptureSet } from '../environment/RuptureSet.js';
+import { createSanFransokyo } from '../environment/SanFransokyo';
+import { createPortalGate } from '../environment/PortalGate';
 import { assets } from '../systems/AssetManager';
 import { CameraDirector, type ShotContext } from '../systems/CameraDirector';
 import { SequenceDirector, type SequenceEvent } from '../systems/SequenceDirector';
@@ -31,6 +33,10 @@ function Failure(){return <div className="failure"><p>The connection was lost.</
 const ZOOM_HINT_PHASES:Phase[]=['chip-focus','chip-held','chest-focus','panel-opening','socket-ready'];
 const MARKER_PHASES:Phase[]=['discovery','chip-focus','chest-focus'];
 const STREET_BG=new Color('#101c31'),CORRIDOR_BG=new Color('#061420'),STREET_FOG=new Color('#253e59'),CORRIDOR_FOG=new Color('#123349');
+const SF_BG=new Color('#0d1b30'),SF_FOG=new Color('#1b3450');
+const INTRO_PORTAL:Phase[]=['portal-sighted','call-baymax','to-portal','through-portal','sf-arrival','sf-turnback','back-decision','back-through'];
+const IN_SF:Phase[]=['through-portal','sf-arrival','sf-turnback','back-decision'];
+const PORTAL_CLOSE:Partial<Record<Phase,number>>={'portal-sighted':.1,'call-baymax':.16,'to-portal':.24,'through-portal':.3,'sf-arrival':.42,'sf-turnback':.58,'back-decision':.74,'back-through':.95};
 
 type SceneProps={director:CameraDirector;seq:SequenceDirector;marker:React.RefObject<HTMLButtonElement|null>;readout:React.RefObject<HTMLDivElement|null>;audio:AudioDirector};
 function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
@@ -38,6 +44,8 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
   const advance=useThree(s=>s.advance);
   const environment=useMemo(()=>createPortalDimension(),[]);
   const rupture=useMemo(()=>createRuptureSet(environment),[environment]);
+  const sf=useMemo(()=>createSanFransokyo(),[]);
+  const gate=useMemo(()=>createPortalGate(24),[]);
   const chip=useMemo(()=>new ChipController(),[]);
   const post=useMemo(()=>new CinematicPost(gl,scene,camera as PerspectiveCamera),[gl,scene,camera]);
   // Development only: lets tooling pump frames when the browser throttles requestAnimationFrame.
@@ -60,7 +68,7 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
   useEffect(()=>{
     const pmrem=new PMREMGenerator(gl),room=new RoomEnvironment(),env=pmrem.fromScene(room,.04).texture;
     scene.environment=env;scene.environmentIntensity=.28;room.dispose();pmrem.dispose();
-    return()=>{scene.environment=null;env.dispose();post.dispose();environment.dispose();};
+    return()=>{scene.environment=null;env.dispose();post.dispose();environment.dispose();sf.dispose();gate.dispose();};
   },[gl,scene,post]);
   useEffect(()=>{
     if(!shell)return;
@@ -97,11 +105,16 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     if(phase!=='socket-ready')magnetCue.current=false;
     audio.update(director.visualProgress,phase,seq.phaseTime,{red:seq.red,alignment:seq.alignment,corridor:seq.corridor,collapse:seq.collapse,thrust:['ignition','chase','fracture'].includes(phase)?(phase==='ignition'?Math.min(1,Math.max(0,(seq.phaseTime-1.9)*2)):1):0});
     // Through the seam the city falls away; only the corridor remains.
+    // The escape attempt: the gate and the normal world appear while Hiro tries to leave, and the
+    // gate slowly irises shut. Both are hidden again once he commits to Baymax (the approach).
+    const introPortal=INTRO_PORTAL.includes(phase),inSF=IN_SF.includes(phase);
+    gate.group.visible=introPortal;sf.group.visible=introPortal;
+    gate.update(t,dt,introPortal?(PORTAL_CLOSE[phase]??0):0);sf.update(t);
     const inside=phase==='handoff';
     environment.group.visible=!inside;
     const bg=scene.background as Color|null,fog=scene.fog as FogExp2|null;
-    if(bg)bg.copy(inside?CORRIDOR_BG:STREET_BG);
-    if(fog){fog.color.copy(inside?CORRIDOR_FOG:STREET_FOG);fog.density=inside?.012:.015+director.visualProgress*.006+seq.collapse*.01;}
+    if(bg)bg.copy(inside?CORRIDOR_BG:inSF?SF_BG:STREET_BG);
+    if(fog){fog.color.copy(inside?CORRIDOR_FOG:inSF?SF_FOG:STREET_FOG);fog.density=inside?.012:inSF?.004:.015+director.visualProgress*.006+seq.collapse*.01;}
     // UI anchors are projected from the world, never fixed to the screen.
     if(marker.current){
       const focus=phase==='chip-focus'?ctx.chip:phase==='chest-focus'?ctx.chest:projection.set(3.12,2.06,-11.28);
@@ -131,6 +144,8 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     <color attach="background" args={['#101c31']}/>
     <fogExp2 attach="fog" args={['#253e59',.015]}/>
     <primitive object={environment.group}/>
+    <primitive object={sf.group}/>
+    <primitive object={gate.group}/>
     <primitive object={rupture.root}/>
     <primitive object={chip.group}/>
     {shell&&<primitive object={shell} onClick={check} onPointerOver={()=>{if(useSceneState.getState().phase==='discovery')gl.domElement.style.cursor='crosshair';}} onPointerOut={()=>{gl.domElement.style.cursor='default';}}/>}
@@ -152,6 +167,11 @@ const PHASE_CUES:Partial<Record<Phase,[number,(audio:AudioDirector)=>void][]>>={
   handoff:[[1.2,a=>a.arrival()]]
 };
 const PHASE_LINES:Partial<Record<Phase,[number,string,('HIRO'|'BAYMAX')?][]>>={
+  'call-baymax':[[.3,'Baymax! Come on — we have to go!'],[2.4,'The portal’s closing!']],
+  'sf-arrival':[[1.3,'I made it… San Fransokyo.']],
+  'sf-turnback':[[.5,'Baymax? …Baymax!'],[2.9,'He’s not moving.']],
+  'back-decision':[[.4,'I’m not leaving you.']],
+  'back-through':[[.2,'Hold on—']],
   'chip-focus':[[1.4,'Your chip. Maybe this brings you back.']],
   'socket-ready':[[.6,'Come on, buddy.']],
   booting:[[4.3,'Baymax!']],
@@ -238,7 +258,7 @@ export function ExperienceDirector(){
       if(p==='chase'){event.preventDefault();if(event.deltaY>0){input();sprintPulse();}return;}
       // Handling the chip: the wheel zooms (forward = closer).
       if(camera.zoomable){event.preventDefault();input();camera.zoomBy(-Math.sign(event.deltaY)*Math.min(.35,Math.abs(event.deltaY)*.0022));return;}
-      if(p!=='approaching')return;
+      if(p!=='approaching'&&p!=='to-portal')return;
       event.preventDefault();input();
       if(firstScroll.current&&event.deltaY>0){firstScroll.current=false;scrollGuard.current=performance.now()+450;useSceneState.getState().move(.065);return;}
       if(performance.now()<scrollGuard.current)return;
@@ -255,7 +275,7 @@ export function ExperienceDirector(){
       if(zoomOut.includes(event.code)&&camera.zoomable){event.preventDefault();camera.zoomBy(-.25);}
       if(['KeyA','ArrowLeft'].includes(event.code)&&p==='approaching'){event.preventDefault();input();camera.strafeInput=-1;}
       if(['KeyD','ArrowRight'].includes(event.code)&&p==='approaching'){event.preventDefault();input();camera.strafeInput=1;}
-      if(runKeys.includes(event.code)&&p==='approaching'){event.preventDefault();input();camera.holding=true;}
+      if(runKeys.includes(event.code)&&(p==='approaching'||p==='to-portal')){event.preventDefault();input();camera.holding=true;}
       if(runKeys.includes(event.code)&&p==='chase'){event.preventDefault();input();seq.sprint=true;}
       // Holds work from the keyboard too: E, Space or Enter commit the chip, the seam and the dock.
       if(holdKeys.includes(event.code)&&([...HOLD_PHASES,'socket-ready'] as Phase[]).includes(p)){event.preventDefault();if(!seq.keyHold)pressedAt.current=performance.now();seq.keyHold=true;}
@@ -307,6 +327,9 @@ export function ExperienceDirector(){
     <div className="suit-readout" aria-label="Suit location status"><span>LOCATION <b>UNRESOLVED</b></span><span>EXIT SIGNAL <b>— — —</b></span><i>PERSONAL LINK / OFFLINE</i></div>
     <div className="subtitle" role="status" aria-live="polite">{subtitle&&<p key={subtitle} className={speaker==='BAYMAX'?'baymax':''}><span>{speaker}</span>{subtitle}</p>}</div>
     {phase==='awakening'&&<button className="skip" onClick={skip}>SKIP AWAKENING <span>ESC</span></button>}
+    {phase==='to-portal'&&<button className="approach" onClick={()=>useSceneState.getState().move(.07)} aria-label="Walk to the portal">
+      TO THE PORTAL <span>//</span> SCROLL · HOLD
+    </button>}
     {phase==='approaching'&&idleHint&&<button className="approach" onClick={()=>{setIdleHint(false);useSceneState.getState().move(.065);}} aria-label="Move closer to Baymax">
       MOVE <span>//</span> SCROLL
     </button>}
