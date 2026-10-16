@@ -3,6 +3,7 @@ import { useSceneState, type Phase } from '../state/SceneStateManager';
 import { reducedMotion } from '../config/experience';
 import { cameraRig } from './CameraRig';
 import { CHASE_PATH, type SequenceDirector } from './SequenceDirector';
+import { ZoomController } from './ZoomController';
 
 const span=(t:number,a:number,b:number)=>MathUtils.smoothstep(t,a,b);
 /** How long each shot takes to arrive from wherever the previous one left the camera. */
@@ -41,11 +42,12 @@ export class CameraDirector {
   private v=new Vector3();private v2=new Vector3();private shakeT=0;private focusPoint=new Vector3();
   private run=0;
   /** Viewer zoom while handling the chip: -1 (pulled back) … 1 (close in). */
+  private readonly zoomController = new ZoomController({ min: -1, max: 1, step: .0022 });
   public zoomTarget=0;private zoom=0;
   /** Sideways step on the approach (A / D, arrow keys): -1, 0 or 1 while held. */
   public strafeInput=0;private strafe=0;private strafeGoal=0;
   private lookRange:[number,number]=[.18,.1];
-  zoomBy(amount:number){if(ZOOM_PHASES.includes(this.phase))this.zoomTarget=MathUtils.clamp(this.zoomTarget+amount,ZOOM_RANGE[0],ZOOM_RANGE[1]);}
+  zoomBy(amount:number){if(ZOOM_PHASES.includes(this.phase)){this.zoomController.setEnabled(true);this.zoomController.add(amount);this.zoomTarget=MathUtils.clamp(this.zoomTarget+amount,ZOOM_RANGE[0],ZOOM_RANGE[1]);}}
   get zoomable(){return ZOOM_PHASES.includes(this.phase);}
 
   update(camera:PerspectiveCamera,delta:number,_w:number,_h:number,seq?:SequenceDirector,ctx?:ShotContext){
@@ -82,6 +84,10 @@ export class CameraDirector {
       }
       this.shotTime+=dt*seq.slowmo;
       this.shot(state.phase,this.shotTime,seq,ctx,camera,dt);
+      this.zoomController.setEnabled(ZOOM_PHASES.includes(state.phase));
+      this.zoomController.setScripted(this.shotTime < (BLEND[state.phase] ?? 1.2));
+      this.zoom=this.zoomController.update(dt, reducedMotion ? 20 : 6);
+      this.zoomTarget=this.zoomController.current;
       // Viewer zoom: a dolly along the shot's own line of sight plus a little lens, so the
       // chip, the seam and the socket can be studied close or seen in context.
       if(!ZOOM_PHASES.includes(state.phase))this.zoomTarget=0;
