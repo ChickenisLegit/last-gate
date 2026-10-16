@@ -59,8 +59,8 @@ export class CameraDirector {
     if(state.chapter==='BOOT')return;
     this.wakeTime+=dt;
     // Each walk beat (to the gate, then to Baymax) runs its own progress from zero.
-    if(state.phase!==this.prevPhase){if(state.phase==='to-portal'||state.phase==='approaching')this.progress=0;if(state.phase==='awakening')this.wakeTime=0;this.prevPhase=state.phase;}
-    if(this.holding&&(state.phase==='approaching'||state.phase==='to-portal'))state.move(dt*.052);
+    if(state.phase!==this.prevPhase){if(state.phase==='approaching')this.progress=0;if(state.phase==='awakening')this.wakeTime=0;this.prevPhase=state.phase;}
+    if(this.holding&&state.phase==='approaching')state.move(dt*.052);
     const before=this.progress;
     this.progress=MathUtils.damp(this.progress,state.targetProgress,reducedMotion?20:2.3,dt);
     this.velocity=MathUtils.damp(this.velocity,(this.progress-before)/Math.max(dt,.001),3,dt);
@@ -110,7 +110,7 @@ export class CameraDirector {
     this.lastPos.copy(camera.position);this.lastLook.copy(this.target);this.lastRoll=roll;
     this.visualProgress=p;this.wake=wake;
     if(!directed)this.focusDistance=-this.focusPoint.set(2.7,2,-12).applyMatrix4(camera.matrixWorldInverse).z;
-    if(this.progress>.995&&(state.phase==='approaching'||state.phase==='to-portal'))state.arrive();
+    if(this.progress>.995&&state.phase==='approaching')state.arrive();
   }
 
   /** Writes the authored shot for this phase into pos / aim / fov / roll / focusDistance. */
@@ -134,9 +134,9 @@ export class CameraDirector {
         this.fov=50;this.focusDistance=P.distanceTo(ctx.baymax);break;
       }
       case 'to-portal':{
-        // The walk to the gate; the player drives the distance.
-        const p=span(this.progress,0,1);
-        P.set(lookX*.12+(reducedMotion?0:Math.sin(this.footfall)*.02),2.52+breathe*.006,MathUtils.lerp(10.2,20.6,p));
+        // Automatic walk to the gate (part of the cinematic; no input needed).
+        const p=span(t,.2,4);
+        P.set(lookX*.12+(reducedMotion?0:Math.sin(t*3.3)*.03),2.52+breathe*.006,MathUtils.lerp(10.2,20.6,p));
         A.set(lookX*.3,4-lookY*.2,24);this.fov=50;this.focusDistance=P.distanceTo(this.v.set(0,4.2,24));break;
       }
       case 'through-portal':{

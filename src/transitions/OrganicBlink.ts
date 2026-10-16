@@ -24,5 +24,7 @@ export class TransitionDirector {
       .call(()=>useSceneState.getState().finishAwakening(),[],10.7);
   }
   skip(path:SVGPathElement){this.timeline?.kill();this.draw(path,1);useSceneState.getState().finishAwakening();}
+  /** Hold the eyes fully open (no blink): used while the automatic escape cinematic plays. */
+  open(path:SVGPathElement){this.timeline?.kill();this.draw(path,1);}
   dispose(){this.timeline?.kill();}
 }
