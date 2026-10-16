@@ -7,7 +7,7 @@ import { CHASE_PATH, type SequenceDirector } from './SequenceDirector';
 const span=(t:number,a:number,b:number)=>MathUtils.smoothstep(t,a,b);
 /** How long each shot takes to arrive from wherever the previous one left the camera. */
 const BLEND:Partial<Record<Phase,number>>={
-  'portal-sighted':2.4,'call-baymax':1.6,'to-portal':1.2,'through-portal':.5,'sf-arrival':1.3,'sf-turnback':1.6,'back-decision':1,'back-through':.3,
+  'portal-sighted':2.4,'call-baymax':1.6,'to-portal':1.2,'through-portal':.5,'sf-arrival':1.3,'sf-turnback':1.6,'back-decision':1,'back-through':.3,reentry:.25,
   discovery:2.4,inspected:2.4,'chip-focus':2.2,'chip-reaching':1.2,'chip-held':.9,'chest-focus':1.4,'panel-opening':1.2,
   'socket-ready':1,inserting:.8,silence:.6,booting:2.6,diagnostic:2.2,corrupting:2.4,threat:1.5,ignition:.9,chase:.01,fracture:1.2,pulled:.4,handoff:.01
 };
@@ -20,7 +20,7 @@ const INSPECT_AIM=new Vector3(4.14,1.3,-9.02);
 const LOOK:Partial<Record<Phase,[number,number]>>={
   awakening:[.18,.1],
   'portal-sighted':[.4,.2],'call-baymax':[.4,.2],'to-portal':[.35,.18],'through-portal':[.05,.03],
-  'sf-arrival':[.45,.24],'sf-turnback':[.3,.16],'back-decision':[.1,.06],'back-through':[.05,.03],
+  'sf-arrival':[.45,.24],'sf-turnback':[.3,.16],'back-decision':[.1,.06],'back-through':[.05,.03],reentry:[.03,.02],
   approaching:[.62,.3],discovery:[.48,.24],inspected:[.48,.24],
   'chip-focus':[.2,.12],'chip-reaching':[.14,.09],'chip-held':[.16,.1],'chest-focus':[.2,.12],'panel-opening':[.2,.12],
   'socket-ready':[.08,.05],inserting:[.08,.05],silence:[.22,.12],booting:[.32,.16],diagnostic:[.32,.16],corrupting:[.24,.13],
@@ -59,7 +59,7 @@ export class CameraDirector {
     if(state.chapter==='BOOT')return;
     this.wakeTime+=dt;
     // Each walk beat (to the gate, then to Baymax) runs its own progress from zero.
-    if(state.phase!==this.prevPhase){if(state.phase==='to-portal'||state.phase==='approaching')this.progress=0;this.prevPhase=state.phase;}
+    if(state.phase!==this.prevPhase){if(state.phase==='to-portal'||state.phase==='approaching')this.progress=0;if(state.phase==='awakening')this.wakeTime=0;this.prevPhase=state.phase;}
     if(this.holding&&(state.phase==='approaching'||state.phase==='to-portal'))state.move(dt*.052);
     const before=this.progress;
     this.progress=MathUtils.damp(this.progress,state.targetProgress,reducedMotion?20:2.3,dt);
@@ -159,11 +159,19 @@ export class CameraDirector {
         this.fov=44-k*2;this.focusDistance=P.distanceTo(this.v.set(0,4.2,24));break;
       }
       case 'back-through':{
-        // Run and jump back; land exactly on the approach start pose so the handoff is seamless.
-        const whoosh=span(t,.15,1.1),settle=span(t,1.3,2.2),cross=span(t,.1,1.9);
-        P.set(MathUtils.lerp(0,-1.7,span(t,1,2.2)),MathUtils.lerp(2.5,2.48,settle),MathUtils.lerp(27,8,cross));
-        A.set(MathUtils.lerp(0,-.65,settle),MathUtils.lerp(4,2.4,settle),MathUtils.lerp(24,-14,span(t,.2,1.6)));
-        this.fov=MathUtils.lerp(50,66,whoosh)*(1-settle)+51*settle;this.roll=(1-settle)*.1;this.focusDistance=12;break;
+        // Run and jump back through the ring into the dimension; the landing lands in 'reentry'.
+        const whoosh=span(t,.15,1.1),cross=span(t,.1,1.9);
+        P.set(MathUtils.lerp(0,-.8,span(t,1,2.2)),2.5,MathUtils.lerp(27,11,cross));
+        A.set(0,MathUtils.lerp(4,3,span(t,.2,1.6)),MathUtils.lerp(24,-6,span(t,.2,1.6)));
+        this.fov=MathUtils.lerp(50,68,whoosh);this.roll=whoosh*.12;this.focusDistance=12;break;
+      }
+      case 'reentry':{
+        // The crossing throws him down hard; he reels, then goes still — knocked out.
+        const hit=span(t,0,.3),settle=span(t,.5,2.6);
+        P.set(-1.2+(reducedMotion?0:Math.sin(t*38)*.05*(1-settle)),MathUtils.lerp(1.4,.52,hit)+breathe*.01,MathUtils.lerp(10,7.4,hit));
+        A.set(MathUtils.lerp(-.6,1.6,hit),MathUtils.lerp(2.2,3.2,hit)-settle*1.3,MathUtils.lerp(-11,-13,hit));
+        this.fov=MathUtils.lerp(64,48,settle);this.roll=(reducedMotion?0:Math.sin(t*8)*.16*(1-settle))+hit*.22*(1-settle);
+        this.focusDistance=10;break;
       }
       case 'discovery':case 'inspected':{
         // The world narrows: a slow push toward the shell, lower and closer, with less wander.

@@ -53,6 +53,7 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
   const baymax=useRef<BaymaxController|null>(null);
   const [shell,setShell]=useState<Group|null>(null);
   const elapsed=useRef(0),replay=useRef(0),magnetCue=useRef(false);
+  const phaseT=useRef(0),prevPhaseRef=useRef<string>('');
   const ctx=useMemo<ShotContext>(()=>({chest:new Vector3(3,1.97,-11.3),normal:new Vector3(0,0,1),chip:new Vector3(),baymax:new Vector3(2.7,0,-12),head:new Vector3(2.72,2.98,-11.6)}),[]);
   const projection=useMemo(()=>new Vector3(),[]);
   useEffect(()=>{
@@ -90,6 +91,8 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
   }),[seq,rupture,audio,camera,projection]);
   useFrame((_,delta)=>{
     const dt=Math.min(delta,.25);elapsed.current+=dt;const t=elapsed.current;
+    if(useSceneState.getState().phase!==prevPhaseRef.current){prevPhaseRef.current=useSceneState.getState().phase;phaseT.current=0;}
+    phaseT.current+=dt;
     const state=useSceneState.getState(),phase=state.phase;
     if(state.replay!==replay.current){replay.current=state.replay;rupture.reset();}
     seq.update(dt);
@@ -133,6 +136,8 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     fx.cyan=phase==='fracture'?seq.corridor*.45:phase==='pulled'?.6:phase==='handoff'?.35:0;
     fx.chroma=seq.warp*.8+(phase==='pulled'?seq.collapse:0)+(phase==='threat'?.12:0);
     fx.aperture=['chip-focus','chip-reaching','chip-held'].includes(phase)?.00042:['chest-focus','panel-opening','socket-ready','inserting','silence'].includes(phase)?.0003:['booting','diagnostic','corrupting','threat'].includes(phase)?.00018:['discovery','inspected'].includes(phase)?.00016:0;
+    // Hurt crossing back: a hard red hit, chromatic tear, fading as he goes still before the blink.
+    if(phase==='reentry'){const rt=phaseT.current;fx.flash=Math.max(fx.flash,Math.max(0,.9-rt*5));fx.red=Math.max(fx.red,Math.max(0,.85-rt*.42));fx.chroma=Math.max(fx.chroma,.35*Math.max(0,1-rt*.7));}
     gl.domElement.dataset.phase=phase;
     gl.domElement.dataset.progress=director.visualProgress.toFixed(3);
     gl.domElement.dataset.chase=seq.chase.toFixed(3);
@@ -164,6 +169,7 @@ const PHASE_CUES:Partial<Record<Phase,[number,(audio:AudioDirector)=>void][]>>={
   ignition:[[1.9,a=>a.spool()]],
   fracture:[[0,a=>a.rupture()]],
   pulled:[[3.1,a=>a.whiteout()]],
+  reentry:[[0,a=>a.impact(1,true,0,1)],[.12,a=>a.impact(.6,false,-.2,1)]],
   handoff:[[1.2,a=>a.arrival()]]
 };
 const PHASE_LINES:Partial<Record<Phase,[number,string,('HIRO'|'BAYMAX')?][]>>={
@@ -318,6 +324,8 @@ export function ExperienceDirector(){
     <div className="lens-vignette" aria-hidden="true"/><div className="film-grain" aria-hidden="true"/>
     <div className="cinema-edge top" aria-hidden="true"/><div className="cinema-edge bottom" aria-hidden="true"/>
     <svg className="organic-blink" viewBox="0 0 1920 1080" preserveAspectRatio="none" aria-hidden="true"><defs><filter id="lid-feather"><feGaussianBlur stdDeviation="5"/></filter><mask id="eye-aperture"><rect width="1920" height="1080" fill="white"/><path ref={aperture} fill="black" filter="url(#lid-feather)"/></mask></defs><rect width="1920" height="1080" fill="#020506" mask="url(#eye-aperture)"/></svg>
+    <div className="arrival-flash" aria-hidden="true"/>
+    <div className={`knockout ${phase==='reentry'?'on':''}`} aria-hidden="true"/>
     {chapter==='BOOT'&&<div className="boot" role="status"><span className="signal-line"/><span>RECONNECTING…</span></div>}
     <button className="sound" onClick={toggleSound} aria-label={sound?'Mute atmospheric sound':'Enable atmospheric sound'} aria-pressed={sound}>
       <span className={`wave ${sound?'active':''}`} aria-hidden="true"><i/><i/><i/><i/></span>
