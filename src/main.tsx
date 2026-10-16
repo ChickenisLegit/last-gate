@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { usePhaseTwoEntry } from './phase2/entry';
 import { PhaseTwoHost } from './phase2/PhaseTwoHost';
 import { enterRecovery } from './recovery/state';
+import './engineering';
 
 import { useSceneState } from './state/SceneStateManager';
 import { Failure } from './ui/Failure';

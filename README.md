@@ -35,9 +35,9 @@ Fixes to a phase go on that phase's branch; rebase the later branches onto it af
 
 ## Chapter flow
 
-Phase 1 runs through RED_WAKE and the fracture corridor. 6.5 seconds after its handoff card, the displacement drops Hiro in another part of the same city: a damaged harbour service district, with Baymax lying in a robotics bay. This is the landing page: **THE LAST GATE** on the left and **START JOURNEY**. Pressing it shrinks the title into the corner and moves the camera to Baymax without a reload; on this branch the journey ends there.
+Phase 1 runs through RED_WAKE and the fracture corridor and hands off to the Phase 2 landing. **START JOURNEY** opens the engineering board around the same 3D Baymax: rotate, zoom, switch EXTERIOR / INTERNAL / ISOLATE, and inspect the power system, thrusters, motor system, sensors and chip bay. Three physical repairs (reroute power, reconnect the thruster control line, reset the jammed actuator) leave him at BODY PARTIALLY RESTORED · MOVEMENT AVAILABLE · COMBAT SYSTEM ACTIVE · HEALTHCARE SYSTEM ABSENT.
 
-Development supports `?recovery=1` to open the landing directly (`?recovery=journey` skips past it), and **Ctrl+M** skips ahead (RED_WAKE → handoff → landing).
+Development supports `?recovery=1` and `?recovery=journey` (straight to the board).
 
 ## Architecture
 
