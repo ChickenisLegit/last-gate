@@ -1,177 +1,117 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
-import { Box3, Group, Mesh, PointLight, Vector3 } from 'three';
-import { assets } from '../systems/AssetManager';
-import { mountChestBay } from '../characters/ChestBay';
-import { createDistrict, type District } from './district';
+import { CatmullRomCurve3, MathUtils, PerspectiveCamera, Vector2, Vector3 } from 'three';
 import { journeyExtension, type JourneyWorld } from './journey';
+import { takeHarbour } from './HarbourWorld';
 import type { RecoveryStage } from './state';
 import { reducedMotion } from '../config/experience';
+import { SceneQuality } from '../presentation/SceneQuality';
 import './recovery.css';
 
-const damp = (current: Vector3, target: Vector3, lambda: number, dt: number) =>
-  current.lerp(target, reducedMotion ? 1 : 1 - Math.exp(-lambda * dt));
-
-/** Landing composition: the lane on the left for the title, Baymax lying in the bay on the right. */
-const LANDING_POS = new Vector3(-1.8, 3.1, 5.6), LANDING_LOOK = new Vector3(-.8, -.1, -4.6);
-
-/** Shared, mutable intent the camera reads each frame without re-registering useFrame. */
-/** Dev shortcut: ?recovery=journey skips the landing, as if START JOURNEY had been pressed. */
 const DEV_JOURNEY = import.meta.env.DEV && new URLSearchParams(location.search).get('recovery') === 'journey';
+const PATH = new CatmullRomCurve3([
+  [.4, 1.65, 9], [.65, 1.6, 4], [-.6, 1.65, -.2], [-2.5, 2.5, -4.1],
+].map(p => new Vector3(...p)), false, 'centripetal');
+type Intent = { stage: RecoveryStage; target: number; progress: number; velocity: number; forward: boolean; yaw: number; pitch: number; drag: boolean; lastX: number; lastY: number };
 
-type Intent = { stage: RecoveryStage; drag: boolean; yaw: number; pitch: number; lastX: number; lastY: number };
-
-function Scene({ intent, journey, onReady, onError }: {
-  intent: React.MutableRefObject<Intent>; journey: boolean; onReady: () => void; onError: () => void;
+function Scene({ intent, onReady, onArrived, onError }: {
+  intent: React.MutableRefObject<Intent>; onReady: () => void; onArrived: () => void; onError: () => void;
 }) {
-  const { camera, scene } = useThree();
-  const district = useMemo<District>(createDistrict, []);
+  const { scene, camera, gl } = useThree();
   const [world, setWorld] = useState<JourneyWorld | null>(null);
-  const redLight = useRef<PointLight | null>(null);
-  const camPos = useRef(district.stops[0].pos.clone());
-  const camLook = useRef(district.stops[0].look.clone());
-  const tmp = useRef(new Vector3());
-  const look = useRef(new Vector3());
   const extension = journeyExtension();
-
+  const eye = useMemo(() => new Vector3(), []), look = useRef(new Vector3(1.4, .3, -4.8));
+  const desiredLook = useMemo(() => new Vector3(), []), head = useRef(new Vector2()), headTarget = useMemo(() => new Vector2(), []);
+  const notified = useRef(false);
+  const prepare = useMemo(() => world && extension?.prepare ? () => extension.prepare!(world, gl, scene, camera) : undefined, [world, extension, gl, scene, camera]);
   useEffect(() => {
-    scene.add(district.group);
     let alive = true, mounted: JourneyWorld | null = null;
-    assets.cloneBaymax().then(model => {
-      if (!alive) return;
-      // Unfold the seated legs, then lay the damaged shell on its back by the robotics bay.
-      const meshes: Mesh[] = []; model.traverse(n => { if (n instanceof Mesh) meshes.push(n); });
-      for (const side of [-1, 1]) {
-        const hip = new Group(); hip.name = side < 0 ? 'hip-left' : 'hip-right'; hip.position.set(side * .53, .55, .28); model.add(hip); model.updateMatrixWorld(true);
-        for (const mesh of meshes) {
-          const p = mesh.position, sx = side * p.x;
-          const thigh = Math.abs(sx - .57) < .06 && Math.abs(p.y - .48) < .06;
-          const foot = Math.abs(sx - .71) < .06 && (Math.abs(p.y - .26) < .06 || Math.abs(p.y - .04) < .06) && p.z > 1.2;
-          if (thigh || foot) hip.attach(mesh);
-        }
-        hip.rotation.x = 1.45;
-      }
-      model.rotation.order = 'YXZ';
-      model.rotation.set(-Math.PI / 2, -.5, -.08);
-      model.updateMatrixWorld(true);
-      const bounds = new Box3().setFromObject(model);
-      const center = bounds.getCenter(new Vector3());
-      const a = district.baymaxAnchor;
-      model.position.set(a.x - center.x, -1.0 - bounds.min.y, a.z - center.z);
-      model.updateMatrixWorld(true);
-      // The exact Phase 1 chest bay, closed over the seated combat chip.
-      const bay = mountChestBay(model);
-      // A faint, unstable red through the seam — the combat chip is still running.
-      const rl = new PointLight('#ff3626', .9, 4, 1.8); rl.position.set(.42, 2.2, .9); model.add(rl); redLight.current = rl;
-      scene.add(model);
-      mounted = { baymax: model, bay, district };
-      setWorld(mounted);
-      onReady();
-    }).catch(() => { if (alive) onError(); });
-    return () => { alive = false; mounted?.bay.dispose(); mounted?.baymax.removeFromParent(); district.dispose(); };
-  }, [district, scene, onReady, onError]);
+    takeHarbour().then(w => {
+      if (!alive) { w.bay.dispose(); w.district.dispose(); return; }
+      mounted = w; scene.add(w.district.group, w.baymax); setWorld(w);
+    }).catch(onError);
+    return () => { alive = false; if (mounted) extension?.disposePrepared?.(mounted); mounted?.bay.dispose(); mounted?.baymax.removeFromParent(); mounted?.district.dispose(); };
+  }, [scene, onError]);
 
   useFrame(({ clock }, delta) => {
-    const dt = Math.min(delta, .05), time = clock.elapsedTime, i = intent.current;
-    district.update(time, dt, reducedMotion);
-    if (world && !(journey && extension)) world.bay.update({ t: time, open: 0, seated: 1, red: .9, seamGlow: .12 });
-    if (redLight.current && !(journey && extension)) redLight.current.intensity = (.6 + .4 * Math.sin(time * 2.1)) * .6;
-    // Once a journey extension takes over, it owns the camera.
-    if (journey && extension) return;
-
-    let lambda = 1.6;
-    if (i.stage === 'arrive') {
-      camPos.current.copy(district.stops[0].pos); camLook.current.copy(district.stops[0].look);
-    } else if (i.stage === 'landing') {
-      camPos.current.copy(LANDING_POS); camLook.current.copy(LANDING_LOOK);
-      // Idle drift keeps the frame alive; drag looks around without leaving the composition.
-      if (!reducedMotion) { camPos.current.x += Math.sin(time * .21) * .08; camPos.current.y += Math.cos(time * .17) * .05; }
-      tmp.current.copy(camLook.current).sub(camPos.current);
-      const x = tmp.current.x, z = tmp.current.z;
-      tmp.current.x = x * Math.cos(i.yaw) - z * Math.sin(i.yaw); tmp.current.z = x * Math.sin(i.yaw) + z * Math.cos(i.yaw); tmp.current.y += i.pitch * 4;
-      camLook.current.copy(camPos.current).add(tmp.current);
-    } else if (world) {
-      // No next phase on this branch: settle on Baymax's chest and hold.
-      world.bay.chestNormal(tmp.current);
-      const dock = world.bay.dockWorld();
-      camPos.current.copy(dock).addScaledVector(tmp.current, 2.4); camPos.current.y += .6;
-      camLook.current.copy(dock); lambda = 1.2;
+    if (!world) return;
+    const dt = Math.min(delta, .05), t = clock.elapsedTime, i = intent.current;
+    // Only the few nearby practical lights animate. The background city is static.
+    if (i.stage !== 'journey') world.district.update(t, dt, reducedMotion);
+    if (i.stage === 'journey' && extension) return;
+    world.bay.update({ t, open: 0, seated: 1, red: .9, seamGlow: .12 });
+    if (i.stage === 'approach' && i.forward) i.target = Math.min(1, i.target + dt * .17);
+    const speed = MathUtils.clamp((i.target - i.progress) * 2.8, -.15, .22);
+    i.velocity = MathUtils.damp(i.velocity, speed, 5, dt);
+    i.progress = reducedMotion ? i.target : MathUtils.clamp(i.progress + i.velocity * dt, 0, 1);
+    PATH.getPointAt(i.progress, eye);
+    const moving = Math.abs(i.target - i.progress) > .002;
+    if (!reducedMotion) {
+      eye.y += Math.sin(i.progress * 65) * .018 * (moving ? 1 : 0) + Math.sin(t * .9) * .008;
+      eye.x += Math.sin(i.progress * 32) * .01 * (moving ? 1 : 0);
     }
-    damp(camera.position, camPos.current, lambda, dt);
-    damp(look.current, camLook.current, lambda * 1.4, dt);
-    camera.lookAt(look.current);
+    camera.position.copy(eye);
+    desiredLook.set(world.district.baymaxAnchor.x, .18, world.district.baymaxAnchor.z);
+    look.current.lerp(desiredLook, 1 - Math.exp(-dt * 3.5)); camera.lookAt(look.current);
+    headTarget.set(i.yaw, i.pitch); head.current.lerp(headTarget, 1 - Math.exp(-dt * 7));
+    camera.rotateY(head.current.x); camera.rotateX(head.current.y);
+    const cam = camera as PerspectiveCamera;
+    cam.fov = MathUtils.damp(cam.fov, 50 - i.progress * 4, 3, dt); cam.updateProjectionMatrix();
+    if (i.progress > .985 && !notified.current) { notified.current = true; onArrived(); }
   });
-
-  return world && journey && extension ? <extension.Scene world={world} /> : null;
+  return <>
+    <color attach="background" args={['#101a21']} /><fog attach="fog" args={['#192932', 22, 115]} />
+    <SceneQuality ready={!!world} prepare={prepare} onReady={onReady} />
+    {world && intent.current.stage === 'journey' && extension && <extension.Scene world={world} />}
+  </>;
 }
 
-export function Recovery() {
+export function Recovery({ active = true }: { active?: boolean }) {
   const [stage, setStage] = useState<RecoveryStage>('arrive');
-  const [ready, setReady] = useState(false);
-  const [error, setError] = useState(false);
+  const [ready, setReady] = useState(false), [error, setError] = useState(false), [dialogue, setDialogue] = useState(true);
+  const intent = useRef<Intent>({ stage, target: DEV_JOURNEY ? 1 : 0, progress: DEV_JOURNEY ? 1 : 0, velocity: 0, forward: false, yaw: 0, pitch: 0, drag: false, lastX: 0, lastY: 0 });
   const extension = journeyExtension();
-  const intent = useRef<Intent>({ stage, drag: false, yaw: 0, pitch: 0, lastX: 0, lastY: 0 });
-  useEffect(() => { intent.current.stage = stage; }, [stage]);
-
-  // Arrival: let the place breathe before the landing title appears.
+  intent.current.stage = stage;
+  const callbacks = useMemo(() => ({ ready: () => setReady(true), arrived: () => setStage(s => s === 'journey' ? s : 'inspect'), error: () => setError(true) }), []);
   useEffect(() => {
-    if (stage !== 'arrive' || !ready) return;
-    const timer = window.setTimeout(() => setStage(DEV_JOURNEY ? 'journey' : 'landing'), DEV_JOURNEY || reducedMotion ? 300 : 3800);
-    return () => window.clearTimeout(timer);
-  }, [stage, ready]);
+    if (!ready || !active) return;
+    window.dispatchEvent(new Event('lastgate:scene-ready'));
+    const timer = window.setTimeout(() => setStage(DEV_JOURNEY ? 'journey' : 'approach'), reducedMotion ? 100 : 650);
+    return () => { clearTimeout(timer); };
+  }, [ready, active]);
 
-  const callbacks = useMemo(() => ({ ready: () => setReady(true), error: () => setError(true) }), []);
-  const startJourney = () => { Object.assign(intent.current, { yaw: 0, pitch: 0 }); setStage('journey'); };
-
-  // Drag-look on the landing only; the journey's own workspace takes input after that.
   useEffect(() => {
-    const el = document.querySelector('.recovery-world') as HTMLElement | null; if (!el || stage !== 'landing') return;
-    const down = (e: PointerEvent) => { intent.current.drag = true; intent.current.lastX = e.clientX; intent.current.lastY = e.clientY; };
+    if (stage !== 'approach' || !active) return;
+    const el = document.querySelector<HTMLElement>('.recovery-world')!;
+    const down = (e: Event) => { const p = e as PointerEvent; intent.current.drag = true; intent.current.lastX = p.clientX; intent.current.lastY = p.clientY; };
     const move = (e: PointerEvent) => {
-      if (!intent.current.drag) return;
-      const dx = (e.clientX - intent.current.lastX) / window.innerWidth, dy = (e.clientY - intent.current.lastY) / window.innerHeight;
-      intent.current.lastX = e.clientX; intent.current.lastY = e.clientY;
-      intent.current.yaw = Math.max(-.35, Math.min(.35, intent.current.yaw - dx * 1.2));
-      intent.current.pitch = Math.max(-.12, Math.min(.18, intent.current.pitch - dy * .8));
+      const i = intent.current; if (!i.drag) return;
+      i.yaw = MathUtils.clamp(i.yaw - (e.clientX - i.lastX) * .002, -.32, .32);
+      i.pitch = MathUtils.clamp(i.pitch - (e.clientY - i.lastY) * .0015, -.15, .14);
+      i.lastX = e.clientX; i.lastY = e.clientY;
     };
-    const up = () => { intent.current.drag = false; };
-    el.addEventListener('pointerdown', down); window.addEventListener('pointermove', move); window.addEventListener('pointerup', up);
-    return () => { el.removeEventListener('pointerdown', down); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); intent.current.drag = false; };
-  }, [stage]);
+    const up = () => { intent.current.drag = false; intent.current.forward = false; };
+    const keydown = (e: KeyboardEvent) => { if (['KeyW', 'ArrowUp', 'Space'].includes(e.code) && !(e.target as HTMLElement)?.closest('button,input')) { e.preventDefault(); setDialogue(false); intent.current.forward = true; } };
+    const keyup = (e: KeyboardEvent) => { if (['KeyW', 'ArrowUp', 'Space'].includes(e.code)) intent.current.forward = false; };
+    const wheel = (e: WheelEvent) => { e.preventDefault(); setDialogue(false); intent.current.target = MathUtils.clamp(intent.current.target + e.deltaY * .0007, 0, 1); };
+    el.addEventListener('pointerdown', down); el.addEventListener('wheel', wheel, { passive: false });
+    window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('blur', up);
+    window.addEventListener('keydown', keydown); window.addEventListener('keyup', keyup);
+    return () => { el.removeEventListener('pointerdown', down); el.removeEventListener('wheel', wheel); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('blur', up); window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); up(); };
+  }, [stage, active]);
 
-  const journeyRunning = stage === 'journey' && !!extension;
-  return (
-    <main className={`recovery stage-${stage} ${journeyRunning ? 'journey-live' : ''}`} aria-label="The Last Gate" data-state="BAYMAX_RECOVERY">
-      <div className="recovery-world">
-        <Canvas shadows camera={{ position: [.4, 1.75, 9], fov: 46, near: .1, far: 120 }} dpr={[1, 1.5]} gl={{ antialias: true, powerPreference: 'high-performance' }}>
-          <Scene intent={intent} journey={stage === 'journey'} onReady={callbacks.ready} onError={callbacks.error} />
-        </Canvas>
-      </div>
-      <div className="recovery-grade" aria-hidden="true" />
-      <div className="recovery-arrival" aria-hidden="true" />
-
-      {/* The landing page: the 3D city is the hero; the title and one action sit on the left. */}
-      <header className={`recovery-title ${stage === 'arrive' ? '' : 'shown'}`} aria-hidden={stage === 'arrive'}>
-        <h1>THE LAST GATE</h1>
-        {stage === 'landing' && <button className="recovery-start" onClick={startJourney}>START JOURNEY</button>}
-      </header>
-
-      {stage === 'arrive' && (
-        <section className="recovery-orient">
-          {!ready && <p className="recovery-loading" role="status">Recovering signal…</p>}
-          {ready && <p className="recovery-whisper">Another street. The same broken city.</p>}
-        </section>
-      )}
-
-      {stage === 'journey' && !extension && (
-        <section className="recovery-found">
-          <p className="recovery-line" role="status"><small>HIRO</small>Baymax…</p>
-        </section>
-      )}
-      {journeyRunning && extension && <extension.Overlay />}
-
-      {stage !== 'journey' && <p className="recovery-signal" aria-hidden="true">SIGNAL RECOVERED · SAN FRANSOKYO / HARBOUR</p>}
-      {error && <div className="recovery-error" role="alert">Baymax could not be loaded. <button onClick={() => location.reload()}>Reload</button></div>}
-    </main>
-  );
+  const inspect = () => { intent.current.yaw = 0; intent.current.pitch = 0; setDialogue(false); setStage('journey'); };
+  return <main className={`recovery stage-${stage} ${ready ? 'is-ready' : ''} ${stage === 'journey' ? 'journey-live' : ''}`} aria-label="The Last Gate" data-state="BAYMAX_RECOVERY">
+    <div className="recovery-world"><Canvas shadows frameloop={active ? 'always' : 'demand'} camera={{ position: [.4, 1.65, 9], fov: 50, near: .1, far: 160 }} dpr={[1, 1.5]} gl={{ antialias: true, powerPreference: 'high-performance' }}>
+      <Scene intent={intent} onReady={callbacks.ready} onArrived={callbacks.arrived} onError={callbacks.error} />
+    </Canvas></div>
+    <div className="recovery-grade" aria-hidden="true" /><div className="recovery-arrival" aria-hidden="true" />
+    <header className="recovery-title"><h1>THE LAST GATE</h1><small>HARBOUR / SAN FRANSOKYO</small></header>
+    {ready && dialogue && stage !== 'journey' && <p className="recovery-line" role="status"><small>HIRO HAMADA</small>Baymax… what happened to you?</p>}
+    {stage === 'approach' && <div className="recovery-controls"><p>DRAG TO LOOK <span>·</span> HOLD W OR SCROLL TO WALK</p><button className="recovery-start" onClick={() => { setDialogue(false); intent.current.target = Math.min(1, intent.current.target + .34); }}>MOVE CLOSER <span>↗</span></button></div>}
+    {stage === 'inspect' && <div className="recovery-controls"><p>NO RESPONSE <span>·</span> PHYSICAL ACCESS AVAILABLE</p><button className="recovery-start" onClick={inspect}>INSPECT BAYMAX <span>↗</span></button></div>}
+    {stage === 'journey' && extension && <extension.Overlay />}
+    {stage !== 'journey' && <p className="recovery-signal">SIGNAL RECOVERED · SAN FRANSOKYO / HARBOUR</p>}
+    {error && <div className="recovery-error" role="alert">Baymax could not be loaded. <button onClick={() => location.reload()}>Reload</button></div>}
+  </main>;
 }

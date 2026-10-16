@@ -43,7 +43,7 @@ export class CameraDirector {
   private pos=new Vector3();private aim=new Vector3();private fov=45;private roll=0;
   private lastPos=new Vector3();private lastLook=new Vector3();private lastRoll=0;
   private v=new Vector3();private v2=new Vector3();private shakeT=0;private focusPoint=new Vector3();
-  private run=0;
+  private run=0;private initialized=false;
   /** Viewer zoom while handling the chip: -1 (pulled back) … 1 (close in). */
   public zoomTarget=0;private zoom=0;
   /** Sideways step on the approach (A / D, arrow keys): -1, 0 or 1 while held. */
@@ -54,7 +54,7 @@ export class CameraDirector {
 
   update(camera:PerspectiveCamera,delta:number,_w:number,_h:number,seq?:SequenceDirector,ctx?:ShotContext){
     const state=useSceneState.getState(),dt=Math.min(delta,.1);
-    if(state.replay!==this.replay){this.replay=state.replay;this.progress=0;this.wakeTime=0;this.holding=false;this.zoomTarget=0;this.zoom=0;this.strafe=0;this.strafeGoal=0;}
+    if(state.replay!==this.replay){this.replay=state.replay;this.initialized=false;this.phase='loading';this.progress=0;this.wakeTime=0;this.holding=false;this.zoomTarget=0;this.zoom=0;this.strafe=0;this.strafeGoal=0;}
     this.time+=dt;
     if(state.chapter==='BOOT')return;
     this.wakeTime+=dt;
@@ -93,6 +93,7 @@ export class CameraDirector {
       if(!ZOOM_PHASES.includes(state.phase))this.zoomTarget=0;
       this.zoom=MathUtils.damp(this.zoom,this.zoomTarget,reducedMotion?20:6,dt);
       if(Math.abs(this.zoom)>.001){this.v.subVectors(this.pos,this.aim);this.pos.copy(this.aim).addScaledVector(this.v,1-this.zoom*.45);this.fov*=1-this.zoom*.14;}
+      if(!this.initialized){this.fromPos.copy(this.pos);this.fromLook.copy(this.aim);this.fromFov=this.fov;this.fromRoll=this.roll;}
       const b=reducedMotion?1:span(this.shotTime,0,BLEND[state.phase]??1.2);
       camera.position.lerpVectors(this.fromPos,this.pos,b);this.target.lerpVectors(this.fromLook,this.aim,b);
       camera.fov=MathUtils.lerp(this.fromFov,this.fov,b);roll=MathUtils.lerp(this.fromRoll,this.roll,b);
@@ -107,7 +108,7 @@ export class CameraDirector {
     camera.rotateZ(roll);
     cameraRig.apply(camera,dt); // global camera language: motivated shake + transition FOV kicks
     camera.updateProjectionMatrix();camera.updateMatrixWorld();
-    this.lastPos.copy(camera.position);this.lastLook.copy(this.target);this.lastRoll=roll;
+    this.initialized=true;this.lastPos.copy(camera.position);this.lastLook.copy(this.target);this.lastRoll=roll;
     this.visualProgress=p;this.wake=wake;
     if(!directed)this.focusDistance=-this.focusPoint.set(2.7,2,-12).applyMatrix4(camera.matrixWorldInverse).z;
     if(this.progress>.995&&state.phase==='approaching')state.arrive();
@@ -140,22 +141,22 @@ export class CameraDirector {
         A.set(lookX*.3,4-lookY*.2,24);this.fov=50;this.focusDistance=P.distanceTo(this.v.set(0,4.2,24));break;
       }
       case 'through-portal':{
-        const k=span(t,0,2);P.set(0,2.6,MathUtils.lerp(20.6,28,k));A.set(0,4.2,42);
-        this.fov=MathUtils.lerp(50,66,span(t,.15,1.1))-span(t,1.4,2)*12;this.focusDistance=12;break;
+        const k=span(t,0,2);P.set(0,2.6,MathUtils.lerp(20.6,28,k));A.set(0,8,90);
+        this.fov=MathUtils.lerp(50,56,span(t,.15,1.1))-span(t,1.4,2)*2;this.focusDistance=12;break;
       }
       case 'sf-arrival':{
         // Out onto the overlook: a slow pan across the bay, the bridge and the whole skyline.
-        const k=span(t,0,4);P.set(MathUtils.lerp(0,-2,k),MathUtils.lerp(2.5,2.85,k),MathUtils.lerp(28,30.2,k)+lookX*.1);
-        A.set(MathUtils.lerp(-2,10,k)+lookX*.6,MathUtils.lerp(5,8.5,k)-lookY*.3,MathUtils.lerp(44,62,k));
-        this.fov=MathUtils.lerp(58,52,k);this.focusDistance=42;break;
+        const k=span(t,0,4);P.set(MathUtils.lerp(0,-1.4,k),MathUtils.lerp(2.6,3,k),MathUtils.lerp(28,31.5,k)+lookX*.1);
+        A.set(MathUtils.lerp(-18,10,k)+lookX*.6,MathUtils.lerp(13,16,k)-lookY*.3,110);
+        this.fov=MathUtils.lerp(56,52,k);this.focusDistance=42;break;
       }
       case 'sf-turnback':{
         // He turns back to the gate; Baymax is slumped far beyond it, not following.
-        const k=span(t,0,3);P.set(MathUtils.lerp(-2,0,k),2.5,30.4);A.set(lookX*.2,MathUtils.lerp(4.4,3.6,k),24);
+        const k=span(t,0,3);P.set(MathUtils.lerp(-1.4,0,k),MathUtils.lerp(3,2.5,k),31.5);A.set(lookX*.2,MathUtils.lerp(4.4,3.6,k),24);
         this.fov=MathUtils.lerp(52,43,k);this.focusDistance=P.distanceTo(this.v.set(2.7,.6,-12));break;
       }
       case 'back-decision':{
-        const k=span(t,0,2.8);P.set(0,2.5,MathUtils.lerp(30.4,27,k));A.set(0,3.9,24);
+        const k=span(t,0,2.8);P.set(0,2.5,MathUtils.lerp(31.5,27,k));A.set(0,3.9,24);
         this.fov=44-k*2;this.focusDistance=P.distanceTo(this.v.set(0,4.2,24));break;
       }
       case 'back-through':{
@@ -163,14 +164,14 @@ export class CameraDirector {
         const whoosh=span(t,.15,1.1),cross=span(t,.1,1.9);
         P.set(MathUtils.lerp(0,-.8,span(t,1,2.2)),2.5,MathUtils.lerp(27,11,cross));
         A.set(0,MathUtils.lerp(4,3,span(t,.2,1.6)),MathUtils.lerp(24,-6,span(t,.2,1.6)));
-        this.fov=MathUtils.lerp(50,68,whoosh);this.roll=whoosh*.12;this.focusDistance=12;break;
+        this.fov=MathUtils.lerp(46,58,whoosh);this.roll=whoosh*.06;this.focusDistance=12;break;
       }
       case 'reentry':{
         // The crossing throws him down hard; he reels, then goes still — knocked out.
-        const hit=span(t,0,.3),settle=span(t,.5,2.6);
-        P.set(-1.2+(reducedMotion?0:Math.sin(t*38)*.05*(1-settle)),MathUtils.lerp(1.4,.52,hit)+breathe*.01,MathUtils.lerp(10,7.4,hit));
+        const hit=span(t,0,.45),settle=span(t,.5,2.6);
+        P.set(-1.2+(reducedMotion?0:Math.sin(t*17)*.025*(1-settle)),MathUtils.lerp(1.4,.52,hit)+breathe*.01,MathUtils.lerp(10,7.4,hit));
         A.set(MathUtils.lerp(-.6,1.6,hit),MathUtils.lerp(2.2,3.2,hit)-settle*1.3,MathUtils.lerp(-11,-13,hit));
-        this.fov=MathUtils.lerp(64,48,settle);this.roll=(reducedMotion?0:Math.sin(t*8)*.16*(1-settle))+hit*.22*(1-settle);
+        this.fov=MathUtils.lerp(58,48,settle);this.roll=(reducedMotion?0:Math.sin(t*6)*.055*(1-settle))+hit*.1*(1-settle);
         this.focusDistance=10;break;
       }
       case 'discovery':case 'inspected':{

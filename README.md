@@ -26,8 +26,8 @@ Each phase lives on its own branch, and each branch builds on the one before it,
 
 | Branch | Adds | Plays |
 |---|---|---|
-| `main` | Phase 1: awakening, the shell, the chip, RED_WAKE, the fracture corridor | Phase 1 |
-| `phase2` | Phase 2: a new district and the landing page (THE LAST GATE · START JOURNEY) | Phases 1–2 |
+| `phase1` | Phase 1: awakening, the shell, the chip, RED_WAKE, the fracture corridor | Phase 1 |
+| `phase2` | Phase 2: harbour arrival and a controlled approach to Baymax | Phases 1–2 |
 | `phase3` | Phase 3: the Baymax engineering board (inspection, three physical repairs) | Phases 1–3 |
 | `phase4` | Phase 4: the walk to Bay 6, the district search and the power-limiter build | Phases 1–4 |
 | `phase5` | Phase 5: the limiter test on Baymax and the telemetry trace of the healthcare chip | Phases 1–5 |
@@ -36,7 +36,9 @@ Fixes to a phase go on that phase's branch; rebase the later branches onto it af
 
 ## Chapter flow
 
-Phase 1 → the Phase 2 landing → the Phase 3 engineering board → Phase 4's walk and power-limiter build. The district result's **FIT THE LIMITER TO BAYMAX** starts Phase 5: back at the harbour bay the limiter is fitted and tested (Baymax comes back up, still hostile, held to 35%), then Hiro moves deeper into the city to a telemetry relay. Five console repairs (power within the battery's limit, the signal patch, notching out interference, aiming the dish, ordering the signal fixes) recover the healthcare chip's last transmission: outbound, across the portal boundary, no local signal.
+Phase 1 → a quiet covered cut → the Phase 2 harbour approach → the Phase 3 engineering board → Phase 4's walk and power-limiter build. Hiro says “Baymax… what happened to you?” and the player walks toward him with W, Space, scroll or **MOVE CLOSER**, then chooses **INSPECT BAYMAX**. The district result's **FIT THE LIMITER TO BAYMAX** starts Phase 5: back at the harbour bay the limiter and its cable are fitted and tested (Baymax comes back up, still hostile, held to 35%), then Hiro moves deeper into the city to a telemetry relay. Five console repairs (power within the battery's limit, the signal patch, notching out interference, aiming the dish, ordering the signal fixes) recover the healthcare chip's last transmission: outbound, across the portal boundary, no local signal. The current experience ends with **Signal crossed the boundary.** and **Healthcare chip not found.**
+
+Later chapters use the opening's typography and material palette. The harbour renderer is warmed in demand mode during Phase 1, so it draws no hidden frames while waiting. The same Canvas survives the handoff. Skyline geometry remains, with baked static lighting and a cached sky instead of running another chase simulation. See `docs/PHASES_2_5_POLISH.md` for the implementation and verification notes.
 
 Development supports `?recovery=1`, `?recovery=journey`, `?phase4=walk`, `?phase4=district`, `?phase5=1` and `?phase5=facility`.
 

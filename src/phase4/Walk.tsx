@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as T from 'three';
 import { SceneKit, seeded, type Pose } from '../phase2/SceneKit';
-import { createPortalDimension } from '../environment/PortalDimension.js';
+import { createCityBackdrop } from '../presentation/Backdrop';
+import { SceneQuality } from '../presentation/SceneQuality';
+import { transitionChapter } from '../presentation/chapterTransition';
 import { reducedMotion } from '../config/experience';
 import { enterDistrictPhase } from './entry';
+import { batchStaticGeometry, createBaySixArchitecture, createServiceStreetDetail } from './environmentDetail';
 import './walk.css';
 
 /**
@@ -31,6 +34,9 @@ type WalkState = { p: number; speed: number; forward: boolean; back: boolean; po
 
 function buildStreet() {
   const k = new SceneKit('walk-street');
+  k.concrete.color.set('#465759'); k.ivory.color.set('#7c8c87');
+  k.metal.color.set('#6b7b78'); k.edge.color.set('#253537');
+  const detail = createServiceStreetDetail(); k.root.add(detail.root);
   const random = seeded(6061);
   const rand = (a: number, b: number) => a + random() * (b - a);
 
@@ -43,19 +49,7 @@ function buildStreet() {
   // Kerbs and broken barriers.
   for (const side of [-1, 1]) for (let z = 6; z > -60; z -= 5.5) if (random() > .25) k.box({ p: [side * 5.9, .32, z], s: [.45, .65, rand(2.2, 4)], r: [0, 0, side * rand(0, .05)] }, k.ivory);
 
-  // Buildings: the same slate blocks with window rows; some sheared, rotated or lifted.
-  for (const side of [-1, 1]) {
-    for (let z = 4; z > -60; z -= rand(6.5, 8.5)) {
-      const w = rand(4, 6.5), h = rand(8, 19), d = rand(5, 7), x = side * (7.4 + w / 2 + rand(0, 1.2));
-      const tilt = side * rand(-.05, .07);
-      k.box({ p: [x, h / 2 - .05, z], s: [w, h, d], r: [0, side * rand(-.06, .06), tilt] }, random() > .5 ? k.ivory : k.concrete);
-      const win: Pose[] = [];
-      for (let r = 1; r < h / 1.7 - 1; r++) for (let c = 0; c < 3; c++) win.push({ p: [x - side * (w / 2 + .02), r * 1.7, z - d / 3 + c * d / 3], s: [.03, .9, 1], r: [0, 0, tilt] });
-      k.instances(win, k.dim);
-      // Dimensional damage: an upper slice of the block turned out of register.
-      if (random() > .62) k.box({ p: [x, h + rand(1.2, 3), z + rand(-1, 1)], s: [w * .9, rand(2, 4), d * .9], r: [rand(-.2, .2), rand(-.6, .6), rand(-.25, .25)] }, k.ivory);
-    }
-  }
+  // Solid, varied blocks and their side walls are owned by the street-detail kit.
   // Floating fragments held over the street.
   for (let i = 0; i < 9; i++) k.box({ p: [rand(-9, 9), rand(9, 18), rand(-55, 0)], s: [rand(.6, 2.4), rand(.3, 1), rand(.6, 2)], r: [rand(0, 3), rand(0, 3), rand(0, 3)] }, k.concrete);
 
@@ -82,19 +76,10 @@ function buildStreet() {
     if (live) lamps.push(new T.Vector3(x - Math.sign(x) * 1.2, 4.9, z));
   }
 
-  // Bay 6: the maintenance yard's gate, the same facade the district search opens on.
-  const gate = new T.Group(); gate.position.set(0, 0, GATE_Z); k.root.add(gate);
-  k.box({ p: [0, 2.05, -.15], s: [11.2, 4.1, .6] }, k.concrete, gate);
-  k.box({ p: [0, 1.55, .2], s: [5.2, 3.1, .08] }, k.dark, gate);
-  for (const x of [-4.25, 4.25]) k.box({ p: [x, 1.85, .2], s: [2.2, 3.7, .2] }, k.metal, gate);
-  k.box({ p: [0, 3.84, .22], s: [10.8, .38, .28] }, k.metal, gate);
-  k.box({ p: [-4.4, 2.4, .36], s: [1.5, .38, .12] }, k.basic('#b18b5d', 1), gate);
-  k.mesh(new T.BoxGeometry(3.8, .22, .05), k.basic('#d0b98e', 1.2), { p: [0, 3.55, .42] }, gate);
-  k.label('BAY 6 · ROBOTICS MAINTENANCE  ロボ整備 第6', { p: [.9, 4.42, .4] }, 7.4, '#e8cf9c', gate);
-  for (const x of [-2.6, 2.6]) k.box({ p: [x, .9, .1], s: [.08, 1.3, .08], r: [0, 0, -.26] }, k.metal, gate);
-  k.haze({ p: [0, 1.6, GATE_Z + .35], s: [6, 3.6, 1] }, '#ffb066', .28);
-
-  return { kit: k, lamps };
+  // Shared open architecture: the lit service hall remains visible beyond the raised shutter.
+  const bay = createBaySixArchitecture(); bay.root.position.z = GATE_Z; k.root.add(bay.root);
+  batchStaticGeometry(k);
+  return { kit: k, lamps, dispose: () => { detail.dispose(); bay.dispose(); k.dispose(); } };
 }
 
 /** The live service cable: lies along the kerb, current pulsing toward Bay 6. */
@@ -106,7 +91,7 @@ function buildCable() {
     points.push(p.clone().addScaledVector(side, 3.2).setY(.09 + Math.max(0, Math.sin(i * 1.7)) * .03));
   }
   // Up the gate pylon and into the yard.
-  points.push(new T.Vector3(3.2, .09, -60), new T.Vector3(3.4, .2, GATE_Z + 1), new T.Vector3(3.3, 1.6, GATE_Z + .45), new T.Vector3(2.6, 2.4, GATE_Z + .45));
+  points.push(new T.Vector3(3.2, .09, -60), new T.Vector3(3.4, .12, GATE_Z + 1.1), new T.Vector3(3.6, .5, GATE_Z + .75), new T.Vector3(3.6, 1.2, GATE_Z + .77));
   const material = new T.ShaderMaterial({
     uniforms: { uTime: { value: 0 } },
     vertexShader: 'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
@@ -121,48 +106,50 @@ function WalkWorld({ state, onProgress }: { state: React.MutableRefObject<WalkSt
   const street = useMemo(buildStreet, []);
   const cable = useMemo(buildCable, []);
   const skyline = useMemo(() => {
-    const city = createPortalDimension();
+    const city = createCityBackdrop();
     city.group.position.set(0, -6, -128); city.group.scale.setScalar(1.3);
     city.group.traverse(o => { o.castShadow = false; });
     return city;
   }, []);
   const look = useMemo(() => new T.Vector3(), []), ahead = useMemo(() => new T.Vector3(), []), gate = useMemo(() => new T.Vector3(0, 2, GATE_Z), []);
-  const steps = useRef(0), reported = useRef(-1);
+  const steps = useRef(0), reported = useRef(-1), initialized = useRef(false);
+  const head = useMemo(() => new T.Vector2(), []), pos = useMemo(() => new T.Vector3(), []);
 
   useEffect(() => {
     scene.add(street.kit.root, cable.mesh, skyline.group);
-    return () => { scene.remove(street.kit.root, cable.mesh, skyline.group); street.kit.dispose(); cable.mesh.geometry.dispose(); cable.material.dispose(); skyline.dispose(); };
+    return () => { scene.remove(street.kit.root, cable.mesh, skyline.group); street.dispose(); cable.mesh.geometry.dispose(); cable.material.dispose(); skyline.dispose(); };
   }, [scene, street, cable, skyline]);
 
   useFrame(({ clock }, delta) => {
     const dt = Math.min(delta, .05), t = clock.elapsedTime, s = state.current;
-    skyline.update(t, dt, reducedMotion, 0, 'approaching');
     cable.material.uniforms.uTime.value = t;
     // Walk: held input sets a pace, a scroll adds a step; the path is the only way.
     const goal = s.forward ? 3.3 : s.back ? -1.4 : 0;
     s.speed = T.MathUtils.damp(s.speed, goal + s.impulse * 3.5, 3, dt); s.impulse = Math.max(0, s.impulse - dt * 2.2);
     s.p = T.MathUtils.clamp(s.p + s.speed * dt / LENGTH, 0, 1);
     steps.current += Math.abs(s.speed) * dt * 2.1;
-    const pos = PATH.getPointAt(s.p);
-    const bob = reducedMotion ? 0 : Math.sin(steps.current * 2) * .035 * Math.min(1, Math.abs(s.speed) / 2.5);
+    PATH.getPointAt(s.p, pos);
+    const bob = reducedMotion ? 0 : Math.sin(steps.current * 2) * .02 * Math.min(1, Math.abs(s.speed) / 2.5);
     const duck = Math.exp(-Math.pow((pos.z - PIPE_Z) / 1.6, 2)) * .5;
-    camera.position.set(pos.x + (reducedMotion ? 0 : Math.sin(steps.current) * .025), pos.y + bob - duck, pos.z);
+    camera.position.set(pos.x + (reducedMotion ? 0 : Math.sin(steps.current) * .012), pos.y + bob - duck, pos.z);
     // Look down the route; near the end, the gate takes over. The pointer turns the head.
     PATH.getPointAt(Math.min(1, s.p + .05), ahead);
+    if (!initialized.current) { look.copy(ahead); initialized.current = true; }
     look.lerp(ahead.lerp(gate, T.MathUtils.smoothstep(s.p, .8, 1)), 1 - Math.exp(-dt * 4));
     if (look.lengthSq() === 0) look.copy(ahead);
     camera.lookAt(look);
-    camera.rotateY(-s.pointer.x * .5); camera.rotateX(-s.pointer.y * .22);
+    head.lerp(s.pointer, 1 - Math.exp(-dt * 5));
+    camera.rotateY(-head.x * .38); camera.rotateX(-head.y * .17);
     const rounded = Math.round(s.p * 100);
     if (rounded !== reported.current) { reported.current = rounded; onProgress(s.p); }
   });
 
   return <>
     <color attach="background" args={['#0a1622']} />
-    <fog attach="fog" args={['#1a3146', 18, 170]} />
-    <hemisphereLight args={['#9ec6e4', '#0a1420', 1.4]} />
-    <directionalLight position={[-8, 16, 6]} intensity={1.8} color="#bcd9ec" />
-    <pointLight position={[0, 2.2, GATE_Z + 1.2]} intensity={14} distance={18} color="#ffae5e" />
+    <fog attach="fog" args={['#172d39', 26, 145]} />
+    <hemisphereLight args={['#a1c2cc', '#151c1d', 1.15]} />
+    <directionalLight position={[-8, 16, 6]} intensity={2} color="#d5dfdb" />
+    <pointLight position={[0, 3.1, GATE_Z - 3]} intensity={23} distance={19} color="#ffd3a0" />
     {street.lamps.map((p, i) => <pointLight key={i} position={p} intensity={5} distance={11} color="#ffc062" />)}
   </>;
 }
@@ -183,7 +170,7 @@ export function Walk() {
   }, [progress]);
   useEffect(() => { if (!line) return; const t = window.setTimeout(() => setLine(null), 3600); return () => window.clearTimeout(t); }, [line]);
 
-  const enter = () => { if (leaving) return; setLeaving(true); window.setTimeout(enterDistrictPhase, reducedMotion ? 50 : 1100); };
+  const enter = useCallback(() => { if (leaving) return; setLeaving(true); transitionChapter(enterDistrictPhase); }, [leaving]);
 
   useEffect(() => {
     const s = state.current, fwd = ['KeyW', 'ArrowUp', 'Space'], back = ['KeyS', 'ArrowDown'];
@@ -204,12 +191,13 @@ export function Walk() {
       window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('wheel', wheel);
       window.removeEventListener('pointermove', move); window.removeEventListener('pointerdown', press); window.removeEventListener('pointerup', release); window.removeEventListener('blur', blur);
     };
-  });
+  }, [enter]);
 
   const metres = Math.max(0, Math.round((1 - progress) * LENGTH + (0 - GATE_Z - 56)));
   return <main className={`walk ${leaving ? 'walk-leaving' : ''}`} aria-label="Phase 4: the walk to Bay 6">
     <div className="walk-world"><Canvas dpr={[1, 1.4]} camera={{ fov: 54, near: .1, far: 460, position: [0, EYE, 8] }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
       <WalkWorld state={state} onProgress={setProgress} />
+      <SceneQuality />
     </Canvas></div>
     <div className="walk-grade" aria-hidden="true" />
     <header className="walk-brand"><span>THE LAST GATE</span><small>PHASE 04 · NORTH SERVICE DISTRICT</small></header>

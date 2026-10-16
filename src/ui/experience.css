@@ -58,3 +58,11 @@
 .signature small{font-size:inherit;letter-spacing:inherit;color:#7f9187;margin:0 2px 0 6px}
 .zoom-hint{position:absolute;bottom:9vh;left:50%;transform:translateX(-50%);z-index:13;font-size:7px;letter-spacing:.2em;color:#b9c5bd;opacity:.5;animation:fade-in 1.4s 1.2s both;pointer-events:none}
 .zoom-hint span{margin:0 6px;color:#7f9187}
+
+/* The aperture is needed only during awakening. */
+.experience:not(.phase-awakening) .organic-blink{display:none}
+
+/* Fixed curved lids move on compositor layers; no animated full-screen SVG rasterization. */
+.organic-blink .blink-lid{position:absolute;left:-5%;width:110%;height:65%;display:block;background:#020506;will-change:transform;backface-visibility:hidden}
+.organic-blink .blink-top{top:0;clip-path:polygon(0 0,100% 0,100% 100%,94% 96%,86% 91%,77% 86%,68% 82.5%,59% 80.5%,50% 80%,41% 80.8%,32% 83.5%,23% 87.5%,14% 92%,6% 96.5%,0 100%);transform:translate3d(0,calc(var(--eye-open,0)*-110%),0)}
+.organic-blink .blink-bottom{bottom:0;clip-path:polygon(0 0,6% 3.5%,14% 8%,23% 12.5%,32% 16.5%,41% 19.2%,50% 20%,59% 19.5%,68% 17.5%,77% 14%,86% 9%,94% 4%,100% 0,100% 100%,0 100%);transform:translate3d(0,calc(var(--eye-open,0)*110%),0)}

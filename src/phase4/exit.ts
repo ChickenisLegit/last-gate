@@ -3,7 +3,7 @@
  * here, so Phase 4 never imports it. Without one (the phase4 branch on its own), the district
  * ends on its result.
  */
-export type DistrictExit = { label: string; go: () => void };
+export type DistrictExit = { label: string; go: () => void; prepare?: () => Promise<unknown> };
 
 let exit: DistrictExit | null = null;
 export function registerDistrictExit(next: DistrictExit) { exit = next; }

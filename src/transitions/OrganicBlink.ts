@@ -6,11 +6,10 @@ import { useSceneState } from '../state/SceneStateManager';
 export class TransitionDirector {
   private timeline:gsap.core.Timeline|null=null;
   constructor(){gsap.ticker.lagSmoothing(0);}
-  private draw(path:SVGPathElement,open:number){
-    const edge=Math.pow(open,2.35),cy=535+Math.sin(open*4)*9;
-    path.setAttribute('d',`M -180 ${cy-edge*1050} C 150 ${cy-open*620}, 610 ${cy-open*950}, 1010 ${cy-open*830} C 1430 ${cy-open*840}, 1780 ${cy-open*570}, 2100 ${cy-edge*1050+open*12} L 2100 ${cy+edge*1010} C 1680 ${cy+open*540}, 1370 ${cy+open*800}, 950 ${cy+open*890} C 510 ${cy+open*750}, 160 ${cy+open*560}, -180 ${cy+edge*1010} Z`);
+  private draw(path:HTMLElement,open:number){
+    path.style.setProperty('--eye-open',open.toFixed(5));
   }
-  awaken(path:SVGPathElement){
+  awaken(path:HTMLElement){
     this.timeline?.kill();const eye={open:0};this.draw(path,0);
     if(reducedMotion){this.draw(path,1);useSceneState.getState().finishAwakening();return;}
     const update=()=>this.draw(path,eye.open);
@@ -23,8 +22,8 @@ export class TransitionDirector {
       .call(()=>useSceneState.getState().say('Where… am I?'),[],8.1)
       .call(()=>useSceneState.getState().finishAwakening(),[],10.7);
   }
-  skip(path:SVGPathElement){this.timeline?.kill();this.draw(path,1);useSceneState.getState().finishAwakening();}
+  skip(path:HTMLElement){this.timeline?.kill();this.draw(path,1);useSceneState.getState().finishAwakening();}
   /** Hold the eyes fully open (no blink): used while the automatic escape cinematic plays. */
-  open(path:SVGPathElement){this.timeline?.kill();this.draw(path,1);}
+  open(path:HTMLElement){this.timeline?.kill();this.draw(path,1);}
   dispose(){this.timeline?.kill();}
 }

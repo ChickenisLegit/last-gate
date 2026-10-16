@@ -1,5 +1,6 @@
 import * as T from 'three';
 import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import type { PartId } from './DistrictWorld';
 
 /**
@@ -10,8 +11,8 @@ import type { PartId } from './DistrictWorld';
  *    knurled regulator spindle, a cracked clear isolation cover over screw terminals.
  *  - FIELD CLAMP: a split laminated core with copper windings that closes around the thruster
  *    feed. Contact jaws, a T-handle clamp screw and a mounting bracket.
- * Each is normalised to fit a 0.9-unit box with its base at y = -0.3. Geometry and materials are
- * shared module-wide; every call returns a fresh group so a part can appear in two places.
+ * Each is normalised to fit a 0.9-unit box with its base at y = -0.3. Materials are shared
+ * module-wide; every call owns fresh geometry so a part can appear in two places.
  */
 
 const BASE_Y = -.3, SIZE = .9;
@@ -191,4 +192,38 @@ function normalise(group: T.Group) {
 }
 
 const BUILDERS: Record<PartId, () => T.Group> = { relay, governor, clamp };
-export function createPart(part: PartId) { return normalise(BUILDERS[part]()); }
+
+/** Each part moves as one rigid unit. Keep its detail, with one opaque draw per compatible surface. */
+function batchRigidSurfaces(root: T.Group) {
+  root.updateMatrixWorld(true);
+  const toRoot = root.matrixWorld.clone().invert(), relative = new T.Matrix4();
+  const batches = new Map<string, T.Mesh[]>(), replaced = new Set<T.BufferGeometry>();
+  root.traverse(object => {
+    if (!(object instanceof T.Mesh) || Array.isArray(object.material) || object.material.transparent) return;
+    const attributes = Object.keys(object.geometry.attributes).sort().join(',');
+    const key = `${object.material.uuid}/${object.castShadow}/${object.receiveShadow}/${object.renderOrder}/${object.layers.mask}/${!!object.geometry.index}/${attributes}`;
+    const list = batches.get(key) ?? []; list.push(object); batches.set(key, list);
+  });
+  for (const meshes of batches.values()) {
+    if (meshes.length < 2) continue;
+    const pieces = meshes.map(object => object.geometry.clone().applyMatrix4(relative.multiplyMatrices(toRoot, object.matrixWorld)));
+    const geometry = mergeGeometries(pieces); pieces.forEach(piece => piece.dispose());
+    if (!geometry) continue;
+    geometry.computeBoundingSphere();
+    const first = meshes[0], merged = new T.Mesh(geometry, first.material);
+    merged.name = 'rigid-hardware-surface';
+    merged.castShadow = first.castShadow; merged.receiveShadow = first.receiveShadow;
+    merged.renderOrder = first.renderOrder; merged.layers.mask = first.layers.mask;
+    merged.matrixAutoUpdate = false;
+    meshes.forEach(object => { replaced.add(object.geometry); object.removeFromParent(); });
+    root.add(merged);
+  }
+  // Future builders can share a geometry within one part; do not release a still-visible instance.
+  const retained = new Set<T.BufferGeometry>();
+  root.traverse(object => { if (object instanceof T.Mesh) retained.add(object.geometry); });
+  replaced.forEach(geometry => { if (!retained.has(geometry)) geometry.dispose(); });
+}
+
+export function createPart(part: PartId) {
+  const group = normalise(BUILDERS[part]()); batchRigidSurfaces(group); return group;
+}

@@ -1,8 +1,8 @@
 import { create } from 'zustand';
 import { experience } from '../core/ExperienceFlow';
 
-/** Phase 2: arrive in a new district, then the landing page. START JOURNEY begins the website. */
-export type RecoveryStage = 'arrive' | 'landing' | 'journey';
+/** Phase 2: harbour arrival, player-controlled approach, then physical inspection. */
+export type RecoveryStage = 'arrive' | 'approach' | 'inspect' | 'journey';
 
 export const useRecovery = create<{ active: boolean }>(() => ({ active: false }));
 

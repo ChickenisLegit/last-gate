@@ -17,7 +17,7 @@ const groundTexture=new THREE.CanvasTexture(groundCanvas);groundTexture.wrapS=gr
 groundTexture.anisotropy=8;
 const groundMat=new THREE.MeshStandardMaterial({map:groundTexture,bumpMap:groundTexture,bumpScale:.045,color:'#8b929e',roughness:.94,metalness:0,envMapIntensity:.025});
 // The street runs on past the crater and into the seam, then breaks off into the void.
-const ROAD_NEAR=12,ROAD_FAR=-50,ROAD_LEN=ROAD_NEAR-ROAD_FAR,ROAD_MID=(ROAD_NEAR+ROAD_FAR)/2;
+const ROAD_NEAR=25,ROAD_FAR=-50,ROAD_LEN=ROAD_NEAR-ROAD_FAR,ROAD_MID=(ROAD_NEAR+ROAD_FAR)/2;
 groundTexture.repeat.set(3,12*ROAD_LEN/40);
 const road=mesh(new THREE.BoxGeometry(10.8,.7,ROAD_LEN,36,1,Math.round(ROAD_LEN*3)),groundMat,0,-.5,ROAD_MID);road.name='road';
 box(10.5,1.2,ROAD_LEN-1,materials.edge,.1,-1.3,ROAD_MID-.1);
@@ -220,6 +220,19 @@ const front=new THREE.PointLight('#c7d7ec',1.1,24,1.8);front.position.set(-2,5,-
 const companionLight=new THREE.DirectionalLight('#ffe4c5',.55);companionLight.position.set(-4,8,3);scene.add(companionLight);
 const details=createCinematicDetails(scene,{mesh,box,materials,rand,building,mistTexture});
 const art=createPortalArt(scene,{mesh,box,materials,rand,mistTexture});
+// The new escape opening looks back along the near end of the same fractured street.
+// Ground and surrounding mass continue to the gate; it never hangs over an empty void.
+for(const side of [-1,1]) {
+  const near=building(side*9.4,-.8,19,5.6,17,9,side*.045);near.rotation.y=Math.PI;
+  const far=building(side*18,-2,39,8,24,11,-side*.08);far.rotation.y=Math.PI;
+  for(const z of [15,20,24]) {
+    box(.52,.85,3.1,materials.concrete,side*5.1,.22,z);
+    box(.64,.13,3.2,groundMat,side*5.1,.72,z);
+  }
+}
+for(const z of [14,18,22])box(.1,.012,1.6,roadPaint,-.7,-.14,z);
+const reverseSky=mesh(new THREE.PlaneGeometry(900,600),skyMaterial,0,8,170);reverseSky.rotation.y=Math.PI;reverseSky.castShadow=false;
+
 
 // Bake every static opaque surface into one mesh per material. The city was ~330 separate
 // draws (each repeated in the shadow, AO and depth-of-field passes); merged it is a few dozen.
