@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 
-/** Phase 4 has two steps: the walk from Baymax to Bay 6, then the district search and build. */
+/** Phase 4 has two steps: the walk from Baymax to Bay 6, then the district clue search and case discovery. */
 export type DistrictStep = 'walk' | 'district';
 
 const param = import.meta.env.DEV ? new URLSearchParams(location.search).get('phase4') : null;

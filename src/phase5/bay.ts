@@ -1,11 +1,11 @@
 import * as T from 'three';
 import { createHarbourWorld } from '../recovery/HarbourWorld';
-import { createPart } from '../phase4/parts';
+import { createLimiter } from '../phase4/parts';
 
 /**
  * Back at the harbour bay: the same district and the same Baymax pose as the landing and the
- * engineering board (on his apron, clear of the debris), plus the limiter Hiro built in Bay 6.
- * The limiter is the three recovered parts on a service plate, cabled into his open bay.
+ * engineering board (on his apron, clear of the debris), plus the limiter recovered in Bay 6.
+ * The recovered limiter is a single intact industrial unit, cabled into his open bay.
  */
 export async function createBay() {
   const { district, baymax: model, bay } = await createHarbourWorld();
@@ -40,16 +40,11 @@ export async function createBay() {
   const side = new T.Vector3(-axis.z, 0, axis.x); if (side.x > 0) side.negate();
   const red = new T.PointLight('#ff2a1c', 0, 6, 1.8); red.position.copy(body).add(new T.Vector3(-.6, 1.2, .4)); district.group.add(red);
 
-  // The limiter: relay → governor → clamp on a service plate, as assembled in Bay 6.
-  const limiter = new T.Group();
-  limiter.name = 'fitted-power-limiter';
-  const plate = new T.Mesh(new T.BoxGeometry(1.5, .06, .62), new T.MeshStandardMaterial({ color: '#3a4447', metalness: .6, roughness: .5 }));
-  plate.position.y = .03; limiter.add(plate);
-  (['relay', 'governor', 'clamp'] as const).forEach((part, i) => {
-    const p = createPart(part); p.scale.setScalar(.42); p.position.set(-.48 + i * .48, .06 + .3 * .42, 0); limiter.add(p);
-  });
-  const status = new T.Mesh(new T.BoxGeometry(.16, .05, .02), new T.MeshBasicMaterial({ color: '#2a3a33', toneMapped: false }));
-  status.position.set(.6, .09, .3); limiter.add(status);
+  const limiter = createLimiter();
+  limiter.scale.setScalar(.44);
+  const statusMaterial = new T.MeshBasicMaterial({ color: '#2a3a33', toneMapped: false });
+  const status = new T.Mesh(new T.BoxGeometry(.16, .05, .02), statusMaterial);
+  status.position.set(.6, 2.52, .69); limiter.add(status);
   const ground = -1.02;
   const staged = body.clone().addScaledVector(side, 2.9).addScaledVector(axis, -.4).setY(ground);
   const fitted = body.clone().addScaledVector(side, 1.75).addScaledVector(axis, .2).setY(ground);
@@ -78,7 +73,7 @@ export async function createBay() {
       cable.visible = connected > 0; plug.visible = connected > 0;
       cable.geometry.setDrawRange(0, Math.floor(cable.geometry.index!.count * connected / 3) * 3);
       cableCurve.getPoint(connected, plug.position); cableCurve.getTangent(connected, tangent); plug.quaternion.setFromUnitVectors(up, tangent);
-      (status.material as T.MeshBasicMaterial).color.set(s.power > .05 ? '#ffb15a' : s.fitted > .99 ? '#7dffa6' : '#2a3a33');
+      statusMaterial.color.set(s.power > .05 ? '#ffb15a' : s.fitted > .99 ? '#7dffa6' : '#2a3a33');
       // Powered against the limit: eyes go red, the head turns toward Hiro, the body strains and settles.
       const p = s.power;
       eyes.forEach(m => m.color.set('#0b0f11').lerp(redEye, p).multiplyScalar(1 + p * .6));
@@ -96,7 +91,7 @@ export async function createBay() {
     dispose() {
       for (const root of [limiter, cable, plug]) root.traverse(o => { if (o instanceof T.Mesh) o.geometry.dispose(); });
       // Recovered part materials are shared across the chapter boundary.
-      for (const mesh of [plate, status, cable, plug]) (mesh.material as T.Material).dispose();
+      for (const mesh of [status, cable, plug]) (mesh.material as T.Material).dispose();
       eyes.forEach(m => m.dispose()); bay.dispose(); district.dispose();
     },
   };
