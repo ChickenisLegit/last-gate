@@ -120,3 +120,21 @@
 @keyframes boardInR{from{opacity:0;transform:translateX(18px)}}
 @keyframes hotspot{50%{box-shadow:0 0 0 9px rgba(143,224,255,.15)}}
 @media (max-width:1400px){.board-inspector{width:320px}.board-status,.board-hint{right:368px}.board-rail{width:226px}.board-status,.board-hint{left:270px}}
+
+/* End-of-board card: a full panel beside Baymax, same build as the Phase 5 console panel, with
+   real padding (the polish pass had zeroed the left edge, which read as cropped). */
+.board.board-summary-open .board-summary{left:30px;top:102px;bottom:auto;transform:none;width:min(420px,34vw);max-height:calc(100dvh - 132px);padding:26px 26px 24px;overflow-y:auto;background:linear-gradient(110deg,#101a1df5,#101a1dee);border:1px solid #b5c5b329;border-top-color:#c0cbb846;box-shadow:0 24px 60px rgba(0,0,0,.35);display:flex;flex-direction:column;gap:0}
+.board.board-summary-open .board-summary .board-kicker{display:flex;justify-content:space-between}
+.board.board-summary-open .board-summary .board-kicker span{color:#c0d0ac}
+.board.board-summary-open .board-summary-steps{list-style:none;margin:14px 0 4px;padding:0 0 14px;border-bottom:1px solid var(--line);display:flex;flex-direction:column;gap:6px}
+.board.board-summary-open .board-summary-steps li{position:relative;padding-left:22px;font:10px/1.5 var(--mono);letter-spacing:.06em;color:#aebdad}
+.board.board-summary-open .board-summary-steps li:before{content:'✓';position:absolute;left:0;color:#c0d0ac}
+.board.board-summary-open .board-summary-steps li.is-red{color:#dd8070}
+.board.board-summary-open .board-summary-steps li.is-red:before{content:'!';color:#dd8070}
+.board.board-summary-open .board-summary h2{margin:16px 0 14px;font-size:clamp(26px,2.2vw,32px);line-height:1.2}
+.board.board-summary-open .board-summary dl{margin:0 0 16px}
+.board.board-summary-open .board-question{margin:0 0 18px;padding:12px 14px;border-left:2px solid #c0d0ac;background:#b9c9a612;color:#d9dfd2}
+.board.board-summary-open .board-summary-actions{display:flex;flex-direction:column-reverse;gap:9px}
+.board.board-summary-open .board-summary-actions .board-primary{min-height:48px}
+.board.board-summary-open .board-summary-actions .board-secondary{min-height:38px;border-color:transparent;background:none;color:#95a69c}
+.board.board-summary-open .board-summary-actions .board-secondary:hover{color:#d9dfd2}

@@ -54,7 +54,7 @@ function useCentreBesidePanel() {
   const { camera, gl } = useThree();
   const stage = useP5(s => s.stage);
   useEffect(() => {
-    const panel = document.querySelector(stage === 'found' ? '.p5-found' : '.p5-panel');
+    const panel = document.querySelector('.p5-panel');
     const measure = () => {
       const shift = panel ? Math.round(panel.getBoundingClientRect().right / 2) : 0;
       const w = gl.domElement.clientWidth, h = gl.domElement.clientHeight;
@@ -114,8 +114,9 @@ const FACILITY_SHOTS: Record<Task | 'done', [[number, number, number], [number, 
   patch: [[2.2, 1.8, 4.6], [7.8, 1.7, 2.6]],
   spectrum: [[-.9, 1.75, 1.7], [0, 1.4, -1.95]],
   dish: [[8, 12.2, -23], [1.6, 6.9, -14]],
-  trace: [[30, 24, 12], [-4, 14, -55]],
-  done: [[26, 26, 8], [-5, 20, -62]],
+  // High over the relay roof, so the whole track reads from the dish to the boundary.
+  trace: [[22, 40, 24], [-3, 12, -44]],
+  done: [[20, 44, 28], [-5, 17, -58]],
 };
 function FacilityScene() {
   const { scene, camera, size } = useThree();
@@ -374,10 +375,19 @@ export function PhaseFive({ initial: from }: { initial: PhaseFiveStep }) {
       </aside>}
       {s.stage === 'facility' && task === 'trace' && <p className="p5-spatial-caption"><span>SPATIAL RECONSTRUCTION</span>{s.traced ? 'PROJECTED TRACK / BOUNDARY CROSSED' : `${s.fixes} OF 4 RECORDED POSITIONS PLACED`}</p>}
       {s.stage === 'facility' && task === 'trace' && FIXES.map((f, i) => <span key={f.id} className="p5-world-fix" ref={el => { if (el) signalLabels.set(i, el); else signalLabels.delete(i); }} aria-hidden="true"><i>{String(i + 1).padStart(2, '0')}</i>{f.label}</span>)}
-      {s.stage === 'found' && <section className="p5-found" role="dialog" aria-labelledby="p5-found-title">
-        <h2 id="p5-found-title">Signal crossed the boundary.</h2>
-        <p className="p5-body">Healthcare chip not found.</p>
-      </section>}
+      {s.stage === 'found' && <aside className="p5-panel p5-end" role="dialog" aria-labelledby="p5-found-title">
+        <p className="p5-kicker">TRACE COMPLETE <span>05 / 05</span></p>
+        <ol className="p5-steps">{TASKS.map(t => <li key={t} className="done">{TASK_NAMES[t]}</li>)}</ol>
+        <h1 id="p5-found-title">Signal crossed the boundary.</h1>
+        <p className="p5-body">The healthcare chip’s last transmission climbed out of the city and went straight through the portal. Nothing here is answering.</p>
+        <dl className="p5-readout">
+          <div><dt>LAST FIX</dt><dd>T−2 MIN · 400 M UP</dd></div>
+          <div><dt>HEADING</dt><dd>PORTAL BOUNDARY</dd></div>
+          <div><dt>LOCAL SIGNAL</dt><dd>NONE</dd></div>
+          <div><dt>HEALTHCARE CHIP</dt><dd className="tone-red">NOT IN THIS CITY</dd></div>
+        </dl>
+        <p className="p5-note">Wherever it went, Hiro has to follow. The limiter is holding Baymax, for now.</p>
+      </aside>}
     </>}
   </main>;
 }

@@ -171,7 +171,7 @@ export function ServiceBay({ start }: { start: BayStart }) {
     if (!ready) return;
     if (start !== 'enter') { if (start === 'found') say('It won’t fix him. But it’ll hold him.'); return; }
     later(() => say('Lights are on. So where is everyone?'), 900);
-    later(() => walkTo({ via: [[.2, EYE, 1.5]], to: VIEWS.hub, speed: 2, done: () => setStage('explore') }), 700);
+    later(() => walkTo({ via: [[4.4, EYE, -3.4]], to: VIEWS.hub, speed: 1.8, done: () => setStage('explore') }), 900);
   }, [ready]);
 
   const visit = (spot: Spot) => {
@@ -262,7 +262,7 @@ export function ServiceBay({ start }: { start: BayStart }) {
   const hiro = useRef<SVGGElement | null>(null);
 
   const info: Info | null =
-    stage === 'enter' ? { kicker: 'Bay 6 · Robotics maintenance', title: 'Lights on, nobody home', body: 'The street feed goes in under the roller door. Whatever’s on the end of it is still pulling current.', next: 'Have a look around.' }
+    stage === 'enter' ? { kicker: 'Bay 6 · Robotics maintenance', title: 'Lights on, nobody home', body: 'Shutter’s down but the street feed squeezes under it. Whatever’s on the end is still pulling current.', next: 'Have a look around.' }
       : stage === 'explore' ? (focus ? { ...SPOTS[focus], next: readCard ? 'Follow the hot line to whatever it’s charging.' : 'Check the rest: ' + ORDER.filter(spot => !seen.includes(spot)).map(spot => SPOTS[spot].pin.toLowerCase()).join(', ') + '.' }
         : { kicker: 'Bay 6', title: 'Somebody left mid-shift', body: 'Crane parked over an empty stand. Bench lamps still burning. Something in here is drawing power.', next: readCard ? 'Follow the hot line.' : 'Check the stand, the shadow board and the benches.' })
         : stage === 'cable' ? { kicker: 'Hot line', title: 'Clipped down every metre', body: 'It hugs the benches, then cuts toward the stairs. Somebody wanted it out of the way, not out of sight.', next: 'Keep following.' }
@@ -274,7 +274,7 @@ export function ServiceBay({ start }: { start: BayStart }) {
     ...ORDER.map(spot => ({ id: spot, x: SPOT_AT[spot][0], z: SPOT_AT[spot][1], state: (seen.includes(spot) ? 'seen' : 'todo') as PlanMark['state'] })),
     ...(stage === 'crates' || cleared ? [{ id: 'case', x: -9.3, z: -27.4, state: (stage === 'taken' ? 'seen' : 'target') as PlanMark['state'] }] : []),
   ];
-  const where: [string, string] = busy ? ['On the move', stage === 'cable' ? 'Following the hot line' : 'Walking'] : stage === 'enter' ? ['Roller door', 'Just inside'] : stage === 'explore' ? (focus === 'cradle' ? ['Service stand 6', 'Centre bay'] : focus === 'toolwall' ? ['Shadow board', 'West wall'] : focus === 'jobcard' ? ['Bench 2', 'West wall'] : ['Main aisle', 'Near the door']) : ['Under the stairs', 'North-west corner'];
+  const where: [string, string] = busy ? ['On the move', stage === 'cable' ? 'Following the hot line' : 'Walking'] : stage === 'enter' ? ['Side door', 'Just inside'] : stage === 'explore' ? (focus === 'cradle' ? ['Service stand 6', 'Centre bay'] : focus === 'toolwall' ? ['Shadow board', 'West wall'] : focus === 'jobcard' ? ['Bench 2', 'West wall'] : ['Main aisle', 'Near the door']) : ['Under the stairs', 'North-west corner'];
   const chapters = [['03', 'Board', 'done'], ['04', 'Walk', 'done'], ['04', 'Bay 6', 'now'], ['05', 'Baymax', 'next']] as const;
 
   return <main className={`bay ${ready ? 'bay-ready' : ''} ${leaving ? 'bay-leaving' : ''}`} aria-label="Phase 4: inside Bay 6">

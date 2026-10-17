@@ -73,7 +73,14 @@ export function BoardOverlay() {
     <p className="board-hint" aria-hidden="true">DRAG TO ROTATE · SCROLL TO ZOOM · SELECT A SYSTEM</p>
 
     {summary && <section className="board-summary" role="dialog" aria-labelledby="board-summary-title">
-      <p className="board-kicker">ASSESSMENT COMPLETE</p>
+      <p className="board-kicker">ASSESSMENT COMPLETE <span>3 / 3 REPAIRS</span></p>
+      <ol className="board-summary-steps">
+        <li>Power rerouted round the damaged bus</li>
+        <li>Thruster control plug reseated</li>
+        <li>Shoulder actuator reset</li>
+        <li>Head sensors tested</li>
+        <li className="is-red">Chip bay opened: one slot empty</li>
+      </ol>
       <h2 id="board-summary-title">He can move again.<br /><em>The healthcare chip is missing.</em></h2>
       <dl>
         <div><dt>BODY</dt><dd className="tone-done">PARTIALLY RESTORED</dd></div>

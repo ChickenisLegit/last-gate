@@ -76,8 +76,24 @@ function buildStreet() {
     if (live) lamps.push(new T.Vector3(x - Math.sign(x) * 1.2, 4.9, z));
   }
 
-  // Shared open architecture: the lit service hall remains visible beyond the raised shutter.
+  // Bay 6's front. The shutter is down, so the hall inside is only seen once Hiro is in it; he
+  // goes in by the lit side door on the right, the same door the bay opens behind him.
   const bay = createBaySixArchitecture(); bay.root.position.z = GATE_Z; k.root.add(bay.root);
+  const front = new T.Group(); front.position.z = GATE_Z; k.root.add(front);
+  const shutter = k.standard('#5d6b66', .55, .45), slatLine = k.standard('#2a3331', .7, .3);
+  for (let y = .12; y < 3.82; y += .21) { k.box({ p: [0, y + .1, .3], s: [7.56, .19, .07] }, shutter, front); k.box({ p: [0, y, .34], s: [7.56, .02, .02] }, slatLine, front); }
+  k.box({ p: [0, .08, .36], s: [7.6, .16, .12] }, k.dark, front);
+  k.box({ p: [0, 1.0, .37], s: [.5, .06, .05] }, k.metal, front);
+  // Side door, propped by the light behind it: frame, wired-glass panel, push plate, lamp, sign.
+  k.box({ p: [4.7, 1.08, .48], s: [1.08, 2.18, .1] }, k.dark, front);
+  k.box({ p: [4.7, 1.04, .54], s: [.92, 2.04, .06] }, k.standard('#47544f', .6, .4), front);
+  k.box({ p: [4.7, 1.5, .58], s: [.36, .5, .02] }, k.basic('#ffcf8f', 1.4), front);
+  k.box({ p: [4.42, 1.0, .59], s: [.05, .3, .04] }, k.metal, front);
+  k.box({ p: [4.7, 2.36, .56], s: [.5, .1, .2] }, k.dark, front);
+  k.mesh(new T.SphereGeometry(.07, 12, 8), k.basic('#ffd9a0', 1.8), { p: [4.7, 2.28, .64] }, front);
+  k.box({ p: [4.7, .01, 1.0], s: [1.2, .02, .9] }, k.basic('#3a2c1a', .6), front);
+  k.label('BAY 6 · STAFF', { p: [4.95, 2.6, .58] }, 1.6, '#e8cf9c', front);
+  k.haze({ p: [4.7, 1.4, GATE_Z + 1.1], s: [2.4, 2.8, 1] }, '#ffb066', .22);
   batchStaticGeometry(k);
   return { kit: k, lamps, dispose: () => { detail.dispose(); bay.dispose(); k.dispose(); } };
 }
@@ -149,7 +165,8 @@ function WalkWorld({ state, onProgress }: { state: React.MutableRefObject<WalkSt
     <fog attach="fog" args={['#172d39', 26, 145]} />
     <hemisphereLight args={['#a1c2cc', '#151c1d', 1.15]} />
     <directionalLight position={[-8, 16, 6]} intensity={2} color="#d5dfdb" />
-    <pointLight position={[0, 3.1, GATE_Z - 3]} intensity={23} distance={19} color="#ffd3a0" />
+    <pointLight position={[0, 3.1, GATE_Z + 3]} intensity={10} distance={14} color="#ffd3a0" />
+    <pointLight position={[4.7, 2.2, GATE_Z + 1.4]} intensity={6} distance={7} color="#ffc27a" />
     {street.lamps.map((p, i) => <pointLight key={i} position={p} intensity={5} distance={11} color="#ffc062" />)}
   </>;
 }

@@ -18,7 +18,7 @@ import { createLimiter, type Limiter } from './limiter';
 export const EYE = 1.62;
 export type View = { pos: V3; look: V3 };
 export const VIEWS = {
-  gate: { pos: [0, EYE, 5.5], look: [0, 2.2, -10] },
+  gate: { pos: [4.7, EYE, -.75], look: [1.5, 2.1, -11] },
   hub: { pos: [.4, EYE, -4.6], look: [-.5, 2.4, -18] },
   cradle: { pos: [5.4, EYE, -8.6], look: [2, 2.1, -15.4] },
   bench: { pos: [-7.3, EYE, -9.9], look: [-10.2, 1.05, -11.7] },
@@ -142,8 +142,16 @@ export function createServiceBay() {
   for (const side of [-1, 1]) { k.box(plinth, [side * 7.1, .7, .15], [8, 1.4, .3], undefined, 2.4); k.box(clad, [side * 7.1, 5.2, .15], [8, 7.6, .2], undefined, 3); k.box(steel, [side * 3.15, 2.2, .1], [.3, 4.4, .45]); }
   k.box(clad, [0, 7.2, .15], [6.2, 5.6, .2], undefined, 3);
   k.box(steelDark, [0, 4.75, -.1], [6.6, .7, .7]);  // door drum housing
-  for (let i = 0; i < 5; i++) k.box(slate, [0, 3.9 - i * .17, .02], [5.95, .16, .06]);
-  k.box(hazardMat, [0, 3.06, .03], [5.95, .1, .08]);
+  // The shutter is down (Hiro came in by the side door); the street cable squeezes under it.
+  for (let y = .12; y < 4.3; y += .21) k.box(slate, [0, y + .1, .02], [5.95, .19, .06]);
+  k.box(hazardMat, [0, .1, -.02], [5.95, .12, .08]);
+  // The side door from inside, swung shut behind him: frame, push bar, a line of light at the sill.
+  k.box(steelDark, [4.7, 1.08, -.02], [1.08, 2.18, .1]);
+  k.box(panelGrey, [4.7, 1.04, -.08], [.92, 2.04, .05]);
+  k.box(chrome, [4.7, 1.0, -.16], [.7, .05, .06]);
+  k.box(k.flat(k.glow('#ffcf8f', 1.6)), [4.7, 1.5, -.11], [.36, .5, .01]);
+  k.box(k.flat(k.glow('#ffb46a', 1.4)), [4.7, .012, -.2], [.9, .01, .14]);
+  k.plane(k.std({ map: k.tex(sign([['非常口 · EXIT', .5]], { w: 512, h: 128, bg: '#1f6b3a', fg: '#ffffff' })), roughness: .6 }), [4.7, 2.42, -.08], .6, .15, [0, Math.PI, 0]);
   k.plane(k.std({ map: k.tex(sign([['BAY 6 · ロボ整備', .34], ['ROBOTICS MAINTENANCE', .22]], { w: 1024, h: 256, bg: '#1d2732', fg: '#e8cf9c', worn: .8 })), roughness: .7 }), [0, 5.9, .27], 5.4, 1.35);
 
   // Roof: trusses every 4.2 m, purlins, roof deck, three skylights (one broken through).
