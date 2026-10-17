@@ -111,15 +111,42 @@ export function createStreet() {
   k.instances(marks, k.metal);
   for (const [x, z, rx, rz] of [[-3.9, -10, .12, .1], [4, -24, -.12, -.15], [-4.3, -39, .1, -.08], [3.7, -52, -.15, .12], [-3.6, -63, .08, .1]]) k.box({ p: [x, .1, z], s: [3.2, .22, 3.6], r: [rx, rand(-.3, .3), rz] }, k.concrete);
   for (const side of [-1, 1]) for (let z = 4; z > -72; z -= 5.5) if (random() > .25) k.box({ p: [side * 5.9, .32, z], s: [.45, .65, rand(2.2, 4)], r: [0, 0, side * rand(0, .05)] }, k.ivory);
+  const lit: Pose[] = [], cracks: { x: number; y: number; z: number; side: number }[] = [];
   const block = (x: number, z: number, w: number, h: number, d: number, side: number) => {
     const tilt = side * rand(-.05, .07);
     k.box({ p: [x, h / 2 - .05, z], s: [w, h, d], r: [0, side * rand(-.06, .06), tilt] }, random() > .5 ? k.ivory : k.concrete);
     const win: Pose[] = [];
     for (let r = 1; r < h / 1.7 - 1; r++) for (let c = 0; c < 3; c++) win.push({ p: [x - side * (w / 2 + .02), r * 1.7, z - d / 3 + c * d / 3], s: [.03, .9, 1], r: [0, 0, tilt] });
     k.instances(win, k.dim);
+    // Tracker P6-08: a lived-in city gone wrong. Storefront band and ledges, a few windows still
+    // lit, rooftop clutter, and on some facades a cyan dimensional crack.
+    const face = x - side * (w / 2 + .04);
+    k.box({ p: [face, 1.6, z], s: [.08, 3.2, d * .96], r: [0, 0, tilt] }, k.dark);
+    for (const y of [3.4, h * .62]) k.box({ p: [x - side * (w / 2 + .12), y, z], s: [.24, .14, d * 1.02], r: [0, 0, tilt] }, k.metal);
+    for (let r = 1; r < h / 1.7 - 1; r++) for (let c = 0; c < 3; c++) if (random() > .9) lit.push({ p: [face - side * .01, r * 1.7, z - d / 3 + c * d / 3], s: [.02, .85, .95], r: [0, 0, tilt] });
+    if (random() > .55) k.box({ p: [x + rand(-1, 1), h + .6, z + rand(-1.5, 1.5)], s: [1.1, 1.2, 1.1] }, k.metal);
+    if (random() > .6) k.box({ p: [x, h + 1.6, z], s: [.06, 3.2, .06] }, k.metal);
+    if (random() > .55) cracks.push({ x: face - side * .03, y: rand(4, h - 1), z: z + rand(-d / 3, d / 3), side });
     if (random() > .62) k.box({ p: [x, h + rand(1.2, 3), z + rand(-1, 1)], s: [w * .9, rand(2, 4), d * .9], r: [rand(-.2, .2), rand(-.6, .6), rand(-.25, .25)] }, k.ivory);
   };
   for (const side of [-1, 1]) for (let z = 8; z > -74; z -= rand(6.5, 8.5)) { const w = rand(4, 6.5); block(side * (7.4 + w / 2 + rand(0, 1.2)), z, w, rand(8, 19), rand(5, 7), side); }
+  k.instances(lit, k.basic('#ffc879', 1.1));
+  // Cyan cracks: jagged slivers on the facades, one shared material that pulses.
+  const crackGlow = k.ownMaterial(new T.MeshBasicMaterial({ color: '#7fe6ff', transparent: true, opacity: .8, toneMapped: false, side: T.DoubleSide }));
+  const sliver = k.ownGeometry(new T.PlaneGeometry(.12, 1));
+  for (const c of cracks) for (let j = 0; j < 4; j++) k.mesh(sliver, crackGlow, { p: [c.x, c.y + j * .55 * (j % 2 ? 1 : -1), c.z + j * .25], r: [0, Math.PI / 2, rand(-.7, .7)], s: [1, rand(.6, 1.5), 1] });
+  // Cables strung across the street, sagging; two snapped ones hanging live, sparking.
+  const cableMat = k.ownMaterial(new T.MeshStandardMaterial({ color: '#15191c', roughness: .8 }));
+  for (const [z, y] of [[-6, 7.5], [-17, 9], [-29, 6.8], [-44, 8.4], [-61, 7.2]]) {
+    const curve = new T.CatmullRomCurve3([new T.Vector3(-7.4, y, z), new T.Vector3(0, y - rand(1.2, 2.2), z + rand(-.6, .6)), new T.Vector3(7.4, y + rand(-.6, .6), z + rand(-1, 1))]);
+    k.mesh(k.ownGeometry(new T.TubeGeometry(curve, 24, .035, 5)), cableMat, { p: [0, 0, 0] });
+  }
+  const sparks: T.Mesh[] = [];
+  for (const [x, z] of [[-7.2, -24], [7.2, -48]]) {
+    const curve = new T.CatmullRomCurve3([new T.Vector3(x, 8, z), new T.Vector3(x * .8, 5, z + .3), new T.Vector3(x * .72, 2.6, z - .2)]);
+    k.mesh(k.ownGeometry(new T.TubeGeometry(curve, 16, .03, 5)), cableMat, { p: [0, 0, 0] });
+    sparks.push(k.mesh(k.ownGeometry(new T.SphereGeometry(.09, 8, 6)), k.basic('#d9f6ff', 3), { p: [x * .72, 2.55, z - .2] }));
+  }
   for (let i = 0; i < 10; i++) k.box({ p: [rand(-9, 9), rand(9, 18), rand(-70, 4)], s: [rand(.6, 2.4), rand(.3, 1), rand(.6, 2)], r: [rand(0, 3), rand(0, 3), rand(0, 3)] }, k.concrete);
   // Signs toward the old gate.
   // Posts on the kerb line and boards hung high and short of the lane, so nothing tall walks through them.
@@ -305,6 +332,8 @@ export function createStreet() {
           else { c.live = false; }
         }
       }
+      crackGlow.opacity = .45 + .35 * Math.sin(t * 2.3) * Math.sin(t * .7 + 1);
+      sparks.forEach((sp, i) => { sp.visible = Math.sin(t * (31 + i * 7)) * Math.sin(t * (5 + i)) > .55; sp.scale.setScalar(.6 + Math.random() * .8); });
       // The street lamp nearest the eye, live and stuttering, harder as he closes.
       if (s.eye && lamps.length) {
         let best = lamps[0]; for (const l of lamps) if (l.distanceToSquared(s.eye) < best.distanceToSquared(s.eye)) best = l;

@@ -117,7 +117,7 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
     : st === 'limited' && e > 9.8 && !s.took ? 'The capture. That comes with me.'
     : st === 'limited' && e > 9.8 ? 'The trace went to the old gate. That’s where it ends.'
     : st === 'escape' && s.caught ? 'No, no—'
-    : st === 'escape' && live.dread > .75 ? 'Don’t look back. Don’t look back.'
+    : st === 'escape' && live.p > .06 && live.dread > .75 ? 'Don’t look back. Don’t look back.'
     : st === 'escape' && live.p < .2 ? 'Go, go, go.'
     : st === 'powered' && e > .7 && e < 2.4 ? 'Come on…'
     : st === 'powered' && e >= 2.4 ? 'It tried. Something’s still missing.'
