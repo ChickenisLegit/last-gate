@@ -25,7 +25,7 @@ export class SceneKit {
   standard(color:string,roughness=.8,metalness=.2){return this.ownMaterial(new T.MeshStandardMaterial({color,roughness,metalness}));}
   basic(color:string,intensity=1){return this.ownMaterial(new T.MeshBasicMaterial({color:new T.Color(color).multiplyScalar(intensity)}));}
   box(p:Pose,material:T.Material=this.concrete,parent:T.Object3D=this.root){const m=new T.Mesh(this.boxGeo,material);this.pose(m,p);m.receiveShadow=true;parent.add(m);return m;}
-  mesh(geometry:T.BufferGeometry,material:T.Material,p:Pose,parent:T.Object3D=this.root){const m=new T.Mesh(geometry,material);this.pose(m,p);parent.add(m);return m;}
+  mesh(geometry:T.BufferGeometry,material:T.Material,p:Pose,parent:T.Object3D=this.root){const m=new T.Mesh(this.ownGeometry(geometry),material);this.pose(m,p);parent.add(m);return m;}
   pose(object:T.Object3D,p:Pose){object.position.set(...p.p);if(p.s)object.scale.set(...p.s);if(p.r)object.rotation.set(...p.r);}
   instances(poses:Pose[],material:T.Material=this.concrete,geometry:T.BufferGeometry=this.boxGeo,parent:T.Object3D=this.root){
     const mesh=new T.InstancedMesh(geometry,material,poses.length);
@@ -39,8 +39,9 @@ export class SceneKit {
   }
   label(text:string,p:Pose,width=5,color='#a6d5e5',parent:T.Object3D=this.root){
     const canvas=document.createElement('canvas');canvas.width=1024;canvas.height=128;
-    const ctx=canvas.getContext('2d')!;ctx.font='23px monospace';ctx.fillStyle=color;
-    text.split('\n').forEach((line,i)=>ctx.fillText(line,4,30+i*31));
+    const ctx=canvas.getContext('2d')!;let size=46;ctx.font=`500 ${size}px "IBM Plex Mono",monospace`;ctx.fillStyle=color;
+    while(ctx.measureText(text.split('\n')[0]).width>1000&&size>22){size-=2;ctx.font=`500 ${size}px "IBM Plex Mono",monospace`;}
+    text.split('\n').forEach((line,i)=>ctx.fillText(line,12,78+i*42));
     const texture=new T.CanvasTexture(canvas);texture.colorSpace=T.SRGBColorSpace;texture.anisotropy=4;this.textures.add(texture);
     const material=this.ownMaterial(new T.MeshBasicMaterial({map:texture,transparent:true,opacity:1,depthWrite:false,side:T.DoubleSide,toneMapped:false}));
     return this.mesh(this.ownGeometry(new T.PlaneGeometry(width,width/8)),material,p,parent);

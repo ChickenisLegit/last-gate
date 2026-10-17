@@ -1,7 +1,12 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { Color, Vector3 } from 'three';
-import { createPortalDimension } from '../environment/PortalDimension.js';
+import { Color, Group, Mesh, Vector3 } from 'three';
+import { createCityBackdrop } from '../presentation/Backdrop';
+import { CameraShot } from '../presentation/CameraShot';
+import { SceneQuality } from '../presentation/SceneQuality';
+import { concreteTexture } from '../presentation/Surfaces';
+import { createBaySixArchitecture, createYardSurroundings } from './environmentDetail';
+import { reducedMotion } from '../config/experience';
 import { createPart } from './parts';
 
 export type PartId = 'relay' | 'governor' | 'clamp';
@@ -16,13 +21,29 @@ const PART_NAMES: Record<PartId, string> = {
 function ComponentModel({
   part, position, scale = 1, rotatable = false, aligned = false,
 }: { part: PartId; position: [number, number, number]; scale?: number; rotatable?: boolean; aligned?: boolean }) {
-  const [rotation, setRotation] = useState<[number, number]>([.28, -.12]);
+  const rotation = useRef<[number, number]>([.28, -.12]);
+  const object = useRef<Group>(null), initialPosition = useRef(position);
+  const targetPosition = useMemo(() => new Vector3(...position), [position]);
+  const targetScale = useMemo(() => new Vector3(scale, scale, scale), [scale]);
   const drag = useRef<{ x: number; y: number } | null>(null);
   const model = useMemo(() => createPart(part), [part]);
+  useEffect(() => () => {
+    // Part geometry belongs to this instance; its material library is shared with Phase 5.
+    model.traverse(o => { if (o instanceof Mesh) o.geometry.dispose(); });
+  }, [model]);
+  useFrame((_, dt) => {
+    const g = object.current; if (!g) return;
+    const k = reducedMotion ? 1 : 1 - Math.exp(-Math.min(dt, .05) * 6);
+    g.position.lerp(targetPosition, k);
+    g.rotation.x += ((rotatable ? rotation.current[1] : aligned ? 0 : .08) - g.rotation.x) * k;
+    g.rotation.y += ((rotatable ? rotation.current[0] : aligned ? 0 : -.12) - g.rotation.y) * k;
+    g.scale.lerp(targetScale, k);
+  });
   const down = (event: ThreeEvent<PointerEvent>) => {
     if (!rotatable) return;
     event.stopPropagation();
     drag.current = { x: event.clientX, y: event.clientY };
+    (event.target as unknown as { setPointerCapture: (id: number) => void }).setPointerCapture(event.pointerId);
   };
   const move = (event: ThreeEvent<PointerEvent>) => {
     if (!rotatable || !drag.current) return;
@@ -30,17 +51,16 @@ function ComponentModel({
     const dx = event.clientX - drag.current.x;
     const dy = event.clientY - drag.current.y;
     drag.current = { x: event.clientX, y: event.clientY };
-    setRotation(([x, y]) => [x + dx * .012, y + dy * .012]);
+    rotation.current = [rotation.current[0] + dx * .008, rotation.current[1] + dy * .008];
   };
   const up = () => { drag.current = null; };
   return <group
-    position={position}
+    ref={object}
+    position={initialPosition.current}
     scale={scale}
-    rotation={rotatable ? [rotation[1], rotation[0], 0] : aligned ? [0, 0, 0] : [.08, -.12, 0]}
     onPointerDown={down}
     onPointerMove={move}
     onPointerUp={up}
-    onPointerOut={up}
     onPointerCancel={up}
   >
     <primitive object={model} />
@@ -56,52 +76,47 @@ function Street({ stage, location, selectedPart, placed, aligned, routes }: {
   routes: [boolean, boolean];
 }) {
   const { camera } = useThree();
+  const floorMap = useMemo(concreteTexture, []);
+  const workshop = useMemo(() => { const kit = createBaySixArchitecture(); kit.root.position.z = -8; return kit; }, []);
+  const surroundings = useMemo(createYardSurroundings, []);
+  useEffect(() => { floorMap.repeat.set(4, 14); return () => { floorMap.dispose(); workshop.dispose(); surroundings.dispose(); }; }, [floorMap, workshop, surroundings]);
   // The displaced portal city behind Bay 6: the same skyline and fracture as every earlier phase.
   const skyline = useMemo(() => {
-    const city = createPortalDimension();
+    const city = createCityBackdrop();
     city.group.position.set(0, -4, -78); city.group.scale.setScalar(1.25);
     // Backdrop only: its lights shouldn't cast (a 4096px shadow map nobody sees here).
     city.group.traverse(o => { o.castShadow = false; });
     return city;
   }, []);
   useEffect(() => () => skyline.dispose(), [skyline]);
-  const target = useMemo(() => new Vector3(), []);
+  const rig = useMemo(() => new CameraShot(), []);
   const cameraTarget = useMemo(() => new Vector3(), []);
   const cameraPosition = useMemo(() => new Vector3(), []);
   useFrame(({ clock }, dt) => {
-    skyline.update(clock.elapsedTime, Math.min(dt, .05), false, 0, 'approaching');
     let position: [number, number, number] = [0, 7.2, 20];
     let focus: [number, number, number] = [0, 1.7, -5];
     if (stage === 'district' && selectedPart) {
       // Close on the pedestal: the part fills the space between the two panels.
-      position = [0, 2.2, 2.3]; focus = [0, 1.12, -1.7];
+      position = [0, 2.1, 3.6]; focus = [0, 1.15, -1.7];
     } else if (stage === 'district') {
       const sites: Record<string, [[number, number, number], [number, number, number]]> = {
-        archive: [[0, 6.4, 12], [0, 1.6, -6]],
-        actuator: [[3.6, 3, -1], [2.8, 1.5, -4]],
-        isolation: [[-4, 3, -5], [-4, 1.4, -7]],
-        thruster: [[4.2, 3.1, -7], [3.2, 1.5, -8]],
+        archive: [[0, 2.8, 8.5], [0, 1.6, -6]],
+        actuator: [[-1.1, 2.4, -.2], [3.1, 1.35, -6.3]],
+        isolation: [[.6, 2.5, -1.8], [-4.1, 1.4, -7.6]],
+        thruster: [[-.2, 2.6, -2.9], [4.1, 1.4, -7.2]],
       };
       const shot = sites[location];
       if (shot) [position, focus] = shot;
     } else if (stage === 'assembly' || stage === 'calibration') {
-      position = [0, 3.6, 9.2]; focus = [0, 1.15, -1.4];
+      position = [0, 2.9, 3.9]; focus = [0, 1.15, -1.4];
     } else if (stage === 'result') {
       position = [0, 4.6, 11.5]; focus = [0, 1.9, -2.7];
     }
     cameraPosition.set(...position);
     cameraTarget.set(...focus);
-    const damping = 1 - Math.exp(-Math.min(dt, .05) * 2.8);
-    camera.position.lerp(cameraPosition, damping);
-    target.lerp(cameraTarget, damping);
-    camera.lookAt(target);
+    rig.update(camera, `${stage}-${location}-${selectedPart}`, cameraPosition, cameraTarget, Math.min(dt, .05));
   });
 
-  const blocks = [
-    [-10, 5, -14, 6, 10, 7], [-7.5, 3, -23, 5, 6, 6], [12, 5, -15, 7, 10, 8],
-    [17, 4, -24, 6, 8, 7], [-18, 6, -30, 8, 12, 9], [22, 7, -34, 9, 14, 10],
-    [-11, 3, 2, 5, 6, 5], [13, 3, 4, 6, 6, 5], [-24, 4, -8, 5, 8, 6], [26, 5, -13, 7, 10, 7],
-  ];
   const sockets: Record<PartId, [number, number, number]> = {
     relay: [-1.35, 1.05, -1.3], governor: [0, 1.05, -1.3], clamp: [1.35, 1.05, -1.3],
   };
@@ -111,30 +126,17 @@ function Street({ stage, location, selectedPart, placed, aligned, routes }: {
   const partPosition = (part: PartId): [number, number, number] => placed[part] ? sockets[part] : staging[part];
   return <>
     <color attach="background" args={[new Color('#0b1622')]} />
-    <fog attach="fog" args={['#1a3146', 22, 78]} />
-    <ambientLight intensity={.95} color="#b9cfe0" />
+    <fog attach="fog" args={['#1b3038', 30, 95]} />
+    <hemisphereLight args={['#b4ccc9', '#222726', .75]} />
+    <primitive object={workshop.root} />
+    <primitive object={surroundings.root} />
     <primitive object={skyline.group} />
-    <directionalLight position={[-8, 13, 8]} intensity={2.7} color="#f1dfc4" castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} />
-    <pointLight position={[0, 5, -8]} intensity={13} distance={21} color="#e1a56d" />
-    <pointLight position={[3, 3, -4]} intensity={6} distance={12} color="#85b5bd" />
+    <directionalLight position={[-8, 13, 8]} intensity={2.1} color="#f1dfc4" castShadow shadow-mapSize-width={1024} shadow-mapSize-height={1024} shadow-camera-left={-11} shadow-camera-right={11} shadow-camera-top={10} shadow-camera-bottom={-11} shadow-camera-far={48} shadow-normalBias={.035} />
+    <pointLight position={[0, 3.4, -11.5]} intensity={26} distance={18} color="#f0c99e" />
+    <pointLight position={[3.5, 3.2, -3.2]} intensity={9} distance={12} color="#85c3c8" />
     <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, -.12, -5]} receiveShadow><planeGeometry args={[180, 180]} /><meshStandardMaterial color="#252e30" roughness={.96} /></mesh>
-    <mesh position={[0, -.04, 4]} receiveShadow><boxGeometry args={[8.6, .14, 36]} /><meshStandardMaterial color="#343b3c" roughness={.92} /></mesh>
+    <mesh position={[0, -.04, 4]} receiveShadow><boxGeometry args={[8.6, .14, 36]} /><meshStandardMaterial color="#63706a" map={floorMap} bumpMap={floorMap} bumpScale={.025} roughness={.92} /></mesh>
     {[-1.1, 1.1].map(x => <mesh key={x} position={[x, .04, 3]}><boxGeometry args={[.09, .025, 30]} /><meshStandardMaterial color="#bba979" roughness={.8} /></mesh>)}
-    {blocks.map(([x, y, z, w, h, d], i) => <group key={i} position={[x, y, z]}>
-      <mesh castShadow receiveShadow><boxGeometry args={[w, h, d]} /><meshStandardMaterial color={i % 2 ? '#3a4648' : '#303b3e'} roughness={.88} /></mesh>
-      {[-1, 0, 1].flatMap(row => [-1, 0, 1].map(column => <mesh key={`${row}-${column}`} position={[column * w * .28, row * h * .22, d / 2 + .012]}><boxGeometry args={[w * .14, h * .11, .035]} /><meshStandardMaterial color="#a3b5a9" emissive={row === 0 && column === 0 ? '#8d744e' : '#405957'} emissiveIntensity={row === 0 && column === 0 ? .68 : .46} roughness={.5} /></mesh>))}
-      <mesh position={[0, h * .29, d / 2 + .025]}><boxGeometry args={[w * .56, .055, .045]} /><meshStandardMaterial color="#a3815b" emissive="#604a32" emissiveIntensity={.18} /></mesh>
-    </group>)}
-    <group position={[0, 0, -8]}>
-      <mesh position={[0, 2.05, -.15]}><boxGeometry args={[11.2, 4.1, .6]} /><meshStandardMaterial color="#303b3d" roughness={.85} /></mesh>
-      <mesh position={[0, 1.55, .2]}><boxGeometry args={[5.2, 3.1, .08]} /><meshStandardMaterial color="#101719" roughness={.9} /></mesh>
-      {[-4.25, 4.25].map(x => <mesh key={x} position={[x, 1.85, .2]}><boxGeometry args={[2.2, 3.7, .2]} /><meshStandardMaterial color="#576263" metalness={.32} roughness={.68} /></mesh>)}
-      <mesh position={[0, 3.84, .22]}><boxGeometry args={[10.8, .38, .28]} /><meshStandardMaterial color="#596364" metalness={.28} roughness={.72} /></mesh>
-      <mesh position={[0, .15, 1]}><boxGeometry args={[9.7, .32, 2.5]} /><meshStandardMaterial color="#343d3e" metalness={.12} roughness={.88} /></mesh>
-      <mesh position={[-4.4, 2.4, .36]}><boxGeometry args={[1.5, .38, .12]} /><meshStandardMaterial color="#b18b5d" emissive="#805f39" emissiveIntensity={.24} /></mesh>
-      {[-2.6, 2.6].map(x => <mesh key={x} position={[x, .9, .1]} rotation={[0, 0, -.26]}><boxGeometry args={[.08, 1.3, .08]} /><meshStandardMaterial color="#647271" metalness={.5} roughness={.48} /></mesh>)}
-      <mesh position={[0, 3.55, .42]}><boxGeometry args={[3.8, .22, .05]} /><meshBasicMaterial color="#d0b98e" /></mesh>
-    </group>
     {stage === 'assembly' || stage === 'calibration' || stage === 'result' ? <group>
       <mesh position={[0, .72, -1.45]} castShadow receiveShadow><boxGeometry args={[5.9, .16, 2.55]} /><meshStandardMaterial color="#40484a" metalness={.32} roughness={.58} /></mesh>
       <mesh position={[0, .64, -.25]}><boxGeometry args={[5.9, .12, .16]} /><meshStandardMaterial color="#926a4a" metalness={.55} roughness={.4} /></mesh>
@@ -174,8 +176,9 @@ export function DistrictWorld({ stage, location, selectedPart, placed, aligned, 
   aligned: Record<PartId, boolean>;
   routes: [boolean, boolean];
 }) {
-  return <Canvas shadows dpr={[1, 1.35]} camera={{ position: [0, 7.2, 20], fov: 48, near: .1, far: 100 }} gl={{ antialias: false, powerPreference: 'high-performance' }}>
+  return <Canvas shadows dpr={[1, 1.35]} camera={{ position: [0, 2.8, 8.5], fov: 48, near: .1, far: 100 }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
     <Street stage={stage} location={location} selectedPart={selectedPart} placed={placed} aligned={aligned} routes={routes} />
+    <SceneQuality />
   </Canvas>;
 }
 

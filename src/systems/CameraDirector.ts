@@ -8,6 +8,7 @@ import { ZoomController } from './ZoomController';
 const span=(t:number,a:number,b:number)=>MathUtils.smoothstep(t,a,b);
 /** How long each shot takes to arrive from wherever the previous one left the camera. */
 const BLEND:Partial<Record<Phase,number>>={
+  'portal-sighted':2.4,'call-baymax':1.6,'to-portal':1.2,'through-portal':.5,'sf-arrival':1.3,'sf-turnback':1.6,'back-decision':1,'back-through':.3,reentry:.25,
   discovery:2.4,inspected:2.4,'chip-focus':2.2,'chip-reaching':1.2,'chip-held':.9,'chest-focus':1.4,'panel-opening':1.2,
   'socket-ready':1,inserting:.8,silence:.6,booting:2.6,diagnostic:2.2,corrupting:2.4,threat:1.5,ignition:.9,chase:.01,fracture:1.2,pulled:.4,handoff:.01
 };
@@ -18,7 +19,10 @@ const INSPECT_AIM=new Vector3(4.14,1.3,-9.02);
  * Wide while exploring, tight while a hand is busy or a beat is locked.
  */
 const LOOK:Partial<Record<Phase,[number,number]>>={
-  awakening:[.18,.1],approaching:[.62,.3],discovery:[.48,.24],inspected:[.48,.24],
+  awakening:[.18,.1],
+  'portal-sighted':[.4,.2],'call-baymax':[.4,.2],'to-portal':[.35,.18],'through-portal':[.05,.03],
+  'sf-arrival':[.45,.24],'sf-turnback':[.3,.16],'back-decision':[.1,.06],'back-through':[.05,.03],reentry:[.03,.02],
+  approaching:[.62,.3],discovery:[.48,.24],inspected:[.48,.24],
   'chip-focus':[.2,.12],'chip-reaching':[.14,.09],'chip-held':[.16,.1],'chest-focus':[.2,.12],'panel-opening':[.2,.12],
   'socket-ready':[.08,.05],inserting:[.08,.05],silence:[.22,.12],booting:[.32,.16],diagnostic:[.32,.16],corrupting:[.24,.13],
   threat:[.1,.06],ignition:[.2,.12],chase:[.34,.14],fracture:[.22,.13],pulled:[.1,.06],handoff:[.4,.22]
@@ -35,12 +39,12 @@ export class CameraDirector {
   private velocity=0;private footfall=0;
   public visualProgress=0;public wake=0;public focusDistance=19;
   public pointer={x:0,y:0};public holding=false;
-  private phase:Phase='loading';private shotTime=0;
+  private phase:Phase='loading';private shotTime=0;private prevPhase:Phase='loading';
   private fromPos=new Vector3();private fromLook=new Vector3();private fromFov=45;private fromRoll=0;
   private pos=new Vector3();private aim=new Vector3();private fov=45;private roll=0;
   private lastPos=new Vector3();private lastLook=new Vector3();private lastRoll=0;
   private v=new Vector3();private v2=new Vector3();private shakeT=0;private focusPoint=new Vector3();
-  private run=0;
+  private run=0;private initialized=false;
   /** Viewer zoom while handling the chip: -1 (pulled back) … 1 (close in). */
   private readonly zoomController = new ZoomController({ min: -1, max: 1, step: .0022 });
   public zoomTarget=0;private zoom=0;
@@ -52,10 +56,12 @@ export class CameraDirector {
 
   update(camera:PerspectiveCamera,delta:number,_w:number,_h:number,seq?:SequenceDirector,ctx?:ShotContext){
     const state=useSceneState.getState(),dt=Math.min(delta,.1);
-    if(state.replay!==this.replay){this.replay=state.replay;this.progress=0;this.wakeTime=0;this.holding=false;this.zoomTarget=0;this.zoom=0;this.strafe=0;this.strafeGoal=0;}
+    if(state.replay!==this.replay){this.replay=state.replay;this.initialized=false;this.phase='loading';this.progress=0;this.wakeTime=0;this.holding=false;this.zoomTarget=0;this.zoom=0;this.strafe=0;this.strafeGoal=0;}
     this.time+=dt;
     if(state.chapter==='BOOT')return;
     this.wakeTime+=dt;
+    // Each walk beat (to the gate, then to Baymax) runs its own progress from zero.
+    if(state.phase!==this.prevPhase){if(state.phase==='approaching')this.progress=0;if(state.phase==='awakening')this.wakeTime=0;this.prevPhase=state.phase;}
     if(this.holding&&state.phase==='approaching')state.move(dt*.052);
     const before=this.progress;
     this.progress=MathUtils.damp(this.progress,state.targetProgress,reducedMotion?20:2.3,dt);
@@ -93,6 +99,7 @@ export class CameraDirector {
       if(!ZOOM_PHASES.includes(state.phase))this.zoomTarget=0;
       this.zoom=MathUtils.damp(this.zoom,this.zoomTarget,reducedMotion?20:6,dt);
       if(Math.abs(this.zoom)>.001){this.v.subVectors(this.pos,this.aim);this.pos.copy(this.aim).addScaledVector(this.v,1-this.zoom*.45);this.fov*=1-this.zoom*.14;}
+      if(!this.initialized){this.fromPos.copy(this.pos);this.fromLook.copy(this.aim);this.fromFov=this.fov;this.fromRoll=this.roll;}
       const b=reducedMotion?1:span(this.shotTime,0,BLEND[state.phase]??1.2);
       camera.position.lerpVectors(this.fromPos,this.pos,b);this.target.lerpVectors(this.fromLook,this.aim,b);
       camera.fov=MathUtils.lerp(this.fromFov,this.fov,b);roll=MathUtils.lerp(this.fromRoll,this.roll,b);
@@ -107,7 +114,7 @@ export class CameraDirector {
     camera.rotateZ(roll);
     cameraRig.apply(camera,dt); // global camera language: motivated shake + transition FOV kicks
     camera.updateProjectionMatrix();camera.updateMatrixWorld();
-    this.lastPos.copy(camera.position);this.lastLook.copy(this.target);this.lastRoll=roll;
+    this.initialized=true;this.lastPos.copy(camera.position);this.lastLook.copy(this.target);this.lastRoll=roll;
     this.visualProgress=p;this.wake=wake;
     if(!directed)this.focusDistance=-this.focusPoint.set(2.7,2,-12).applyMatrix4(camera.matrixWorldInverse).z;
     if(this.progress>.995&&state.phase==='approaching')state.arrive();
@@ -123,6 +130,56 @@ export class CameraDirector {
       A.copy(ctx.chest).addScaledVector(ctx.normal,-.04);this.fov=fov;
     };
     switch(phase){
+      case 'portal-sighted':{
+        // Just awake. He turns and finds the gate still burning behind him.
+        const k=span(t,0,3.2);P.set(-.6+lookX*.1,2.3+breathe*.006,10.6-k*.4);
+        A.set(0+lookX*.4,4-lookY*.2,22);this.fov=52-k*2;this.focusDistance=P.distanceTo(this.v.set(0,4.2,24));break;
+      }
+      case 'call-baymax':{
+        // A glance back at Baymax — come on, we have to go.
+        P.set(-1.1,2.3+breathe*.006,10.2);A.copy(ctx.baymax).setY(1.5);A.x+=lookX*.35;
+        this.fov=50;this.focusDistance=P.distanceTo(ctx.baymax);break;
+      }
+      case 'to-portal':{
+        // Automatic walk to the gate (part of the cinematic; no input needed).
+        const p=span(t,.2,4);
+        P.set(lookX*.12+(reducedMotion?0:Math.sin(t*3.3)*.03),2.52+breathe*.006,MathUtils.lerp(10.2,20.6,p));
+        A.set(lookX*.3,4-lookY*.2,24);this.fov=50;this.focusDistance=P.distanceTo(this.v.set(0,4.2,24));break;
+      }
+      case 'through-portal':{
+        const k=span(t,0,2);P.set(0,2.6,MathUtils.lerp(20.6,28,k));A.set(0,8,90);
+        this.fov=MathUtils.lerp(50,56,span(t,.15,1.1))-span(t,1.4,2)*2;this.focusDistance=12;break;
+      }
+      case 'sf-arrival':{
+        // Out onto the overlook: a slow pan across the bay, the bridge and the whole skyline.
+        const k=span(t,0,4);P.set(MathUtils.lerp(0,-1.4,k),MathUtils.lerp(2.6,3,k),MathUtils.lerp(28,31.5,k)+lookX*.1);
+        A.set(MathUtils.lerp(-18,10,k)+lookX*.6,MathUtils.lerp(13,16,k)-lookY*.3,110);
+        this.fov=MathUtils.lerp(56,52,k);this.focusDistance=42;break;
+      }
+      case 'sf-turnback':{
+        // He turns back to the gate; Baymax is slumped far beyond it, not following.
+        const k=span(t,0,3);P.set(MathUtils.lerp(-1.4,0,k),MathUtils.lerp(3,2.5,k),31.5);A.set(lookX*.2,MathUtils.lerp(4.4,3.6,k),24);
+        this.fov=MathUtils.lerp(52,43,k);this.focusDistance=P.distanceTo(this.v.set(2.7,.6,-12));break;
+      }
+      case 'back-decision':{
+        const k=span(t,0,2.8);P.set(0,2.5,MathUtils.lerp(31.5,27,k));A.set(0,3.9,24);
+        this.fov=44-k*2;this.focusDistance=P.distanceTo(this.v.set(0,4.2,24));break;
+      }
+      case 'back-through':{
+        // Run and jump back through the ring into the dimension; the landing lands in 'reentry'.
+        const whoosh=span(t,.15,1.1),cross=span(t,.1,1.9);
+        P.set(MathUtils.lerp(0,-.8,span(t,1,2.2)),2.5,MathUtils.lerp(27,11,cross));
+        A.set(0,MathUtils.lerp(4,3,span(t,.2,1.6)),MathUtils.lerp(24,-6,span(t,.2,1.6)));
+        this.fov=MathUtils.lerp(46,58,whoosh);this.roll=whoosh*.06;this.focusDistance=12;break;
+      }
+      case 'reentry':{
+        // The crossing throws him down hard; he reels, then goes still — knocked out.
+        const hit=span(t,0,.45),settle=span(t,.5,2.6);
+        P.set(-1.2+(reducedMotion?0:Math.sin(t*17)*.025*(1-settle)),MathUtils.lerp(1.4,.52,hit)+breathe*.01,MathUtils.lerp(10,7.4,hit));
+        A.set(MathUtils.lerp(-.6,1.6,hit),MathUtils.lerp(2.2,3.2,hit)-settle*1.3,MathUtils.lerp(-11,-13,hit));
+        this.fov=MathUtils.lerp(58,48,settle);this.roll=(reducedMotion?0:Math.sin(t*6)*.055*(1-settle))+hit*.1*(1-settle);
+        this.focusDistance=10;break;
+      }
       case 'discovery':case 'inspected':{
         // The world narrows: a slow push toward the shell, lower and closer, with less wander.
         const k=span(t,0,9);P.set(MathUtils.lerp(1.45,1.95,k)+lookX*.04,MathUtils.lerp(2.15,1.92,k)+breathe*.006,MathUtils.lerp(-5.4,-6.9,k));

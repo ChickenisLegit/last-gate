@@ -11,7 +11,7 @@ const COVER: CSSProperties = { position: 'fixed', inset: 0, display: 'grid', pla
 export function DistrictHost({ children }: { children: ReactNode }) {
   const { active, step, run } = useDistrictEntry();
   if (!active) return children;
-  return <Suspense fallback={<div role="status" style={COVER}>FOLLOWING THE CURRENT…</div>}>
+  return <Suspense fallback={<div aria-hidden="true" style={COVER} />}>
     {step === 'walk' ? <Walk key={`walk-${run}`} /> : <DistrictExperience key={`district-${run}`} />}
   </Suspense>;
 }

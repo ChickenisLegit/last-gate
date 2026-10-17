@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { districtExit } from './exit';
 import { DistrictWorld, DISTRICT_PART_NAMES, type DistrictStage, type PartId } from './DistrictWorld';
 import './district.css';
@@ -50,6 +50,7 @@ export function DistrictExperience() {
   const allAligned = PARTS.every(part => aligned[part]);
   const readyToBuild = manualRead && allPartsInspected;
   const selectedLocation = LOCATIONS.find(site => site.id === location)!;
+  useEffect(() => { if (stage === 'calibration') void districtExit()?.prepare?.().catch(() => {}); }, [stage]);
 
   useEffect(() => {
     if (armedAt === null) return;
@@ -88,7 +89,7 @@ export function DistrictExperience() {
   };
   const clock = `00:${String(remaining).padStart(2, '0')}`;
 
-  return <main className={`district-phase district-${stage}`} aria-label="Phase 4: district search and power limiter">
+  return <main className={`district-phase district-stage-${stage}`} aria-label="Phase 4: district search and power limiter">
     <div className="district-world"><DistrictWorld stage={stage} location={location} selectedPart={selectedPart} placed={placed} aligned={aligned} routes={routes} /></div>
     <header className="district-header">
       <div className="district-brand"><span>THE LAST GATE</span><small>PHASE 04 <b>·</b> NORTH SERVICE DISTRICT</small></div>
@@ -113,7 +114,6 @@ export function DistrictExperience() {
           <button className="district-back" onClick={() => setSelectedPart(null)}>← LOCATION NOTES</button>
           <div className="district-kicker">PART INSPECTION <span>DRAG TO ROTATE</span></div>
           <h2>{DISTRICT_PART_NAMES[selectedPart]}</h2>
-          <div className="district-part-view"><span>DRAG THE HARDWARE TO TURN IT</span><i>3D / COMPONENT {PARTS.indexOf(selectedPart) + 1}</i></div>
           <dl className="district-part-facts"><div><dt>CONDITION</dt><dd>{PART_DETAILS[selectedPart].condition}</dd></div><div><dt>PURPOSE</dt><dd>{PART_DETAILS[selectedPart].purpose}</dd></div><div><dt>USABLE CONNECTION</dt><dd>{PART_DETAILS[selectedPart].connections}</dd></div></dl>
           <button className="district-primary" onClick={finishInspection}><span>{inspected[selectedPart] ? 'CLOSE INSPECTION' : 'MARK INSPECTION COMPLETE'}</span><i>↗</i></button>
         </div> : <>
@@ -188,14 +188,21 @@ export function DistrictExperience() {
       <div className="result-readout"><span>HARDWARE OUTPUT LIMIT</span><b>{expired ? 'INACTIVE' : '35%'}</b><i>ACTUATORS + THRUSTERS</i></div>
     </section>}
 
-    {stage === 'district' && <div className="district-footer"><span>HOLD EVIDENCE · NO OPEN-WORLD TRAVERSAL</span><span>LOCAL HARDWARE ONLY <i>·</i> TIME, NOT CONTROL</span></div>}
+    {stage === 'district' && <div className="district-footer"><span>BAY 6 / ROBOTICS MAINTENANCE</span><span>LOCAL HARDWARE LIMIT <i>·</i> COMBAT PROGRAM UNCHANGED</span></div>}
 
     {manualOpen && <ManualDialog onClose={() => { setManualOpen(false); setManualRead(true); }} />}
   </main>;
 }
 
 function ManualDialog({ onClose }: { onClose: () => void }) {
-  return <div className="manual-scrim" role="presentation"><section className="manual-dialog" role="dialog" aria-modal="true" aria-labelledby="manual-heading">
+  const panel = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement | null;
+    panel.current?.querySelector('button')?.focus();
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); onClose(); } if (e.key === 'Tab') { e.preventDefault(); panel.current?.querySelector('button')?.focus(); } };
+    window.addEventListener('keydown', key); return () => { window.removeEventListener('keydown', key); previous?.focus(); };
+  }, [onClose]);
+  return <div className="manual-scrim" role="presentation"><section ref={panel} className="manual-dialog" role="dialog" aria-modal="true" aria-labelledby="manual-heading">
     <div className="district-kicker">BAYMAX / SERVICE MANUAL <span>RECOVERED COPY · PAGE 06</span></div>
     <div className="manual-heading-row"><span className="manual-symbol">B</span><div><h2 id="manual-heading">Emergency output regulation</h2><p>PHYSICAL SERVICE POWER GOVERNOR · ACTUATOR SYSTEMS</p></div></div>
     <p className="manual-intro">Emergency actuator output limiting is possible without altering the combat chip. Isolate the high-current source, use the service power governor for emergency motor regulation, then restrict the separate thruster branch with the field clamp.</p>

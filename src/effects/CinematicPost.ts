@@ -23,6 +23,7 @@ export class CinematicPost {
   private dpr=0;
   constructor(private gl:WebGLRenderer,scene:Scene,camera:PerspectiveCamera){
     this.composer=new EffectComposer(gl);
+    this.composer.renderTarget1.stencilBuffer=true;this.composer.renderTarget2.stencilBuffer=true;
     this.composer.addPass(new RenderPass(scene,camera));
     this.ao=new GTAOPass(scene,camera,960,540);this.ao.blendIntensity=.38;
     this.ao.updateGtaoMaterial({radius:.38,thickness:.12,distanceExponent:1.5,samples:12});
@@ -38,7 +39,7 @@ export class CinematicPost {
     const bokehRender=this.bokeh.render.bind(this.bokeh);
     this.bokeh.render=(...args:Parameters<BokehPass['render']>)=>{hide();bokehRender(...args);restore();};
     this.bloom=new UnrealBloomPass(new Vector2(1920,1080),.18,.55,1.65);this.composer.addPass(this.bloom);
-    this.grade=new ShaderPass({uniforms:{tDiffuse:{value:null},instability:{value:0},uWarp:{value:0},uCenter:{value:new Vector2(.5,.5)},uTime:{value:0},uFlash:{value:0},uWhite:{value:0},uRed:{value:0},uCyan:{value:0},uChroma:{value:0},uAspect:{value:16/9}},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',fragmentShader:`uniform sampler2D tDiffuse;uniform float instability;uniform float uWarp;uniform vec2 uCenter;uniform float uTime;uniform float uFlash;uniform float uWhite;uniform float uRed;uniform float uCyan;uniform float uChroma;uniform float uAspect;varying vec2 vUv;
+    this.grade=new ShaderPass({uniforms:{tDiffuse:{value:null},instability:{value:0},uWarp:{value:0},uCenter:{value:new Vector2(.5,.5)},uTime:{value:0},uFlash:{value:0},uWhite:{value:0},uRed:{value:0},uCyan:{value:0},uChroma:{value:0},uAspect:{value:16/9},uSoftFocus:{value:0}},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',fragmentShader:`uniform sampler2D tDiffuse;uniform float instability;uniform float uWarp;uniform vec2 uCenter;uniform float uTime;uniform float uFlash;uniform float uWhite;uniform float uRed;uniform float uCyan;uniform float uChroma;uniform float uAspect;uniform float uSoftFocus;varying vec2 vUv;
       void main(){
         vec2 uv=vUv;
         // Shockwave lens: a single expanding ring of refraction around the impact, used only on hits.
@@ -46,6 +47,7 @@ export class CinematicPost {
         float ring=exp(-pow((r-front)*9.,2.))*uWarp;uv-=normalize(q+1e-4)/vec2(uAspect,1.)*ring*.035;
         vec2 d=uv-.5;float ca=instability+uChroma*.012+ring*.02;vec2 offset=d*dot(d,d)*ca*4.;
         vec3 c=texture2D(tDiffuse,uv).rgb;c.r=texture2D(tDiffuse,uv+offset).r;c.b=texture2D(tDiffuse,uv-offset).b;
+        if(uSoftFocus>0.){vec2 b=vec2(uSoftFocus/uAspect,uSoftFocus);c*=.2;c+=(texture2D(tDiffuse,uv+vec2(b.x,0.)).rgb+texture2D(tDiffuse,uv-vec2(b.x,0.)).rgb+texture2D(tDiffuse,uv+vec2(0.,b.y)).rgb+texture2D(tDiffuse,uv-vec2(0.,b.y)).rgb)*.12;c+=(texture2D(tDiffuse,uv+b).rgb+texture2D(tDiffuse,uv-b).rgb+texture2D(tDiffuse,uv+vec2(b.x,-b.y)).rgb+texture2D(tDiffuse,uv+vec2(-b.x,b.y)).rgb)*.08;}
         float lum=dot(c,vec3(.299,.587,.114));
         // Red intrudes from the edges inward; cyan floods from the fracture.
         float edge=smoothstep(.25,.85,length(d*vec2(1.2,1.)));
@@ -65,23 +67,24 @@ export class CinematicPost {
   }
   resize(width:number,height:number){this.width=width;this.height=height;this.grade.uniforms.uAspect.value=width/Math.max(1,height);this.composer.setSize(width,height);const scale=this.preset.aoScale;this.ao.setSize(Math.ceil(width*scale),Math.ceil(height*scale));}
   /** Sequence grade, written each frame by the scene. */
-  fx={warp:0,center:new Vector2(.5,.5),flash:0,white:0,red:0,cyan:0,chroma:0,aperture:-1,time:0,action:false};
+  fx={warp:0,center:new Vector2(.5,.5),flash:0,white:0,red:0,cyan:0,chroma:0,aperture:-1,time:0,action:false,opening:true};
   render(dt:number,wake:number,progress:number,focus:number){
     const dpr=this.gl.getPixelRatio();if(dpr!==this.dpr){this.dpr=dpr;this.composer.setPixelRatio(dpr);this.resize(this.width,this.height);}
-    const recovering=!reducedMotion&&wake<1;
+    const recovering=!this.fx.opening&&!reducedMotion&&wake<1;
     // Fast action hides AO; below HIGH it is skipped there so the chase keeps its frame rate.
-    this.ao.enabled=this.preset.aoSamples>0&&!(this.fx.action&&this.preset.dprCap<1.5);
+    this.ao.enabled=!this.fx.opening&&!recovering&&this.preset.aoSamples>0&&!(this.fx.action&&this.preset.dprCap<1.5);
     const signal=cinematicSignals;
-    this.bokeh.enabled=this.preset.dof&&(recovering||progress>.48||signal.blur>.01);
+    this.bokeh.enabled=this.preset.dof&&!recovering&&(progress>.48||signal.blur>.01);
     const uniforms=this.bokeh.uniforms as Record<string,{value:number}>;
     uniforms.focus.value=recovering?MathUtils.lerp(2.8,focus,MathUtils.smoothstep(wake,.55,1)):focus;
     uniforms.aperture.value=recovering?MathUtils.lerp(.0013,.000045,wake):MathUtils.lerp(.000025,.00013,MathUtils.smoothstep(progress,.48,1));
     uniforms.maxblur.value=(recovering?.018:.006)+signal.blur*.012;uniforms.aperture.value+=signal.blur*.0006;
     this.grade.uniforms.instability.value=(recovering?(1-wake)*.003:0)+signal.instability;
     const g=this.grade.uniforms,fx=this.fx;
-    g.uWarp.value=fx.warp;g.uCenter.value.copy(fx.center);g.uFlash.value=fx.flash;g.uWhite.value=fx.white;g.uRed.value=fx.red;g.uCyan.value=fx.cyan;g.uChroma.value=fx.chroma;g.uTime.value=fx.time;
+    g.uWarp.value=fx.warp;g.uCenter.value.copy(fx.center);g.uFlash.value=fx.flash;g.uWhite.value=fx.white;g.uRed.value=fx.red;g.uCyan.value=fx.cyan;g.uChroma.value=fx.chroma;g.uTime.value=fx.time;g.uSoftFocus.value=recovering?.006*(1-wake):0;
     // Shell beats isolate the subject with a shallower field; the chase opens it back up.
     if(fx.aperture>=0&&!recovering){this.bokeh.enabled=this.preset.dof&&fx.aperture>0;uniforms.aperture.value=fx.aperture;uniforms.maxblur.value=.009;}
+    if(fx.opening)this.bokeh.enabled=false;
     this.gl.toneMappingExposure=(recovering?MathUtils.lerp(.74,1.08,wake):1.08)+signal.exposure;
     this.gl.domElement.dataset.quality=useQuality.getState().name;
     this.composer.render(dt);

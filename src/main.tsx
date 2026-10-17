@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
+import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { usePhaseTwoEntry } from './phase2/entry';
 import { PhaseTwoHost } from './phase2/PhaseTwoHost';
@@ -10,8 +10,14 @@ import { PhaseFiveHost } from './phase5';
 import { useSceneState } from './state/SceneStateManager';
 import { Failure } from './ui/Failure';
 import './ui/experience.css';
+import './presentation/polish.css';
+import './presentation/revisions.css';
+import { transitionChapter } from './presentation/chapterTransition';
 
 const Experience = lazy(() => import('./experience/ExperienceDirector').then(module => ({ default: module.ExperienceDirector })));
+
+// Resolve development entries before mounting the costly opening scene.
+if (import.meta.env.DEV && new URLSearchParams(location.search).get('recovery')) enterRecovery();
 
 function supportsWebGL() {
   try {
@@ -38,6 +44,7 @@ function DesktopGate() {
   const [supported, setSupported] = useState(innerWidth >= 1280);
   const phase = useSceneState(state => state.phase);
   const phaseTwoEntry = usePhaseTwoEntry();
+  const preloaded = useRef(false);
 
   useEffect(() => {
     const resize = () => setSupported(innerWidth >= 1280);
@@ -47,14 +54,20 @@ function DesktopGate() {
 
   useEffect(() => {
     if (phase !== 'handoff') return;
-    const timer = window.setTimeout(enterRecovery, 6500);
+    const timer = window.setTimeout(() => transitionChapter(enterRecovery), 450);
     return () => window.clearTimeout(timer);
   }, [phase]);
 
-  // Dev shortcut: open the Baymax recovery phase directly, mirroring ?phase2=.
+  // Prepare the next world while the player is still in the current chapter.
   useEffect(() => {
-    if (import.meta.env.DEV && new URLSearchParams(location.search).get('recovery')) enterRecovery();
-  }, []);
+    if (phase !== 'awakening' || preloaded.current) return;
+    preloaded.current = true;
+    const timer = window.setTimeout(() => {
+      void import('./recovery/Recovery');
+      void import('./recovery/HarbourWorld').then(m => m.preloadHarbour()).catch(() => {});
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [phase]);
 
   useEffect(() => {
     if (!import.meta.env.DEV) return;
