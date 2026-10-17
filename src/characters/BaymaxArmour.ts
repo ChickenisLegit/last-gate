@@ -45,7 +45,7 @@ export function fitArmour(model: T.Object3D) {
     const plate = new T.Mesh(mesh.geometry, plateMaterial()); plate.name = 'armour-plate';
     const size = new T.Box3().setFromObject(mesh).getSize(new T.Vector3()).length();
     plate.scale.setScalar(1 + Math.min(.08, .05 / Math.max(.4, size)) + .02);
-    plate.castShadow = true; plate.visible = false;
+    plate.castShadow = false; plate.visible = false; // the part underneath already casts this shadow
     mesh.add(plate);
     const dist = mesh.getWorldPosition(new T.Vector3()).distanceTo(centre);
     plates.push({ mesh: plate, mat: plate.material as T.MeshStandardMaterial, base: plate.scale.clone(), delay: dist });

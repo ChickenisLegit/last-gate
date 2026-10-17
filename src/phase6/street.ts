@@ -1,4 +1,5 @@
 import * as T from 'three';
+import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SceneKit, seeded, type Pose } from '../phase2/SceneKit';
 import { createPortalDimension } from '../environment/PortalDimension.js';
 
@@ -105,19 +106,20 @@ export function createStreet() {
   k.root.add(skyline.group);
 
   // --- The street: lane, heaved slabs, kerbs, the same slate blocks with window rows.
+  const streetFrom = k.root.children.length;
   k.box({ p: [0, -.3, -34], s: [13, .6, 92] }, k.edge);
   k.box({ p: [0, .01, -34], s: [12.4, .04, 91.4] }, k.concrete);
   const marks: Pose[] = []; for (let i = 0; i < 24; i++) marks.push({ p: [.1, .04, 6 - i * 3.3], s: [.1, .02, 1.4] });
   k.instances(marks, k.metal);
   for (const [x, z, rx, rz] of [[-3.9, -10, .12, .1], [4, -24, -.12, -.15], [-4.3, -39, .1, -.08], [3.7, -52, -.15, .12], [-3.6, -63, .08, .1]]) k.box({ p: [x, .1, z], s: [3.2, .22, 3.6], r: [rx, rand(-.3, .3), rz] }, k.concrete);
   for (const side of [-1, 1]) for (let z = 4; z > -72; z -= 5.5) if (random() > .25) k.box({ p: [side * 5.9, .32, z], s: [.45, .65, rand(2.2, 4)], r: [0, 0, side * rand(0, .05)] }, k.ivory);
-  const lit: Pose[] = [], cracks: { x: number; y: number; z: number; side: number }[] = [];
+  const allWin: Pose[] = [], lit: Pose[] = [], cracks: { x: number; y: number; z: number; side: number }[] = [];
   const block = (x: number, z: number, w: number, h: number, d: number, side: number) => {
     const tilt = side * rand(-.05, .07);
     k.box({ p: [x, h / 2 - .05, z], s: [w, h, d], r: [0, side * rand(-.06, .06), tilt] }, random() > .5 ? k.ivory : k.concrete);
     const win: Pose[] = [];
     for (let r = 1; r < h / 1.7 - 1; r++) for (let c = 0; c < 3; c++) win.push({ p: [x - side * (w / 2 + .02), r * 1.7, z - d / 3 + c * d / 3], s: [.03, .9, 1], r: [0, 0, tilt] });
-    k.instances(win, k.dim);
+    allWin.push(...win);
     // Tracker P6-08: a lived-in city gone wrong. Storefront band and ledges, a few windows still
     // lit, rooftop clutter, and on some facades a cyan dimensional crack.
     const face = x - side * (w / 2 + .04);
@@ -130,11 +132,15 @@ export function createStreet() {
     if (random() > .62) k.box({ p: [x, h + rand(1.2, 3), z + rand(-1, 1)], s: [w * .9, rand(2, 4), d * .9], r: [rand(-.2, .2), rand(-.6, .6), rand(-.25, .25)] }, k.ivory);
   };
   for (const side of [-1, 1]) for (let z = 8; z > -74; z -= rand(6.5, 8.5)) { const w = rand(4, 6.5); block(side * (7.4 + w / 2 + rand(0, 1.2)), z, w, rand(8, 19), rand(5, 7), side); }
-  k.instances(lit, k.basic('#ffc879', 1.1));
+  k.instances(allWin, k.dim); k.instances(lit, k.basic('#ffc879', 1.1));
   // Cyan cracks: jagged slivers on the facades, one shared material that pulses.
   const crackGlow = k.ownMaterial(new T.MeshBasicMaterial({ color: '#7fe6ff', transparent: true, opacity: .8, toneMapped: false, side: T.DoubleSide }));
-  const sliver = k.ownGeometry(new T.PlaneGeometry(.12, 1));
-  for (const c of cracks) for (let j = 0; j < 4; j++) k.mesh(sliver, crackGlow, { p: [c.x, c.y + j * .55 * (j % 2 ? 1 : -1), c.z + j * .25], r: [0, Math.PI / 2, rand(-.7, .7)], s: [1, rand(.6, 1.5), 1] });
+  const slivers: T.BufferGeometry[] = [], at = new T.Object3D();
+  for (const c of cracks) for (let j = 0; j < 4; j++) {
+    at.position.set(c.x, c.y + j * .55 * (j % 2 ? 1 : -1), c.z + j * .25); at.rotation.set(0, Math.PI / 2, rand(-.7, .7)); at.scale.set(1, rand(.6, 1.5), 1); at.updateMatrix();
+    slivers.push(new T.PlaneGeometry(.12, 1).applyMatrix4(at.matrix));
+  }
+  if (slivers.length) { const geo = mergeGeometries(slivers, false); slivers.forEach(g => g.dispose()); if (geo) k.root.add(new T.Mesh(k.ownGeometry(geo), crackGlow)); }
   // Cables strung across the street, sagging; two snapped ones hanging live, sparking.
   const cableMat = k.ownMaterial(new T.MeshStandardMaterial({ color: '#15191c', roughness: .8 }));
   for (const [z, y] of [[-6, 7.5], [-17, 9], [-29, 6.8], [-44, 8.4], [-61, 7.2]]) {
@@ -164,6 +170,25 @@ export function createStreet() {
     if (live) lamps.push(new T.Vector3(x - Math.sign(x) * 1.2, 4.9, z));
   }
 
+  // Tracker PW-08: the run's city never moves, so its hundreds of boxes merge into one mesh per
+  // material (a few dozen draw calls instead of several hundred). Sparks and cracks stay separate.
+  {
+    const batches = new Map<T.Material, T.BufferGeometry[]>(), merged: T.Mesh[] = [];
+    k.root.updateMatrixWorld(true);
+    for (const o of k.root.children.slice(streetFrom)) {
+      if (!(o instanceof T.Mesh) || o instanceof T.InstancedMesh || Array.isArray(o.material) || o.material.transparent || sparks.includes(o)) continue;
+      let g = o.geometry.clone().applyMatrix4(o.matrixWorld); if (g.index) { const n = g.toNonIndexed(); g.dispose(); g = n; }
+      for (const name of Object.keys(g.attributes)) if (!['position', 'normal', 'uv'].includes(name)) g.deleteAttribute(name);
+      if (!g.getAttribute('uv')) g.setAttribute('uv', new T.BufferAttribute(new Float32Array(g.getAttribute('position').count * 2), 2));
+      const list = batches.get(o.material) ?? []; list.push(g); batches.set(o.material, list); merged.push(o);
+    }
+    for (const [material, list] of batches) {
+      const geo = mergeGeometries(list, false); list.forEach(g => g.dispose());
+      if (!geo) continue;
+      const mesh = new T.Mesh(k.ownGeometry(geo), material); mesh.castShadow = mesh.receiveShadow = true; k.root.add(mesh);
+    }
+    merged.forEach(o => o.removeFromParent());
+  }
   // --- The plaza: wider paving, broken blocks around its edge, barriers across the old perimeter.
   k.box({ p: [0, -.3, -94], s: [36, .6, 34] }, k.edge);
   k.box({ p: [0, .015, -94], s: [35.4, .04, 33.4] }, k.concrete);
