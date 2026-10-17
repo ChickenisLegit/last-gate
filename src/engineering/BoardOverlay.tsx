@@ -81,7 +81,7 @@ export function BoardOverlay() {
         <li>Thruster control plug reseated</li>
         <li>Shoulder actuator reset</li>
         <li>Head sensors tested</li>
-        <li className="is-red">Chip bay opened: one slot empty</li>
+        <li className="is-red">Chip bay: combat slot on override, healthcare slot empty</li>
       </ol>
       <h2 id="board-summary-title">He can move again.<br /><em>The healthcare chip is missing.</em></h2>
       <dl>
@@ -257,9 +257,10 @@ function ChipTask() {
       {!open ? <button className="board-primary" onClick={() => { sfx.play('chip.hiss'); sfx.play('sting.empty', { delay: 1.7 }); useBoard.setState({ bayOpen: true }); }}>OPEN THE CHIP BAY</button> : <>
         <dl className="board-readings">
           <div><dt>COMBAT CHIP</dt><dd className="tone-red">SEATED · ACTIVE</dd></div>
+          <div><dt>COMBAT SLOT</dt><dd className="tone-red">OVERRIDE · WON'T RELEASE</dd></div>
           <div><dt>HEALTHCARE CHIP</dt><dd className="tone-red">ABSENT</dd></div>
         </dl>
-        <p className="board-note warn">The healthcare slot is empty. There is nothing here to repair his behaviour from. The body can be fixed; Baymax himself can't, not with what's in this bay.</p>
+        <p className="board-note warn">Slot override: the combat program holds its own latch, so that chip won't come out here. The healthcare slot is empty. The body can be fixed; Baymax himself can't.</p>
       </>}
     </div>
   </>;

@@ -360,7 +360,6 @@ export function PhaseFive({ initial: from }: { initial: PhaseFiveStep }) {
     </div>
     <div className="p5-grade" aria-hidden="true" />
     <SoundToggle />
-    <header className="p5-brand"><span>THE LAST GATE</span><small>PHASE 05 · {atBay ? 'HARBOUR BAY' : 'TELEMETRY RELAY'}</small></header>
 
     {atBay && <aside className="p5-panel" aria-live="polite">
       {(s.stage === 'fit' || s.stage === 'fitting') && <>

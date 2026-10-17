@@ -35,7 +35,7 @@ const press = async label => {
 };
 try {
   await page.goto(`${BASE}/?phase6=wake`, { waitUntil: 'networkidle0' });
-  await page.waitForFunction(() => window.__lastGateP6 && document.querySelector('.p6-brand'), { timeout: 60000 }); await age(7);
+  await page.waitForFunction(() => window.__lastGateP6 && document.querySelector('.p6') && !document.querySelector('.p6-loading'), { timeout: 60000 }); await age(7);
   await press('Activate regulator'); await waitStage('limited'); checks.push('Wake: regulator switch animates and enters limited');
 
   const before = await page.evaluate(() => localStorage.getItem('lastgate.sfx.muted'));

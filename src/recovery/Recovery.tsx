@@ -113,12 +113,13 @@ export function Recovery({ active = true }: { active?: boolean }) {
       <Scene intent={intent} onReady={callbacks.ready} onArrived={callbacks.arrived} onError={callbacks.error} />
     </Canvas></div>
     <div className="recovery-grade" aria-hidden="true" /><div className="recovery-arrival" aria-hidden="true" />
-    <header className="recovery-title"><h1>THE LAST GATE</h1><small>HARBOUR / SAN FRANSOKYO</small></header>
+    {/* The name is an intro on arrival only; it goes once Hiro reaches him. */}
+    {stage === 'approach' && <header className="recovery-title"><h1>THE LAST GATE</h1></header>}
     {ready && dialogue && stage !== 'journey' && <p className="recovery-line" role="status"><small>HIRO HAMADA</small>Baymax… what happened to you?</p>}
     {stage === 'approach' && <div className="recovery-controls"><p>DRAG TO LOOK <span>·</span> HOLD W OR SCROLL TO WALK</p><button className="recovery-start" onClick={() => { setDialogue(false); intent.current.target = Math.min(1, intent.current.target + .34); }}>MOVE CLOSER <span>↗</span></button></div>}
-    {stage === 'inspect' && <div className="recovery-controls"><p>NO RESPONSE <span>·</span> PHYSICAL ACCESS AVAILABLE</p><button className="recovery-start" onClick={inspect}>INSPECT BAYMAX <span>↗</span></button></div>}
+    {stage === 'inspect' && <div className="recovery-controls"><button className="recovery-start" onClick={inspect}>Inspect Baymax <span>→</span></button></div>}
     {stage === 'journey' && extension && <extension.Overlay />}
-    {stage !== 'journey' && <p className="recovery-signal">SIGNAL RECOVERED · SAN FRANSOKYO / HARBOUR</p>}
+    {stage !== 'journey' && <p className="recovery-objective"><span>Objective</span>In search of the healthcare chip’s location</p>}
     {active && ready && <SoundToggle />}
     {error && <div className="recovery-error" role="alert">Baymax could not be loaded. <button onClick={() => location.reload()}>Reload</button></div>}
   </main>;

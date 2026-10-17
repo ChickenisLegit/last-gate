@@ -3,9 +3,9 @@
    brass for the hot line, muted coral only for danger. Loaded last, so it recolours the shared rail and pills
    inside the bay without changing them anywhere else. */
 .bay{
-  --p4-panel:#101a1deb; --p4-tile:rgba(185,201,166,.07); --p4-line:#b5c5b329; --p4-ink:#d9dfd2; --p4-strong:#e4e9dc;
-  --p4-dim:#95a69c; --p4-faint:#5f6f66; --p4-cyan:#c0d0ac; --p4-cyan-soft:rgba(192,208,172,.12); --p4-done:#b6cdb9;
-  --p4-warm:#cbb48c; --p4-red:#dd8070; --p4-btn:#b9c9a619; --p4-btn-hi:#b9c9a62b; --p4-btn-line:#c5d1b766;
+  --p4-panel:rgba(243,240,233,.96); --p4-tile:rgba(31,35,38,.05); --p4-line:rgba(31,35,38,.13); --p4-ink:#1F2326; --p4-strong:#1F2326;
+  --p4-dim:#6b7072; --p4-faint:#8a8f8d; --p4-cyan:#C2611A; --p4-cyan-soft:rgba(240,138,60,.14); --p4-done:#3E7A58;
+  --p4-warm:#C2611A; --p4-red:#A8231C; --p4-btn:#FBF9F4; --p4-btn-hi:#fff; --p4-btn-line:rgba(31,35,38,.16);
   color:var(--p4-ink);
 }
 
@@ -126,3 +126,14 @@
 .bay .bay-schem .s-call circle{fill:var(--p4-cyan)}
 .bay .bay-schem .s-call-a{fill:var(--p4-strong)}
 .bay .bay-schem .s-call-b{fill:var(--p4-dim)}
+
+/* Orange + mist white (tracker PW-01); chips over the scene get the same plate so text stays dark
+   on light. P4-01: the rail stops above the controls strip and scrolls instead of running under it. */
+.bay .lg-rail,.bay .bay-card,.bay .bay-plan{border:0;box-shadow:inset 0 1px 0 rgba(255,255,255,.9),inset 0 0 0 1px rgba(31,35,38,.06),0 16px 36px rgba(4,10,16,.34)}
+.bay .lg-rail{max-height:calc(100vh - 92px - 84px);overflow-y:auto;overscroll-behavior:contain}
+.bay .bay-pin,.bay .bay-line,.bay .bay-controls,.bay .bay-chapters{background:rgba(243,240,233,.94);color:#1F2326}
+.bay .bay-pin:hover{background:#fff}
+.bay .bay-chapters .is-now b,.bay .bay-line b{background:#F08A3C;color:#1F2326}
+.bay .lg-pill{border-radius:13px;font-family:var(--lg-display);box-shadow:inset 0 -2px 0 rgba(31,35,38,.07),0 1px 2px rgba(31,35,38,.12)}
+.bay .lg-pill:not(.lg-pill-quiet):not(.lg-pill-ghost){background:linear-gradient(180deg,#F59A52,#F08A3C);color:#1F2326;border-color:transparent}
+.bay .lg-pill-ghost{background:rgba(243,240,233,.9);color:#1F2326}

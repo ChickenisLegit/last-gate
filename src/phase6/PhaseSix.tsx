@@ -26,7 +26,6 @@ import { EndCard } from './EndCard';
  * The page stays out of the way: one small panel for the moment, readings rather than sentences.
  */
 
-const PLACE: Record<ReturnType<typeof setOf>, string> = { relay: 'North relay 06', street: 'Old portal research site', home: 'San Fransokyo' };
 
 /** Re-renders on a timer while a stage runs, for UI that appears partway through it. */
 function useStageTime(stage: Stage) {
@@ -159,7 +158,6 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
     <div className="p6-hurt" ref={hurt} aria-hidden="true" />
 
     <header className="p6-top">
-      <div className="p6-brand"><span>The Last Gate</span><small>{st === 'escape' ? 'Service street' : PLACE[set]}</small></div>
     </header>
 
     {/* Drag targets, placed over the 3D each frame. */}

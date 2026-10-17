@@ -1128,3 +1128,46 @@
   }
 }
 @media(max-width:1400px){.district-phase .district-header{grid-template-columns:1fr auto}}
+
+/* Tracker PW-01: orange + mist white panels, graphite text, orange actions, rounded controls.
+   Last in the file and one class more specific than the rules above, so it wins everywhere. */
+.recovery .board.board{--panel:rgba(243,240,233,.96);--line:rgba(31,35,38,.13);--ink:#1F2326;--dim:#6b7072;--cyan:#17809A;--done:#3E7A58;--warm:#C2611A;--warn:#C2611A;--red:#A8231C}
+.p5.p5 .p5-panel,.p5.p5 .p5-found{--panel:rgba(243,240,233,.96);--line:rgba(31,35,38,.13);--ink:#1F2326;--dim:#6b7072;--cyan:#17809A;--done:#3E7A58;--warm:#C2611A;--warn:#C2611A;--red:#A8231C;background:rgba(243,240,233,.96)}
+.recovery .board .board-rail,.recovery .board .board-inspector,.recovery .board .board-status,.recovery .board .board-modes{background:rgba(243,240,233,.96);color:#1F2326}
+.recovery .board .board-rail b,.recovery .board .board-rail small,.recovery .board .board-rail em,.recovery .board .board-summary dt,.recovery .board .board-summary dd{color:inherit}
+:is(.recovery,.walk,.district-phase,.p5) :is(.recovery-start,.board-primary,.board-secondary,.p5-primary,.walk-enter,.p5-breakers button,.p5-patchgrid button,.p5-fixes button,.board-modes button,.board-rail button){border-radius:12px}
+.walk .walk-objective{background:rgba(243,240,233,.96)}.walk .walk-objective b{color:#1F2326}.walk .walk-objective span{color:#C2611A}
+.recovery .board .board-modes,.recovery .board .board-rail,.recovery .board .board-inspector,.recovery .board .board-status,.recovery .board .board-summary{border-radius:16px;border:0;font-family:var(--lg-body);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.9),inset 0 0 0 1px rgba(31,35,38,.06),0 16px 36px rgba(4,10,16,.34);backdrop-filter:blur(8px)}
+.recovery .board .board-summary{background:rgba(243,240,233,.97)}
+.recovery .board .board-inspector h2,.recovery .board .board-rail b,.recovery .board .board-summary h2,.recovery .board .board-summary h3{font-family:var(--lg-display);color:var(--ink)}
+.recovery .board .board-modes button{color:var(--dim);border-radius:10px}
+.recovery .board .board-modes button[aria-checked=true]{background:#1F2326;color:#F3F0E9}
+.recovery .board .board-rail button{border-radius:10px}
+.recovery .board .board-rail button:hover{background:rgba(240,138,60,.08)}
+.recovery .board .board-rail button[aria-pressed=true]{background:rgba(240,138,60,.14);border-left-color:#F08A3C}
+.recovery .board .board-primary{background:linear-gradient(180deg,#F59A52,#F08A3C);color:#1F2326;border:0;border-radius:13px;font-family:var(--lg-display);font-weight:600;
+  box-shadow:inset 0 -2px 0 rgba(31,35,38,.18),0 2px 6px rgba(194,97,26,.3)}
+.recovery .board .board-primary:hover:not(:disabled){background:linear-gradient(180deg,#F7A462,#F2924A);transform:translateY(-1px)}
+.recovery .board .board-secondary{background:linear-gradient(180deg,#fff,#FBF9F4);color:#1F2326;border:1px solid rgba(31,35,38,.14);border-radius:13px;box-shadow:inset 0 -2px 0 rgba(31,35,38,.07)}
+.recovery .board .power-map,.recovery .board .plug-view{background:#E6E1D6;border-radius:12px}
+.recovery .board .board-readings div,.recovery .board .board-summary dl div{background:rgba(31,35,38,.05);border-radius:8px}
+.recovery .board .actuator-dial{background:radial-gradient(circle,#E6E1D6 55%,#d6d0c3 56%)}
+.recovery .board .board-hotspot span{background:rgba(243,240,233,.94);color:#1F2326;border-radius:6px}
+.recovery .board .board-question{color:var(--ink)}
+.p5.p5 .p5-panel,.p5.p5 .p5-found{border-radius:16px;border:0;font-family:var(--lg-body);color:var(--ink);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.9),inset 0 0 0 1px rgba(31,35,38,.06),0 16px 36px rgba(4,10,16,.34)}
+.p5.p5 .p5-found{background:rgba(243,240,233,.97)}
+.p5.p5 .p5-panel h1,.p5.p5 .p5-found h2{color:var(--ink);font-family:var(--lg-display)}
+.p5.p5 .p5-primary{background:linear-gradient(180deg,#F59A52,#F08A3C);color:#1F2326;border:0;border-radius:13px;font-family:var(--lg-display);font-weight:600;
+  box-shadow:inset 0 -2px 0 rgba(31,35,38,.18),0 2px 6px rgba(194,97,26,.3)}
+.p5.p5 .p5-primary:hover:not(:disabled){background:linear-gradient(180deg,#F7A462,#F2924A);transform:translateY(-1px)}
+.p5.p5 .p5-readout div,.p5.p5 .p5-meter,.p5.p5 .p5-found dl div{background:rgba(31,35,38,.05);border-radius:8px}
+.p5.p5 .p5-readout dd i.ghost{background:rgba(31,35,38,.08)}
+.p5.p5 .p5-breakers button,.p5.p5 .p5-patchgrid button{background:linear-gradient(180deg,#fff,#FBF9F4);border-radius:10px;color:var(--ink)}
+.p5.p5 .p5-patchgrid button[aria-pressed=true]{background:rgba(240,138,60,.16);border-color:#F08A3C}
+.p5.p5 .p5-breakers i{background:#cfc8bb}
+.p5.p5 .p5-spectrum,.p5.p5 .p5-map{background:#E6E1D6;border-radius:12px}
+.p5.p5 .p5-fixes button{border-radius:10px}
+.recovery .board :is(.board-inspector,.board-summary,.board-rail) :is(p,li,ol),.p5.p5 :is(.p5-panel,.p5-found) :is(p,li,ol){color:#2E3336}
+.p5.p5 .p5-panel li:first-child{font-weight:600}

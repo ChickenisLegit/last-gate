@@ -1,5 +1,5 @@
 .p5{position:fixed;inset:0;overflow:hidden;background:#05090d;color:#dfeaf0;font:14px/1.6 ui-sans-serif,system-ui,"Segoe UI",sans-serif;
-  --mono:"IBM Plex Mono",ui-monospace,monospace;--panel:rgba(7,16,27,.86);--line:#2f4757;--ink:#d7e6ee;--dim:#86a2b3;--cyan:#8fe0ff;--done:#8fe6b4;--warm:#f0b46e;--red:#ff6a52}
+  --mono:"IBM Plex Mono",ui-monospace,monospace;--panel:rgba(243,240,233,.96);--line:rgba(31,35,38,.13);--ink:#1F2326;--dim:#6b7072;--cyan:#17809A;--done:#3E7A58;--warm:#C2611A;--red:#A8231C}
 .p5-world{position:absolute;inset:0;animation:p5In 1.4s both}
 .p5-world canvas{display:block}
 .p5-grade{position:absolute;inset:0;pointer-events:none;background:linear-gradient(90deg,rgba(4,10,18,.7) 0%,rgba(4,10,18,.28) 34%,transparent 55%),radial-gradient(120% 95% at 60% 48%,transparent 50%,rgba(4,10,18,.6) 100%)}

@@ -4,7 +4,7 @@
 .recovery.journey-live .recovery-grade{background:radial-gradient(80% 75% at 50% 52%,transparent 34%,rgba(5,11,20,.82) 100%)}
 
 .board{position:absolute;inset:0;pointer-events:none;font-size:13px;
-  --panel:rgba(7,16,27,.84);--line:#2f4757;--ink:#d7e6ee;--dim:#86a2b3;--cyan:#8fe0ff;--done:#8fe6b4;--warn:#f0c27a;--red:#ff6a52}
+  --panel:rgba(243,240,233,.96);--line:rgba(31,35,38,.13);--ink:#1F2326;--dim:#6b7072;--cyan:#17809A;--done:#3E7A58;--warn:#C2611A;--red:#A8231C}
 .board>*{pointer-events:auto}
 .board-kicker{font-family:var(--mono);font-size:10px;letter-spacing:.22em;color:var(--dim);margin:0;display:flex;justify-content:space-between;gap:12px}
 .board-kicker span{color:var(--cyan)}

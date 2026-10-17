@@ -299,7 +299,6 @@ export function ServiceBay({ start }: { start: BayStart }) {
     <div className="bay-grade" aria-hidden="true" />
     {!ready && <p className="bay-loading" role="status">Bay 6…</p>}
     <header className="bay-top">
-      <div className="bay-brand"><span>The Last Gate</span><small>Phase 4 · San Fransokyo harbour, Bay 6</small></div>
       <ol className="bay-chapters" aria-label="Where you are in the story">{chapters.map(([n, name, st]) => <li key={name} className={`is-${st}`}><b>{st === 'done' ? '✓' : n}</b>{name}</li>)}</ol>
       <button className="lg-pill lg-pill-ghost lg-pill-small" onClick={restart}>Start the bay again</button>
     </header>

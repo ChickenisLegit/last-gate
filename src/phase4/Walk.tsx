@@ -229,7 +229,6 @@ export function Walk() {
       <SceneQuality />
     </Canvas></div>
     <div className="walk-grade" aria-hidden="true" />
-    <header className="walk-brand"><span>The Last Gate</span><small>Phase 4 · North service district</small></header>
     <div className="walk-objective" role="status"><span>FOLLOW THE LIVE CABLE</span><b>Bay 6 <i>·</i> {metres} m</b></div>
     {line && <p className="walk-line" key={line} role="status"><small>HIRO</small>{line}</p>}
     {!moved && !arrived && <p className="walk-hint">HOLD <b>W</b> · SPACE · OR THE MOUSE TO WALK <i>·</i> SCROLL TO STEP</p>}
