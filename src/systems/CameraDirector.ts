@@ -27,9 +27,14 @@ const LOOK:Partial<Record<Phase,[number,number]>>={
   'socket-ready':[.08,.05],inserting:[.08,.05],silence:[.22,.12],booting:[.32,.16],diagnostic:[.32,.16],corrupting:[.24,.13],
   threat:[.1,.06],ignition:[.2,.12],chase:[.34,.14],fracture:[.22,.13],pulled:[.1,.06],handoff:[.4,.22]
 };
-/** Beats where the viewer can zoom in and out on the chip, the seam and the socket. */
-const ZOOM_PHASES:Phase[]=['chip-focus','chip-reaching','chip-held','chest-focus','panel-opening','socket-ready','inserting','silence'];
-export const ZOOM_RANGE=[-1,1] as const;
+/**
+ * Beats where the viewer can zoom, and how far (-1 pulled back … 1 close in). Only the shots that
+ * wait on the player: every scripted move (reaching, the redirect, the panel, the dock) owns the
+ * lens, and any zoom eases back out while it plays. Limits are per shot so the near chest shots
+ * never push into the shell and the wide ones never back into the street.
+ */
+const ZOOM_SHOTS:Partial<Record<Phase,[number,number]>>={'chip-focus':[-.55,.7],'chest-focus':[-.6,.55],'socket-ready':[-.5,.3]};
+export const ZOOM_PHASES=Object.keys(ZOOM_SHOTS) as Phase[];
 export type ShotContext={chest:Vector3;normal:Vector3;chip:Vector3;baymax:Vector3;head:Vector3};
 
 /** Sole owner of the camera. Each phase is a directed shot; impulses come from the sequence. */
@@ -42,21 +47,21 @@ export class CameraDirector {
   private phase:Phase='loading';private shotTime=0;private prevPhase:Phase='loading';
   private fromPos=new Vector3();private fromLook=new Vector3();private fromFov=45;private fromRoll=0;
   private pos=new Vector3();private aim=new Vector3();private fov=45;private roll=0;
-  private lastPos=new Vector3();private lastLook=new Vector3();private lastRoll=0;
+  private lastPos=new Vector3();private lastLook=new Vector3();private lastRoll=0;private lastFov=45;
   private v=new Vector3();private v2=new Vector3();private shakeT=0;private focusPoint=new Vector3();
   private run=0;private initialized=false;
-  /** Viewer zoom while handling the chip: -1 (pulled back) … 1 (close in). */
-  private readonly zoomController = new ZoomController({ min: -1, max: 1, step: .0022 });
-  public zoomTarget=0;private zoom=0;
+  /** Viewer zoom while handling the chip: -1 (pulled back) … 1 (close in), clamped per shot. */
+  private readonly zoomController = new ZoomController({ min: 0, max: 0, step: .0022 });
+  private zoom=0;
   /** Sideways step on the approach (A / D, arrow keys): -1, 0 or 1 while held. */
   public strafeInput=0;private strafe=0;private strafeGoal=0;
   private lookRange:[number,number]=[.18,.1];
-  zoomBy(amount:number){if(ZOOM_PHASES.includes(this.phase)){this.zoomController.setEnabled(true);this.zoomController.add(amount);this.zoomTarget=MathUtils.clamp(this.zoomTarget+amount,ZOOM_RANGE[0],ZOOM_RANGE[1]);}}
-  get zoomable(){return ZOOM_PHASES.includes(this.phase);}
+  zoomBy(amount:number){this.zoomController.add(amount);}
+  get zoomable(){return this.phase in ZOOM_SHOTS;}
 
   update(camera:PerspectiveCamera,delta:number,_w:number,_h:number,seq?:SequenceDirector,ctx?:ShotContext){
     const state=useSceneState.getState(),dt=Math.min(delta,.1);
-    if(state.replay!==this.replay){this.replay=state.replay;this.initialized=false;this.phase='loading';this.progress=0;this.wakeTime=0;this.holding=false;this.zoomTarget=0;this.zoom=0;this.strafe=0;this.strafeGoal=0;}
+    if(state.replay!==this.replay){this.replay=state.replay;this.initialized=false;this.phase='loading';this.progress=0;this.wakeTime=0;this.holding=false;this.zoomController.reset();this.zoom=0;this.strafe=0;this.strafeGoal=0;}
     this.time+=dt;
     if(state.chapter==='BOOT')return;
     this.wakeTime+=dt;
@@ -85,26 +90,30 @@ export class CameraDirector {
     if(directed){
       if(state.phase!==this.phase){
         this.phase=state.phase;this.shotTime=0;
-        this.fromPos.copy(this.lastPos);this.fromLook.copy(this.lastLook);this.fromFov=camera.fov;this.fromRoll=this.lastRoll;
+        // Blend from the lens the viewer last saw. (camera.fov was just overwritten by the approach
+        // pose above, so reading it here made every beat pop wide and zoom back in.)
+        this.fromPos.copy(this.lastPos);this.fromLook.copy(this.lastLook);this.fromFov=this.lastFov;this.fromRoll=this.lastRoll;
+        // Each shot starts at its authored framing; zoom from the last shot never carries over.
+        this.zoomController.setEnabled(false);
+        const limits=ZOOM_SHOTS[state.phase];if(limits)this.zoomController.setLimits({min:limits[0],max:limits[1],step:.0022});
         if(state.phase==='handoff'){this.fromPos.set(1.9,7.2,-44);this.fromLook.set(1.9,7.2,-90);}
       }
       this.shotTime+=dt*seq.slowmo;
       this.shot(state.phase,this.shotTime,seq,ctx,camera,dt);
-      this.zoomController.setEnabled(ZOOM_PHASES.includes(state.phase));
-      this.zoomController.setScripted(this.shotTime < (BLEND[state.phase] ?? 1.2));
-      this.zoom=this.zoomController.update(dt, reducedMotion ? 20 : 6);
-      this.zoomTarget=this.zoomController.current;
       // Viewer zoom: a dolly along the shot's own line of sight plus a little lens, so the
-      // chip, the seam and the socket can be studied close or seen in context.
-      if(!ZOOM_PHASES.includes(state.phase))this.zoomTarget=0;
-      this.zoom=MathUtils.damp(this.zoom,this.zoomTarget,reducedMotion?20:6,dt);
+      // chip, the seam and the socket can be studied close or seen in context. Input is ignored
+      // while the shot is still arriving or a hold is pushing the camera in.
+      this.zoomController.setEnabled(this.zoomable);
+      this.zoomController.setScripted(this.shotTime<(BLEND[state.phase]??1.2)||seq.holdProgress>0);
+      this.zoom=this.zoomController.update(dt,reducedMotion?20:5);
       if(Math.abs(this.zoom)>.001){this.v.subVectors(this.pos,this.aim);this.pos.copy(this.aim).addScaledVector(this.v,1-this.zoom*.45);this.fov*=1-this.zoom*.14;}
       if(!this.initialized){this.fromPos.copy(this.pos);this.fromLook.copy(this.aim);this.fromFov=this.fov;this.fromRoll=this.roll;}
       const b=reducedMotion?1:span(this.shotTime,0,BLEND[state.phase]??1.2);
       camera.position.lerpVectors(this.fromPos,this.pos,b);this.target.lerpVectors(this.fromLook,this.aim,b);
       camera.fov=MathUtils.lerp(this.fromFov,this.fov,b);roll=MathUtils.lerp(this.fromRoll,this.roll,b);
+      this.lastFov=camera.fov;
       this.applyImpulses(camera,seq,dt);
-    }else{this.phase=state.phase;}
+    }else{this.phase=state.phase;this.lastFov=camera.fov;}
     camera.lookAt(this.target);
     // Free look: the pointer turns Hiro's head within limits set by the beat. Damped twice
     // (look → gaze), so it carries weight instead of tracking the mouse 1:1.
@@ -173,12 +182,20 @@ export class CameraDirector {
         this.fov=MathUtils.lerp(46,58,whoosh);this.roll=whoosh*.06;this.focusDistance=12;break;
       }
       case 'reentry':{
-        // The crossing throws him down hard; he reels, then goes still — knocked out.
-        const hit=span(t,0,.45),settle=span(t,.5,2.6);
-        P.set(-1.2+(reducedMotion?0:Math.sin(t*17)*.025*(1-settle)),MathUtils.lerp(1.4,.52,hit)+breathe*.01,MathUtils.lerp(10,7.4,hit));
-        A.set(MathUtils.lerp(-.6,1.6,hit),MathUtils.lerp(2.2,3.2,hit)-settle*1.3,MathUtils.lerp(-11,-13,hit));
-        this.fov=MathUtils.lerp(58,48,settle);this.roll=(reducedMotion?0:Math.sin(t*6)*.055*(1-settle))+hit*.1*(1-settle);
-        this.focusDistance=10;break;
+        // The crossing throws him down hard. Still on the ground he twists to look back, and
+        // watches the gate seal behind him (RiftGate.seal); then he goes still, knocked out.
+        const hit=span(t,0,.45),reel=span(t,.5,2.6),turn=span(t,.75,1.8),settle=span(t,3.1,4.6);
+        P.set(-1.2+(reducedMotion?0:Math.sin(t*17)*.025*(1-reel)),MathUtils.lerp(1.4,.52,hit)+breathe*.01,MathUtils.lerp(10,7.4,hit));
+        // Turn by heading and pitch (not by sliding the aim point), so the look back swings
+        // round past his shoulder instead of through the sky.
+        this.v.set(MathUtils.lerp(-.6,1.6,hit),MathUtils.lerp(2.2,3.2,hit),MathUtils.lerp(-11,-13,hit)).sub(P);
+        this.v2.set(0,4.2,24).sub(P);
+        const yaw=MathUtils.lerp(Math.atan2(this.v.x,this.v.z),Math.atan2(this.v2.x,this.v2.z),turn);
+        const pitch=MathUtils.lerp(Math.atan2(this.v.y,Math.hypot(this.v.x,this.v.z)),Math.atan2(this.v2.y,Math.hypot(this.v2.x,this.v2.z)),turn)-settle*.3;
+        A.set(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),Math.cos(yaw)*Math.cos(pitch)).multiplyScalar(12).add(P);
+        this.fov=MathUtils.lerp(58,46,span(t,.4,1.9))+settle*4;
+        this.roll=(reducedMotion?0:Math.sin(t*6)*.055*(1-reel))+hit*.1*(1-turn)+settle*.14;
+        this.focusDistance=MathUtils.lerp(10,P.distanceTo(this.v2.set(0,4.2,24)),turn);break;
       }
       case 'discovery':case 'inspected':{
         // The world narrows: a slow push toward the shell, lower and closer, with less wander.
@@ -309,6 +326,6 @@ export class CameraDirector {
     this.target.x+=n(7)*s*.065;this.target.y+=n(11)*s*.055;
     camera.fov+=seq.fovKick;
   }
-  resetPointer(){this.pointer={x:0,y:0};this.holding=false;this.strafeInput=0;this.zoomTarget=0;}
+  resetPointer(){this.pointer={x:0,y:0};this.holding=false;this.strafeInput=0;this.zoomController.reset();}
   skipAwakening(){this.wakeTime=12;}
 }

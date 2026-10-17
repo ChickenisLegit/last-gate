@@ -9,7 +9,7 @@ import { createSanFransokyo } from '../environment/HarbourCity';
 import { createPortalGate, portalWorldMask } from '../environment/RiftGate';
 import { useCanvasBudget } from '../performance/CanvasBudget';
 import { assets } from '../systems/AssetManager';
-import { CameraDirector, type ShotContext } from '../systems/CameraDirector';
+import { CameraDirector, ZOOM_PHASES, type ShotContext } from '../systems/CameraDirector';
 import { SequenceDirector, type SequenceEvent } from '../systems/SequenceDirector';
 import { BaymaxController } from '../characters/BaymaxController';
 import { ChipController } from '../characters/ChipController';
@@ -17,6 +17,7 @@ import { AudioDirector } from '../audio/AudioDirector';
 import { TransitionDirector } from '../transitions/TransitionDirector';
 import { HOLD_PHASES, useSceneState, type Phase } from '../state/SceneStateManager';
 import { reducedMotion } from '../config/experience';
+import { cameraRig } from '../systems/CameraRig';
 import { DIAGNOSTIC_LINES, SHELL_ACTIONS, SHELL_DURATIONS } from '../config/shell';
 import { RuntimeBridge } from '../core/RuntimeBridge';
 import { experience } from '../core/ExperienceFlow';
@@ -31,12 +32,13 @@ class RenderBoundary extends Component<{children:ReactNode},{error:boolean}> {
 }
 function Failure(){return <div className="failure"><p>The connection was lost.</p><span>This chapter needs WebGL in a recent browser.</span><button onClick={()=>location.reload()}>RECONNECT ↗</button></div>;}
 
-const ZOOM_HINT_PHASES:Phase[]=['chip-focus','chip-held','chest-focus','panel-opening','socket-ready'];
 const MARKER_PHASES:Phase[]=['discovery','chip-focus','chest-focus'];
 const STREET_BG=new Color('#101c31'),CORRIDOR_BG=new Color('#061420'),STREET_FOG=new Color('#253e59'),CORRIDOR_FOG=new Color('#123349');
 const SF_BG=new Color('#0d1b30'),SF_FOG=new Color('#1b3450');
 const INTRO_PORTAL:Phase[]=['portal-sighted','call-baymax','to-portal','through-portal','sf-arrival','sf-turnback','back-decision','back-through'];
-const PORTAL_CLOSE:Partial<Record<Phase,number>>={'portal-sighted':.1,'call-baymax':.16,'to-portal':.24,'through-portal':.3,'sf-arrival':.42,'sf-turnback':.58,'back-decision':.74,'back-through':.95};
+const PORTAL_CLOSE:Partial<Record<Phase,number>>={'portal-sighted':.1,'call-baymax':.16,'to-portal':.24,'through-portal':.3,'sf-arrival':.42,'sf-turnback':.58,'back-decision':.74,'back-through':.95,reentry:.95};
+/** Seconds into the hurt re-entry when the gate behind Hiro collapses (he has turned to look by then). */
+const SEAL_AT=1.45;
 
 type SceneProps={director:CameraDirector;seq:SequenceDirector;marker:React.RefObject<HTMLButtonElement|null>;readout:React.RefObject<HTMLDivElement|null>;audio:AudioDirector};
 function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
@@ -56,7 +58,7 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
   const worldMasks=useMemo(()=>({city:portalWorldMask(sf.group),dimension:portalWorldMask(environment.group),rupture:portalWorldMask(rupture.root),chip:portalWorldMask(chip.group)}),[sf,environment,rupture,chip]);
   const shellMask=useMemo(()=>shell?portalWorldMask(shell):null,[shell]);
   useEffect(()=>()=>{Object.values(worldMasks).forEach(mask=>mask.dispose());shellMask?.dispose();},[worldMasks,shellMask]);
-  const elapsed=useRef(0),replay=useRef(0),magnetCue=useRef(false);
+  const elapsed=useRef(0),replay=useRef(0),magnetCue=useRef(false),sealCue=useRef(false);
   const phaseT=useRef(0),prevPhaseRef=useRef<string>('');
   const ctx=useMemo<ShotContext>(()=>({chest:new Vector3(3,1.97,-11.3),normal:new Vector3(0,0,1),chip:new Vector3(),baymax:new Vector3(2.7,0,-12),head:new Vector3(2.72,2.98,-11.6)}),[]);
   const projection=useMemo(()=>new Vector3(),[]);
@@ -142,13 +144,20 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     if(useSceneState.getState().phase!==prevPhaseRef.current){prevPhaseRef.current=useSceneState.getState().phase;phaseT.current=0;}
     phaseT.current+=dt;
     const state=useSceneState.getState(),phase=state.phase;
-    if(state.replay!==replay.current){replay.current=state.replay;rupture.reset();}
+    if(state.replay!==replay.current){replay.current=state.replay;rupture.reset();gate.reset();}
     seq.update(dt);
     const B=baymax.current;
     if(B){B.chestFrame(ctx.chest,ctx.normal);ctx.baymax.copy(B.shell.position);ctx.head.copy(B.shell.position).add(projection.set(.05,2.98,.25).applyEuler(B.shell.rotation));}
     ctx.chip.copy(chip.group.children[0].position);
     director.update(camera as PerspectiveCamera,dt,size.width,size.height,seq,ctx);
     const introPortal=INTRO_PORTAL.includes(phase),inSF=introPortal&&camera.position.z>24;
+    // The gate stays in the world through the hurt re-entry, until it has sealed behind him.
+    if(phase==='reentry'&&phaseT.current>=SEAL_AT&&!gate.sealed){
+      if(!sealCue.current){sealCue.current=true;gate.seal();audio.charge(0);}
+    }
+    if(phase!=='reentry')sealCue.current=false;
+    if(INTRO_PORTAL.includes(phase)&&gate.sealed)gate.reset();
+    const gateLive=introPortal||(phase==='reentry'&&!gate.sealed);
     if(!inSF)environment.update(t,dt,reducedMotion,director.visualProgress,phase,seq,['chase','fracture','pulled'].includes(phase)?camera.position:null);
     B?.update(t,dt,reducedMotion,phase,seq,camera.position);
     chip.update(t,dt,reducedMotion,phase,seq,camera as PerspectiveCamera,B);
@@ -159,9 +168,10 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     // Through the seam the city falls away; only the corridor remains.
     // The escape attempt: the gate and the normal world appear while Hiro tries to leave, and the
     // gate slowly irises shut. Both are hidden again once he commits to Baymax (the approach).
-    gate.group.visible=introPortal;sf.group.visible=introPortal;
-    gate.update(t,dt,introPortal?(PORTAL_CLOSE[phase]??0):0);if(introPortal)sf.update(t);
-    worldMasks.city.set(introPortal?(inSF?'outside':'inside'):'none');const dimensionMask=introPortal?(inSF?'inside':'outside'):'none';worldMasks.dimension.set(dimensionMask);worldMasks.rupture.set(dimensionMask);worldMasks.chip.set(dimensionMask);shellMask?.set(dimensionMask);
+    gate.group.visible=gateLive;sf.group.visible=gateLive;gate.setShown(gateLive);
+    gate.update(t,dt,gateLive?(PORTAL_CLOSE[phase]??0):0);if(gateLive)sf.update(t);
+    if(gate.imploded){cameraRig.shake('portal',.9);seq.shake=Math.max(seq.shake,.45);audio.impact(.85,false,0,.75);}
+    worldMasks.city.set(gateLive?(inSF?'outside':'inside'):'none');const dimensionMask=gateLive?(inSF?'inside':'outside'):'none';worldMasks.dimension.set(dimensionMask);worldMasks.rupture.set(dimensionMask);worldMasks.chip.set(dimensionMask);shellMask?.set(dimensionMask);
     const inside=phase==='handoff';
     environment.group.visible=!inside;
     const bg=scene.background as Color|null,fog=scene.fog as FogExp2|null;
@@ -188,6 +198,8 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     fx.aperture=['chip-focus','chip-reaching','chip-held'].includes(phase)?.00042:['chest-focus','panel-opening','socket-ready','inserting','silence'].includes(phase)?.0003:['booting','diagnostic','corrupting','threat'].includes(phase)?.00018:['discovery','inspected'].includes(phase)?.00016:0;
     // Hurt crossing back: a hard red hit, chromatic tear, fading as he goes still before the blink.
     if(phase==='reentry'){const rt=phaseT.current;fx.flash=Math.max(fx.flash,.28*Math.exp(-rt*6));fx.red=Math.max(fx.red,.68*Math.exp(-rt*1.8));fx.chroma=Math.max(fx.chroma,.14*Math.exp(-rt*2.3));}
+    // The seal: a white implosion flash and a brief chromatic tear.
+    if(gate.flash>0){fx.flash=Math.max(fx.flash,gate.flash*.45);fx.chroma=Math.max(fx.chroma,gate.flash*.3);}
     gl.domElement.dataset.phase=phase;
     gl.domElement.dataset.progress=director.visualProgress.toFixed(3);
     gl.domElement.dataset.chase=seq.chase.toFixed(3);
@@ -201,6 +213,7 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     <primitive object={environment.group}/>
     <primitive object={sf.group}/>
     <primitive object={gate.group}/>
+    <primitive object={gate.lights}/>
     <primitive object={rupture.root}/>
     <primitive object={chip.group}/>
     {shell&&<primitive object={shell} onClick={check} onPointerOver={()=>{if(useSceneState.getState().phase==='discovery')gl.domElement.style.cursor='crosshair';}} onPointerOut={()=>{gl.domElement.style.cursor='default';}}/>}
@@ -228,6 +241,7 @@ const PHASE_LINES:Partial<Record<Phase,[number,string,('HIRO'|'BAYMAX')?][]>>={
   'sf-turnback':[[.5,'Baymax? …Baymax!'],[2.9,'He’s not moving.']],
   'back-decision':[[.4,'I’m not leaving you.']],
   'back-through':[[.2,'Hold on—']],
+  reentry:[[1.5,'No— the way home…']],
   'chip-focus':[[1.4,'The combat chip is still in you.']],
   'socket-ready':[[.6,'Healthcare chip is gone… but I can get you running.']],
   booting:[[4.3,'Baymax—come on.']],
@@ -313,6 +327,8 @@ export function ExperienceDirector(){
     const input=()=>{setIdleHint(false);setRunHint(false);seq.lastInput=performance.now()/1000;if(idleTimer.current)clearTimeout(idleTimer.current);};
     const sprintPulse=()=>{seq.sprint=true;if(sprintTimer.current)clearTimeout(sprintTimer.current);sprintTimer.current=setTimeout(()=>{seq.sprint=false;},380);};
     const wheel=(event:WheelEvent)=>{
+      // Nothing in the opening scrolls: the wheel never reaches the page (or a pinch, the browser zoom).
+      if(event.cancelable)event.preventDefault();
       const p=useSceneState.getState().phase;
       if(p==='chase'){event.preventDefault();if(event.deltaY>0){input();sprintPulse();}return;}
       // Handling the chip: the wheel zooms (forward = closer).
@@ -378,7 +394,8 @@ export function ExperienceDirector(){
     <div className="cinema-edge top" aria-hidden="true"/><div className="cinema-edge bottom" aria-hidden="true"/>
     <div className="organic-blink" ref={aperture} aria-hidden="true"><i className="blink-lid blink-top"/><i className="blink-lid blink-bottom"/></div>
     <div className="arrival-flash" aria-hidden="true"/>
-    <div className={`knockout ${phase==='reentry'?'on':''}`} aria-hidden="true"/>
+    {/* He watches the gate seal first; only then does he black out. */}
+    <div className={`knockout ${phase==='reentry'?'on':''}`} style={{transitionDelay:phase==='reentry'&&!reducedMotion?'3s':'0s'}} aria-hidden="true"/>
     {chapter==='BOOT'&&<div className="boot" role="status"><span className="signal-line"/><span>RECONNECTING…</span></div>}
     <button className="sound" onClick={toggleSound} aria-label={sound?'Mute atmospheric sound':'Enable atmospheric sound'} aria-pressed={sound}>
       <span className={`wave ${sound?'active':''}`} aria-hidden="true"><i/><i/><i/><i/></span>
@@ -406,7 +423,7 @@ export function ExperienceDirector(){
     </div>
     {phase==='inspected'&&<div className={`failed-link ${linkVisible?'visible':''}`} aria-live="polite"><span className="fault-dot"/> BAYMAX <span>NO RESPONSE</span></div>}
     <div className="signature" aria-hidden="true">LAST GATE <small>PHASE I</small></div>
-    {ZOOM_HINT_PHASES.includes(phase)&&<div className="zoom-hint" aria-hidden="true">SCROLL <span>//</span> ZOOM</div>}
+    {ZOOM_PHASES.includes(phase)&&<div className="zoom-hint" aria-hidden="true">SCROLL <span>//</span> ZOOM</div>}
     {phase==='inspected'&&linkVisible&&<button className="replay" onClick={replayRun}>REPLAY OPENING <span>R ↶</span></button>}
     {phase==='handoff'&&<div className="handoff" role="status">
       <p>Baymax…</p>
