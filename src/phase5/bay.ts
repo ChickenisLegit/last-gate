@@ -59,7 +59,10 @@ export async function createBay() {
   slot.add(new T.Mesh(slotGeos[0], slotMat)); const rim = new T.Mesh(slotGeos[1], rimMat); rim.scale.set(1, .72, 1); rim.position.z = .03; slot.add(rim);
   const mouth = port.clone().addScaledVector(side, .7).setY(port.y + .1), seated = port.clone().addScaledVector(side, .16);
   const faceSlot = Math.atan2(-side.x, -side.z), tmpP = new T.Vector3(), redEye = new T.Color('#ff2414');
-  let shake = 0; const baseY = model.position.y;
+  let shake = 0, clunk = 0, contacted = false; const baseY = model.position.y, baseRotZ = model.rotation.z;
+  const hipsP5 = model.children.filter(c => c.name.startsWith('hip-')), hipBase = hipsP5.map(h => h.rotation.x);
+  const limiterBase = new T.Vector3();
+  const ss = (x: number, a: number, b: number) => T.MathUtils.smoothstep(x, a, b), pulse = (x: number, a: number, b: number) => Math.sin(Math.PI * T.MathUtils.clamp((x - a) / (b - a), 0, 1));
   return {
     district, model, bay, body, side, axis,
     /** fitted: 0 staged → 1 on his flank. power: 0 dormant → 1 running against the limit. */
@@ -80,14 +83,34 @@ export async function createBay() {
       const p = s.power;
       eyes.forEach(m => m.color.set('#0b0f11').lerp(redEye, p).multiplyScalar(1 + p * .6));
       red.intensity = p * (1.6 + .5 * Math.sin(t * 2.3));
-      if (head) (head as T.Object3D).rotation.set(headBase.x - .18 * p, headBase.y + .42 * p, headBase.z * (1 - p));
-      // The shoulder tries to reach Hiro, then settles against the limited physical feed.
-      arm.rotation.z = T.MathUtils.damp(arm.rotation.z, .42 * p, 2.4, dt);
-      arm.rotation.x = T.MathUtils.damp(arm.rotation.x, -.16 * p, 2.4, dt);
-      const strain = s.held ? 0 : Math.max(0, Math.sin(Math.min(1, p * 1.4) * Math.PI));
-      shake = T.MathUtils.damp(shake, strain, 6, dt);
-      model.position.y = baseY + Math.sin(t * 17) * .006 * shake + strain * .05;
-      model.rotation.z = -.08 + Math.sin(t * 11) * .012 * shake;
+      // The power-up against the limit (tracker PW-05). Power arrives as a twitch; he rolls toward
+      // Hiro, lifts his head, kicks and reaches; the reach hits the limiter's ceiling with a clunk and
+      // shudders there. Held, he sags back and keeps testing it, always stopping at the same height.
+      const LIMIT = .55;
+      const twitch = pulse(p, .04, .12) * Math.sin(t * 40) * .06;
+      const wantReach = ss(p, .12, .62), reach = Math.min(wantReach, LIMIT);
+      const press = Math.max(0, wantReach - LIMIT) / (1 - LIMIT);
+      if (!s.held && press > .02 && !contacted) { contacted = true; clunk = 1; }
+      if (p < .05) contacted = false;
+      clunk = Math.max(0, clunk - dt * 2.2);
+      const test = s.held ? Math.pow(Math.max(0, Math.sin(t * 2.4)), 8) : 0;
+      const holdSag = s.held ? .72 + .28 * test : 1;
+      const tremble = (press * .9 + clunk + test * .7) * Math.sin(t * 38) * .03;
+      arm.rotation.z = T.MathUtils.damp(arm.rotation.z, .78 * reach * holdSag + twitch + tremble - clunk * .06, 6, dt);
+      arm.rotation.x = T.MathUtils.damp(arm.rotation.x, -.3 * reach * holdSag + tremble * .5, 6, dt);
+      // Body: rolls up onto his side toward Hiro as he tries to rise, held down at the limit.
+      const rise = Math.min(ss(p, .15, .55), .6) * holdSag;
+      model.rotation.z = baseRotZ + .07 * rise + Math.sin(t * 31) * .006 * (press + clunk) + Math.sin(t * 11) * .01 * shake;
+      model.position.y = baseY + .045 * rise + clunk * .02 + Math.sin(t * 17) * .005 * shake;
+      shake = T.MathUtils.damp(shake, s.held ? test : Math.min(1, press + clunk), 6, dt);
+      // Head lifts off the apron toward Hiro, pushing forward at the limit.
+      if (head) (head as T.Object3D).rotation.set(headBase.x - .24 * rise - .05 * press, headBase.y + .42 * ss(p, .1, .5), headBase.z * (1 - p) + tremble * .4);
+      // One leg kicks as he first tries to get his feet under him.
+      hipsP5.forEach((h, i) => { h.rotation.x = hipBase[i] + (i === 0 ? -.22 : -.1) * pulse(p, .25, .5) * (s.held ? 0 : 1); });
+      // The limiter takes the load: it buzzes and its lamp flares on contact and each renewed push.
+      if (!limiterBase.lengthSq() && s.fitted > .99) limiterBase.copy(limiter.position);
+      if (limiterBase.lengthSq() && s.fitted > .99) limiter.position.copy(limiterBase).addScaledVector(side, Math.sin(t * 57) * .006 * (press + clunk + test));
+      if (clunk > .5 || test > .6) limiter.led.color.set('#fff1c4');
       bay.update({ t, open: 4.6, seated: 1, red: .9, seamGlow: .15 + p * .35 });
     },
     dispose() {
