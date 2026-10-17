@@ -1,5 +1,6 @@
 import * as T from 'three';
-import { createArmouredBaymax, mountArmour } from '../characters/ArmouredBaymax';
+import { createArmouredBaymax, mountArmour, seatOn } from '../characters/ArmouredBaymax';
+import { createLimiter } from '../phase4/limiter';
 import { assets } from '../systems/AssetManager';
 import { mountChestBay } from '../characters/ChestBay';
 
@@ -18,6 +19,10 @@ export type Pose = {
   open: number; chipGlow: number; chipInBay: boolean; careSeated: boolean;
   /** 0..1 how much of the combat armour he's wearing (the combat chip's; it comes off at the boot). */
   armour: number;
+  /** The fitted limiter is switched on (Hiro's regulator remote). */
+  limiterOn: number;
+  /** 0..1 arms trailing up over his head (lying, dragged by the feet). */
+  overhead: number;
   /**
    * 0..1 through the staged get-up from lying on his back: sit up (pushing on the ground behind),
    * settle, lean over his feet with his hands planted, push up, wobble to a stand. Overrides
@@ -31,7 +36,7 @@ export type Pose = {
 export const restPose = (): Pose => ({
   sit: 1, lie: 0, lean: 0, guard: 0, punch: 0, hold: 0, stride: 0, gait: 0, dangle: 0, yaw: 0,
   head: [0, 0, 0], eyes: new T.Color('#0b0f11'), eyeGlow: 0, thrust: 0, sputter: 0,
-  open: 0, chipGlow: 0, chipInBay: true, careSeated: false, getUp: 0, tension: 0, sluggish: 0, armour: 1,
+  open: 0, chipGlow: 0, chipInBay: true, careSeated: false, getUp: 0, tension: 0, sluggish: 0, armour: 1, overhead: 0, limiterOn: 0,
 });
 
 const FLAME_VS = 'varying vec2 vUv;varying float vFace;void main(){vUv=uv;vec4 mv=modelViewMatrix*vec4(position,1.);vFace=abs(dot(normalize(normalMatrix*normal),normalize(-mv.xyz)));gl_Position=projectionMatrix*mv;}';
@@ -77,6 +82,11 @@ export async function createBaymax() {
   const holeAt = new T.Vector3();
   const armoured = await createArmouredBaymax({ eye: eyeMat, hole: () => bay.root.getObjectByName('dock')!.getWorldPosition(holeAt) });
   mountArmour(armoured, model, { y: .55, z: .28 }, 2.42);
+  // The limiter Hiro fitted in Phase 5 stays on his chest plate (tracker N-04); Hiro's remote drives its lamp.
+  const limiter = createLimiter(); limiter.scale.setScalar(.62 / armoured.root.scale.x); armoured.root.add(limiter);
+  armoured.drive({}); armoured.mountOnChest(limiter, -.3, .16);
+  // While armoured the chest bay sits in the suit's chest plating (tracker N-03); it goes back on the white chest at the boot.
+  let unseatBay: (() => void) | null = null;
   const under = (o: T.Object3D, roots: T.Object3D[]) => { for (let q: T.Object3D | null = o; q; q = q.parent) if (roots.includes(q)) return true; return false; };
 
   // Jets: two from the back pack, one under each foot.
@@ -144,6 +154,8 @@ export async function createBaymax() {
     facing: () => cur.yaw,
     update(t: number) {
       armoured.set(pose.armour);
+      limiter.visible = pose.armour > .5;
+      limiter.led.color.set(pose.limiterOn > .5 ? '#ffb15a' : '#2a3a33'); limiter.setGauge(pose.limiterOn > .5 ? .35 + Math.sin(t * 9) * .006 : .05);
       const covered = armoured.covers(pose.armour); whiteParts.forEach(m => { m.visible = !covered; });
       const p = pose;
       const gap = last < 0 ? 1 : t - last; last = t;
@@ -250,7 +262,7 @@ export async function createBaymax() {
         const fwd = guard * (.75 + tense * .12) + (right ? cur.punch * 1.05 : -cur.punch * .25) + (!right ? cur.hold * .5 : 0)
           + Math.sin(gait - .5 + (right ? 0 : Math.PI)) * stride * .24 * heavy - sag * (1 - guard) + tremor
           + cur.flail * (.9 + .4 * Math.sin(t * 9 + i * 2))
-          - push * .9 + brace * .25;
+          - push * .9 + brace * .25 + p.overhead * 2.7;
         // Lying, the arms rest back along the ground.
         sh.rotation.x = -fwd + lie * (1 - cur.hold) * .35 + sweep * .6 + cur.flop * .28;
         sh.rotation.z = s * (sweep * .12 + cur.flail * (.35 + .3 * Math.sin(t * 7 + i)) + guard * .28 + cur.dangle * .32 + (!right ? cur.hold * .55 : 0) + push * .2 + brace * .32 - sag * .05 + tense * .04);
@@ -277,8 +289,13 @@ export async function createBaymax() {
           armL: qA.setFromEuler(shoulders[1].rotation), armR: qB.setFromEuler(shoulders[0].rotation),
           legL: qC.setFromEuler(eul.set(hips[1].rotation.x - 1.42, 0, hips[1].rotation.z)), legR: qD.setFromEuler(eul.set(hips[0].rotation.x - 1.42, 0, hips[0].rotation.z)),
           head: headNode ? qH.setFromEuler(headNode.rotation).multiply(headRest) : undefined,
+          // Elbows: bent up in guard, straightening into a punch or reaching overhead.
+          elbowL: .3 + cur.guard * .75 - cur.punch * .8 - p.overhead * .2 + cur.flail * .3,
+          elbowR: .3 + cur.guard * .75 - cur.hold * .5 - p.overhead * .2 + cur.flail * .3,
         });
       }
+      if (pose.armour > .5 && !unseatBay) unseatBay = seatOn(bay.root, armoured.chestSpot(.2, .3), .05);
+      else if (pose.armour <= .5 && unseatBay) { unseatBay(); unseatBay = null; }
       let low = Infinity;
       if (pose.armour > .5) { for (const m of whiteTorso) { box.copy(m.geometry.boundingBox!).applyMatrix4(m.matrixWorld); low = Math.min(low, box.min.y); } low = Math.min(low, armoured.footLow()); }
       else for (const m of shell) { box.copy(m.geometry.boundingBox!).applyMatrix4(m.matrixWorld); low = Math.min(low, box.min.y); }
@@ -302,7 +319,7 @@ export async function createBaymax() {
       combatChip.visible = p.chipInBay && p.open > .4;
     },
     dispose() {
-      armoured.dispose(); bay.dispose(); flameGeo.dispose(); flameMat.dispose(); eyeMat.dispose();
+      limiter.dispose(); armoured.dispose(); bay.dispose(); flameGeo.dispose(); flameMat.dispose(); eyeMat.dispose();
       root.removeFromParent();
     },
   };

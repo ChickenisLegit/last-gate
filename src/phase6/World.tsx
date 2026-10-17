@@ -235,7 +235,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       if (!isInsert(s.stage)) m.pressed = '';
     }
     // Defaults each frame; the stage below sets what it needs.
-    Object.assign(P, { armour: 1, getUp: 0, sit: 0, lie: 0, lean: .08, guard: 1, punch: 0, hold: 0, stride: 0, dangle: 0, thrust: 0, sputter: 0, open: 0, chipGlow: 0, chipInBay: s.chip === 'bay', careSeated: s.care === 'seated', eyeGlow: 1 });
+    Object.assign(P, { armour: 1, overhead: 0, limiterOn: s.regulator ? 1 : 0, getUp: 0, sit: 0, lie: 0, lean: .08, guard: 1, punch: 0, hold: 0, stride: 0, dangle: 0, thrust: 0, sputter: 0, open: 0, chipGlow: 0, chipInBay: s.chip === 'bay', careSeated: s.care === 'seated', eyeGlow: 1 });
     P.tension = set === 'home' ? 0 : s.regulator ? .4 : 1;
     P.sluggish = s.regulator && set !== 'home' ? 1 : 0;
     P.eyes.copy(RED); P.head[0] = P.head[1] = P.head[2] = 0;
@@ -349,7 +349,8 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
             if (fx.hurt.current && !reducedMotion) { fx.hurt.current.classList.remove('on'); void fx.hurt.current.offsetWidth; fx.hurt.current.classList.add('on'); }
           }
         }
-        if (s.caught) { dread = 1; P.punch = .9; }
+        // Caught: he turns to see him, fist drawn back.
+        if (s.caught) { dread = 1; P.punch = .9; look.copy(head()); freeLook = 0; lookRate = 6; }
         else if (r.p > .985) go('gate');
       } else if (s.stage === 'gate' || s.stage === 'powered') {
         m.trail = Math.min(.62, m.trail + dt * .0035); onTrail(m.trail); trudge(.6);
@@ -398,8 +399,9 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
           dread = .5 + travel * .5; near = travel;
           if (e > 6.2) go('faceoff');
         } else {
-          baymax.root.position.copy(hover).add(v3(0, Math.sin(t * 2.2) * .06, 0));
-          P.yaw = Math.PI; P.dangle = 1; P.lean = .05; P.thrust = 1; jet = 1; m.lift = 1;
+          baymax.root.position.copy(hover).add(v3(Math.sin(t * .9) * .12, Math.sin(t * 2.2) * .06, 0));
+          // Hovering on full thrust: fists up, a slow drift and sway, never quite still.
+          P.yaw = Math.PI + Math.sin(t * .7) * .07; P.dangle = .3; P.lean = .05 + Math.sin(t * 1.3) * .04; P.guard = .45; P.thrust = 1; jet = 1; m.lift = 1;
           feet.z = DECK_SPOT.z - .35;
           look.copy(head()); raise = s.stage === 'switchOn2' ? 1 : .55; dread = .9; near = 1;
         }
@@ -453,7 +455,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
           cartShown = s.cart === 'hand' && k2 > 2.4;
         }
       } else if (s.stage === 'bloom') {
-        baymax.root.position.copy(LANDING); P.yaw = Math.PI; P.lie = 1; P.guard = 0; P.eyes.copy(DARK); P.eyeGlow = 0; P.open = 4.6; P.chipInBay = false;
+        baymax.root.position.copy(LANDING); P.yaw = Math.PI; P.lie = 1; P.guard = 0; P.eyes.copy(DARK); P.eyeGlow = 0; P.open = 4.6; P.chipInBay = false; P.overhead = span(e, 7.4, 8.4);
         open = 1 - Math.pow(1 - span(e, .9, 3.6), 3);
         if (e > .9 && e < .96) audio.bloom();
         feet.copy(READER_SPOT);
@@ -472,7 +474,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
           baymax.root.position.set(root.x, rampY(cz), root.z);
           baymax.root.rotation.x = Math.atan2(rampY(fz) - rampY(hz), LIE_LENGTH);
           feet.set(root.x * .85, 0, fz - LEAD); feet.y = rampY(feet.z);
-          eye = e < 8.3 ? 1.56 - span(e, 7.6, 8.3) * .1 : 1.46; reach = span(e, 7.6, 8.2);
+          eye = e < 8.3 ? 1.56 - span(e, 7.6, 8.3) * .1 : 1.46; reach = span(e, 7.6, 8.2) * .5;
           look.set(root.x, baymax.root.position.y + .6, root.z + 1.3); lookRate = 4;
           // One look over his shoulder at the open gate, then back to Baymax.
           const glance = Math.sin(Math.PI * clamp01((e - 12.8) / 1.8));
@@ -481,7 +483,8 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
           if (pull !== m.stepAt && e > 8.3) { m.stepAt = pull; audio.step(.4); m.shake = Math.max(m.shake, reducedMotion ? 0 : .38); }
           // Each tug: a dip and a jolt through his arms, then the brace for the next one.
           const tug = Math.sin(Math.PI * ((clamp01((e - 8.3) / 10) * 12) % 1));
-          if (e > 8.3) { eye -= .07 * tug; reach = .82 + .18 * tug; }
+          // Hands low on his ankles, not reaching across the middle of the view.
+          if (e > 8.3) { eye -= .07 * tug; reach = .48 + .1 * tug; }
           // The surface: the warp grows as his eye reaches it.
           warp = span(-(feet.z), -(FRAME.z + 1.25), -FRAME.z);
           if (warp > .3 && !m.warped) { m.warped = true; audio.warp(); }
@@ -534,7 +537,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       const he = e - EMERGE - .4;
       const gate = s.stage === 'home' ? 1 - span(e, EMERGE - 1.4, EMERGE + .6) : 0;
       home.update(t, dt, { gate, careBlink: s.care === 'seated' ? 0 : 1 });
-      baymax.root.position.copy(HOME_BAYMAX); P.yaw = Math.PI; P.lie = 1; P.guard = 0; P.eyes.copy(DARK); P.eyeGlow = 0; P.open = 4.6; P.chipInBay = false;
+      baymax.root.position.copy(HOME_BAYMAX); P.yaw = Math.PI; P.lie = 1; P.guard = 0; P.eyes.copy(DARK); P.eyeGlow = 0; P.open = 4.6; P.chipInBay = false; P.overhead = 1 - span(e, EMERGE - 1, EMERGE + .5);
       if (s.stage === 'home' && he < 0) {
         // Through. The rest of him comes out of the gate after Hiro, slides off its lip onto the
         // ground, and the gate closes behind him.

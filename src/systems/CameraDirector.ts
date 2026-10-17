@@ -203,6 +203,8 @@ export class CameraDirector {
         const yaw=MathUtils.lerp(Math.atan2(this.v.x,this.v.z),Math.atan2(this.v2.x,this.v2.z),turn);
         const pitch=MathUtils.lerp(Math.atan2(this.v.y,Math.hypot(this.v.x,this.v.z)),Math.atan2(this.v2.y,Math.hypot(this.v2.x,this.v2.z)),turn)-settle*.3;
         A.set(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),Math.cos(yaw)*Math.cos(pitch)).multiplyScalar(12).add(P);
+        // The rock's hit (tracker N-01): his head snaps round and down.
+        const knock=reducedMotion?0:span(t,2.95,3.08);if(knock>0){A.x+=knock*5;A.y-=knock*4;P.y-=knock*.12;}
         this.fov=MathUtils.lerp(58,46,span(t,.4,1.9))+settle*4;
         this.roll=(reducedMotion?0:Math.sin(t*6)*.055*(1-reel))+hit*.1*(1-turn)+settle*.14;
         this.focusDistance=MathUtils.lerp(10,P.distanceTo(this.v2.set(0,4.2,24)),turn);break;
@@ -260,11 +262,16 @@ export class CameraDirector {
       }
       case 'corrupting':{
         const k=span(t,0,4.8);P.set(MathUtils.lerp(2.34,2.46,k),MathUtils.lerp(2.16,2.42,k),MathUtils.lerp(-8.7,-9.25,k));
-        A.copy(ctx.head).setY(ctx.head.y-.12*(1-k));this.fov=MathUtils.lerp(41,36,k);this.focusDistance=P.distanceTo(ctx.head);break;
+        A.copy(ctx.head).setY(ctx.head.y-.12*(1-k));this.fov=MathUtils.lerp(41,36,k);
+        // Tracker N-02: the armour assembles over him here and is far bulkier than the soft shell, so
+        // Hiro backs off along the same line of sight as it builds, keeping head and shoulders in frame.
+        this.v.subVectors(P,A).normalize();P.addScaledVector(this.v,2.8*span(t,.6,3.6));P.y+=.35*span(t,.6,3.6);A.y+=.3*span(t,.6,3.6);
+        this.focusDistance=P.distanceTo(ctx.head);break;
       }
       case 'threat':{
         // Locked. No sway. At the lock, a slow dolly-zoom presses the eyes forward.
         const lock=span(t,1.7,3.4);P.set(2.55,2.62,-9.55+lock*.25);A.copy(ctx.head);A.y-=.02;
+        this.v.subVectors(P,A).normalize();P.addScaledVector(this.v,2.8-lock*.6);P.y+=.35;A.y+=.3;
         this.fov=MathUtils.lerp(34,29.5,lock);this.focusDistance=P.distanceTo(ctx.head);break;
       }
       case 'ignition':{

@@ -1171,3 +1171,8 @@
 .p5.p5 .p5-fixes button{border-radius:10px}
 .recovery .board :is(.board-inspector,.board-summary,.board-rail) :is(p,li,ol),.p5.p5 :is(.p5-panel,.p5-found) :is(p,li,ol){color:#2E3336}
 .p5.p5 .p5-panel li:first-child{font-weight:600}
+/* N-05: breakers show their state (my mist-white override had hidden the lamp), and every press gives a little give. */
+.p5.p5 .p5-breakers i.on{background:#F08A3C;box-shadow:0 0 0 3px rgba(240,138,60,.22),0 0 8px rgba(240,138,60,.6)}
+.p5.p5 .p5-breakers button[aria-pressed=true]{background:linear-gradient(180deg,#fff4ea,#fde6d3);border-color:#F08A3C;color:#1F2326}
+.p5.p5 button:not(:disabled):active,.recovery .board button:not(:disabled):active{transform:translateY(1px) scale(.97)}
+.p5.p5 button{transition:transform .1s,background .18s,border-color .18s}

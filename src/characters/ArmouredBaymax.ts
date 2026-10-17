@@ -68,6 +68,8 @@ export type ArmourJoints = {
   legL?: T.Quaternion; legR?: T.Quaternion;
   /** Head rotation relative to its rest. */
   head?: T.Quaternion;
+  /** Elbow bend in radians (forearm forward from the upper arm); default a relaxed .3. */
+  elbowL?: number; elbowR?: number;
 };
 
 type Piece = { mesh: T.Mesh; mats: T.Material[]; orig: { transparent: boolean; opacity: number; depthWrite: boolean }[]; base: T.Vector3; delay: number; late: boolean };
@@ -92,9 +94,10 @@ export async function createArmouredBaymax(opts: { eye?: T.Material; hole?: () =
   // Arms rest in a T: the swing that hangs each one at his side, a little out from the body.
   const hang = (side: 'L' | 'R') => {
     const from = lArm[side].getWorldPosition(new T.Vector3()).sub(uArm[side].getWorldPosition(new T.Vector3())).normalize();
-    return new T.Quaternion().setFromUnitVectors(from, new T.Vector3(side === 'L' ? .14 : -.14, -1, 0).normalize());
+    return new T.Quaternion().setFromUnitVectors(from, new T.Vector3(side === 'L' ? .08 : -.08, -1, 0).normalize());
   };
   const hangQ = { L: hang('L'), R: hang('R') };
+  const restF = { L: relQ(lArm.L), R: relQ(lArm.R) }, bendQ = new T.Quaternion(), X = new T.Vector3(1, 0, 0), invU = new T.Quaternion(), invH = new T.Quaternion();
   const legDown = (side: 'L' | 'R') => {
     const from = lLeg[side].getWorldPosition(new T.Vector3()).sub(uLeg[side].getWorldPosition(new T.Vector3())).normalize();
     return new T.Quaternion().setFromUnitVectors(from, new T.Vector3(0, -1, 0));
@@ -154,6 +157,10 @@ export async function createArmouredBaymax(opts: { eye?: T.Material; hole?: () =
         // The pad rides up with the arm a little.
         tmpQ.copy(id).slerp(arm ?? id, .3).multiply(restQ.get(pad[s])!); set(pad[s], tmpQ);
         tmpQ.copy(leg ?? id).multiply(legQ[s]).multiply(restQ.get(uLeg[s])!); set(uLeg[s], tmpQ);
+        // Elbow: the forearm bends forward in the hanging arm's frame, whatever the shoulder does.
+        bendQ.setFromAxisAngle(X, -((s === 'L' ? j.elbowL : j.elbowR) ?? .3));
+        invU.copy(restQ.get(uArm[s])!).invert(); invH.copy(hangQ[s]).invert();
+        lArm[s].quaternion.copy(invU).multiply(invH).multiply(bendQ).multiply(hangQ[s]).multiply(restF[s]);
       }
       tmpQ.copy(j.head ?? id).multiply(restQ.get(head)!); set(head, tmpQ);
       // Hands onto the forearms.
@@ -168,6 +175,33 @@ export async function createArmouredBaymax(opts: { eye?: T.Material; hole?: () =
       root.updateMatrixWorld(true);
       const h = opts.hole?.(); if (h) { hole.c.copy(h); hole.r = .58 * root.getWorldScale(new T.Vector3()).x / 1.5; } else hole.r = 0;
     },
+    /**
+     * A spot on the chest plating: cast in from in front of his chest at (lateral, up) in the suit's
+     * own units from the chest bone, and return the surface point and outward normal in world space.
+     */
+    chestSpot(lateral = 0, up = 0) {
+      root.updateMatrixWorld(true);
+      const c = chest.getWorldPosition(new T.Vector3()), q = root.getWorldQuaternion(new T.Quaternion()), sc = root.getWorldScale(new T.Vector3()).x;
+      const fwd = new T.Vector3(0, 0, 1).applyQuaternion(q), side = new T.Vector3(1, 0, 0).applyQuaternion(q), upv = new T.Vector3(0, 1, 0).applyQuaternion(q);
+      const aim = c.clone().addScaledVector(side, lateral * sc).addScaledVector(upv, up * sc);
+      // Skinned plates are only posed at render time: bring their skeletons up to date first, so the
+      // ray meets what will actually be drawn.
+      const meshes: T.Object3D[] = []; suit.traverse(o => { if (o instanceof T.SkinnedMesh) o.skeleton.update(); if (o instanceof T.Mesh) meshes.push(o); });
+      const hit = new T.Raycaster(aim.clone().addScaledVector(fwd, 3 * sc), fwd.clone().negate(), 0, 6 * sc).intersectObjects(meshes, false)[0];
+      const normal = hit?.face ? hit.face.normal.clone().transformDirection(hit.object.matrixWorld) : fwd.clone();
+      if (normal.dot(fwd) < 0) normal.negate();
+      return { point: hit ? hit.point.clone() : aim.addScaledVector(fwd, .6 * sc), normal, bone: chest as T.Object3D };
+    },
+    /** Fix an object flat on the chest plating at (lateral, up): its +Y out of the plate, its X along his body. */
+    mountOnChest(obj: T.Object3D, lateral: number, up: number) {
+      const spot = api.chestSpot(lateral, up), n = spot.normal.clone().normalize();
+      const upv = new T.Vector3(0, 1, 0).applyQuaternion(chest.getWorldQuaternion(new T.Quaternion()));
+      const x = upv.addScaledVector(n, -upv.dot(n)).normalize(), z = new T.Vector3().crossVectors(x, n);
+      const mw = new T.Matrix4().makeBasis(x, n, z).setPosition(spot.point.addScaledVector(n, -.03)).scale(obj.getWorldScale(new T.Vector3()));
+      chest.add(obj); obj.matrix.copy(new T.Matrix4().copy(chest.matrixWorld).invert().multiply(mw)); obj.matrix.decompose(obj.position, obj.quaternion, obj.scale);
+    },
+    /** His helmet in world space (the camera's eye target once he's armoured). */
+    headWorld: (out = new T.Vector3()) => head.localToWorld(out.set(0, .12, .05)),
     /** Lowest point of his feet in world space (for sitting him on the ground). */
     footLow() { let low = Infinity; const v = new T.Vector3(); for (const f of feet) low = Math.min(low, f.getWorldPosition(v).y); return low; },
     /** 0 = no armour … 1 = fully armoured. Plates arrive core first; the suit and face come in last. */
@@ -203,4 +237,20 @@ export function mountArmour(a: ArmouredBaymax, white: T.Object3D, hip: { y: numb
   a.root.position.set(0, hip.y - a.joints.hipY * s, hip.z - a.joints.hipZ * s);
   white.add(a.root);
   return s;
+}
+
+/**
+ * Seat an object on a spot of the suit (its +Z out of the surface, its +Y toward his head), parented
+ * to the chest bone so it moves with him. Returns a function that puts it back where it was.
+ */
+export function seatOn(obj: T.Object3D, spot: { point: T.Vector3; normal: T.Vector3; bone: T.Object3D }, depth = 0) {
+  const parent = obj.parent!, pos = obj.position.clone(), quat = obj.quaternion.clone(), scl = obj.scale.clone();
+  const up = new T.Vector3(0, 1, 0).applyQuaternion(spot.bone.getWorldQuaternion(new T.Quaternion()));
+  const z = spot.normal.clone().normalize(), x = new T.Vector3().crossVectors(up, z).normalize(), y = new T.Vector3().crossVectors(z, x);
+  const worldScale = obj.getWorldScale(new T.Vector3());
+  spot.bone.add(obj);
+  const m = new T.Matrix4().makeBasis(x, y, z).setPosition(spot.point.clone().addScaledVector(z, -depth)).scale(worldScale);
+  obj.matrix.copy(new T.Matrix4().copy(spot.bone.matrixWorld).invert().multiply(m));
+  obj.matrix.decompose(obj.position, obj.quaternion, obj.scale);
+  return () => { parent.add(obj); obj.position.copy(pos); obj.quaternion.copy(quat); obj.scale.copy(scl); };
 }

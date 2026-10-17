@@ -1,6 +1,6 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { ACESFilmicToneMapping, Color, FogExp2, Group, PerspectiveCamera, PMREMGenerator, SRGBColorSpace, Vector3 } from 'three';
+import { ACESFilmicToneMapping, Color, DodecahedronGeometry, FogExp2, Group, Mesh, MeshStandardMaterial, PerspectiveCamera, PMREMGenerator, SRGBColorSpace, Vector3 } from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CinematicPost } from '../effects/CinematicPost';
 import { createPortalDimension } from '../environment/PortalDimension.js';
@@ -39,6 +39,8 @@ const INTRO_PORTAL:Phase[]=['portal-sighted','call-baymax','to-portal','through-
 const PORTAL_CLOSE:Partial<Record<Phase,number>>={'portal-sighted':.1,'call-baymax':.16,'to-portal':.24,'through-portal':.3,'sf-arrival':.42,'sf-turnback':.58,'back-decision':.74,'back-through':.95,reentry:.95};
 /** Seconds into the hurt re-entry when the gate behind Hiro collapses (he has turned to look by then). */
 const SEAL_AT=1.45;
+/** Tracker N-01: on the hurt re-entry, a chunk of debris tumbles in and hits Hiro: that is what knocks him out. */
+const ROCK_AT=2.95,ROCK_FROM=2.35;
 
 type SceneProps={director:CameraDirector;seq:SequenceDirector;marker:React.RefObject<HTMLButtonElement|null>;readout:React.RefObject<HTMLDivElement|null>;audio:AudioDirector};
 function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
@@ -60,6 +62,9 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
   useEffect(()=>()=>{Object.values(worldMasks).forEach(mask=>mask.dispose());shellMask?.dispose();},[worldMasks,shellMask]);
   const elapsed=useRef(0),replay=useRef(0),magnetCue=useRef(false),sealCue=useRef(false);
   const phaseT=useRef(0),prevPhaseRef=useRef<string>('');
+  const rock=useMemo(()=>{const m=new Mesh(new DodecahedronGeometry(.34,0),new MeshStandardMaterial({color:'#5f6b6c',roughness:.95,flatShading:true}));m.visible=false;m.scale.set(1,.8,1.15);return m;},[]);
+  const rockFwd=useMemo(()=>new Vector3(),[]),rockSide=useMemo(()=>new Vector3(),[]);
+  useEffect(()=>{scene.add(rock);return()=>{scene.remove(rock);rock.geometry.dispose();(rock.material as MeshStandardMaterial).dispose();};},[scene,rock]);
   const ctx=useMemo<ShotContext>(()=>({chest:new Vector3(3,1.97,-11.3),normal:new Vector3(0,0,1),chip:new Vector3(),baymax:new Vector3(2.7,0,-12),head:new Vector3(2.72,2.98,-11.6)}),[]);
   const projection=useMemo(()=>new Vector3(),[]);
   useEffect(()=>{
@@ -147,7 +152,7 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     if(state.replay!==replay.current){replay.current=state.replay;rupture.reset();gate.reset();}
     seq.update(dt);
     const B=baymax.current;
-    if(B){B.chestFrame(ctx.chest,ctx.normal);ctx.baymax.copy(B.shell.position);ctx.head.copy(B.shell.position).add(projection.set(.05,2.98,.25).applyEuler(B.shell.rotation));}
+    if(B){B.chestFrame(ctx.chest,ctx.normal);ctx.baymax.copy(B.shell.position);ctx.head.copy(B.shell.position).add(projection.set(.05,2.98,.25).applyEuler(B.shell.rotation));B.headFocus(ctx.head);}
     ctx.chip.copy(chip.group.children[0].position);
     director.update(camera as PerspectiveCamera,dt,size.width,size.height,seq,ctx);
     const introPortal=INTRO_PORTAL.includes(phase),inSF=introPortal&&camera.position.z>24;
@@ -197,7 +202,13 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     fx.chroma=seq.warp*.8+(phase==='pulled'?seq.collapse:0)+(phase==='threat'?.12:0);
     fx.aperture=['chip-focus','chip-reaching','chip-held'].includes(phase)?.00042:['chest-focus','panel-opening','socket-ready','inserting','silence'].includes(phase)?.0003:['booting','diagnostic','corrupting','threat'].includes(phase)?.00018:['discovery','inspected'].includes(phase)?.00016:0;
     // Hurt crossing back: a hard red hit, chromatic tear, fading as he goes still before the blink.
-    if(phase==='reentry'){const rt=phaseT.current;fx.flash=Math.max(fx.flash,.28*Math.exp(-rt*6));fx.red=Math.max(fx.red,.68*Math.exp(-rt*1.8));fx.chroma=Math.max(fx.chroma,.14*Math.exp(-rt*2.3));}
+    if(phase==='reentry'){const rt=phaseT.current;fx.flash=Math.max(fx.flash,.28*Math.exp(-rt*6));fx.red=Math.max(fx.red,.68*Math.exp(-rt*1.8));fx.chroma=Math.max(fx.chroma,.14*Math.exp(-rt*2.3));
+      // The rock: in from the side, tumbling, and into his face; a white hit, a tear, then black.
+      if(rt>ROCK_FROM&&rt<ROCK_AT+.04){const k=Math.min(1,(rt-ROCK_FROM)/(ROCK_AT-ROCK_FROM));camera.getWorldDirection(rockFwd);rockSide.crossVectors(rockFwd,camera.up).normalize();
+        rock.position.copy(camera.position).addScaledVector(rockSide,5.5*(1-k)).addScaledVector(camera.up,2.4*(1-k)*(1-k)).addScaledVector(rockFwd,.3+5.5*(1-k));rock.rotation.x+=dt*9;rock.rotation.z+=dt*6;rock.visible=true;}
+      else rock.visible=false;
+      if(rt>=ROCK_AT){const h=Math.exp(-(rt-ROCK_AT)*8);fx.flash=Math.max(fx.flash,.85*h);fx.chroma=Math.max(fx.chroma,.4*h);}
+    }else rock.visible=false;
     // The seal: a white implosion flash and a brief chromatic tear.
     if(gate.flash>0){fx.flash=Math.max(fx.flash,gate.flash*.45);fx.chroma=Math.max(fx.chroma,gate.flash*.3);}
     gl.domElement.dataset.phase=phase;
@@ -232,7 +243,7 @@ const PHASE_CUES:Partial<Record<Phase,[number,(audio:AudioDirector)=>void][]>>={
   ignition:[[1.9,a=>a.spool()]],
   fracture:[[0,a=>a.rupture()]],
   pulled:[[3.1,a=>a.whiteout()]],
-  reentry:[[0,a=>a.impact(1,true,0,1)],[.12,a=>a.impact(.6,false,-.2,1)]],
+  reentry:[[0,a=>a.impact(1,true,0,1)],[.12,a=>a.impact(.6,false,-.2,1)],[2.95,a=>a.impact(1.3,true,.4,1)]],
   handoff:[[1.2,a=>a.arrival()]]
 };
 const PHASE_LINES:Partial<Record<Phase,[number,string,('HIRO'|'BAYMAX')?][]>>={
@@ -395,7 +406,7 @@ export function ExperienceDirector(){
     <div className="organic-blink" ref={aperture} aria-hidden="true"><i className="blink-lid blink-top"/><i className="blink-lid blink-bottom"/></div>
     <div className="arrival-flash" aria-hidden="true"/>
     {/* He watches the gate seal first; only then does he black out. */}
-    <div className={`knockout ${phase==='reentry'?'on':''}`} style={{transitionDelay:phase==='reentry'&&!reducedMotion?'3s':'0s'}} aria-hidden="true"/>
+    <div className={`knockout ${phase==='reentry'?'on':''}`} style={{transitionDelay:phase==='reentry'&&!reducedMotion?'3.02s':'0s',transitionDuration:phase==='reentry'?'.15s':undefined}} aria-hidden="true"/>
     {chapter==='BOOT'&&<div className="boot" role="status"><span className="signal-line"/><span>RECONNECTING…</span></div>}
     <button className="sound" onClick={toggleSound} aria-label={sound?'Mute atmospheric sound':'Enable atmospheric sound'} aria-pressed={sound}>
       <span className={`wave ${sound?'active':''}`} aria-hidden="true"><i/><i/><i/><i/></span>

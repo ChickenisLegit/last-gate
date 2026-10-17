@@ -188,7 +188,7 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
       {st === 'escape' && !s.caught && <Panel id="run" label="Old gate site" rows={[['Distance', `${metres} m`, 'orange'], ['Baymax', 'Following', 'red']]} />}
       {st === 'escape' && s.caught && <Panel id="caught" label="Baymax" tone="red" title="He caught you."
         rows={[['Regulator', 'Active · 35%'], ['Distance left', `${metres} m`]]}>
-        <button className="p6-btn" onClick={toggle('escape')}>Try the run again <i>→</i></button>
+        <button className="p6-btn" onClick={() => { audio.unlock(); useP6.setState({ caught: false }); go('escape'); }}>Try the run again <i>→</i></button>
       </Panel>}
 
       {/* 4 · The gate: power it. It tries, and folds shut. */}

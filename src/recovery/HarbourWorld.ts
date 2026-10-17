@@ -1,5 +1,5 @@
 import { Box3, CanvasTexture, Group, Mesh, MeshBasicMaterial, PlaneGeometry, PointLight, Vector3 } from 'three';
-import { createArmouredBaymax, mountArmour } from '../characters/ArmouredBaymax';
+import { createArmouredBaymax, mountArmour, seatOn } from '../characters/ArmouredBaymax';
 import { Euler, Quaternion, type Object3D } from 'three';
 import { assets } from '../systems/AssetManager';
 import { mountChestBay } from '../characters/ChestBay';
@@ -45,6 +45,8 @@ export async function createHarbourWorld(): Promise<JourneyWorld> {
   const legQ = (h: Object3D | undefined) => h ? new Quaternion().setFromEuler(new Euler(h.rotation.x - 1.42, 0, h.rotation.z)) : undefined;
   armoured.set(1); armoured.drive({ legL: legQ(hips.find(h => h.name === 'hip-right')), legR: legQ(hips.find(h => h.name === 'hip-left')) });
   meshes.forEach(m => { let q: Object3D | null = m; while (q && q !== bay.root) q = q.parent; if (!q) m.visible = false; });
+  // The chest bay sits in the suit's plating, not floating where the white chest was (tracker N-03).
+  seatOn(bay.root, armoured.chestSpot(.2, .3), .05);
   model.updateMatrixWorld(true);
   model.position.y += -1.02 - new Box3().setFromObject(armoured.root, true).min.y - .06; model.updateMatrixWorld(true);
   const red = new PointLight('#ff3626', .35, 3.5, 2); red.position.set(.42, 2.2, .9); model.add(red);

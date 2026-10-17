@@ -362,8 +362,11 @@ export class BaymaxController {
     T.arm=.4*span(t,1.4,2.2);T.aim.set(camera.x,camera.y+2,camera.z);
   }
   /** Pose the suit from this rig, swap it in or out, and keep its feet on the white rig's ground line. */
+  private suitK=0;
+  /** Where the camera should look for his head: the helmet once the armour is mostly on (tracker N-02). */
+  headFocus(out:Vector3){if(this.suit&&this.suitK>.5)this.suit.headWorld(out);return out;}
   private dressSuit(k:number,stand:number){
-    const a=this.suit!;a.set(k);
+    const a=this.suit!;a.set(k);this.suitK=k;
     const covered=a.covers(k);
     if(covered!==this.wasCovered){
       this.wasCovered=covered;

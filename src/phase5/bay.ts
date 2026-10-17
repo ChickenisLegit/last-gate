@@ -5,8 +5,8 @@ import { createLimiter } from '../phase4/limiter';
 /**
  * Back at the harbour bay: the same district and the same Baymax pose as the landing and the
  * engineering board (on his apron, clear of the debris), plus the power regulator Hiro found in
- * Bay 6 (Phase 4's createLimiter), lifted off the apron and docked into a slot on his flank. Its gauge
- * and lamp show the load.
+ * Bay 6 (Phase 4's createLimiter), lifted off the apron and fitted flat onto his right chest plate,
+ * where it stays for the rest of the story. Its gauge and lamp show the load.
  */
 export async function createBay() {
   const { district, baymax: model, bay, armoured } = await createHarbourWorld();
@@ -42,26 +42,24 @@ export async function createBay() {
   const red = new T.PointLight('#ff2a1c', 0, 6, 1.8); red.position.copy(body).add(new T.Vector3(-.6, 1.2, .4)); district.group.add(red);
 
   const limiter = createLimiter();
-  limiter.scale.setScalar(.8);
+  limiter.scale.setScalar(.62);
   const ground = -1.02;
   const staged = body.clone().addScaledVector(side, 2.6).addScaledVector(axis, -.4).setY(ground);
   limiter.position.copy(staged); limiter.rotation.y = .5; district.group.add(limiter);
-  // The slot: a recessed port on his flank, facing the lane, at the height of his side.
-  // Found by casting in from the lane at mid-torso height, so it sits on his actual surface.
-  const box = new T.Box3().setFromObject(model), midY = T.MathUtils.lerp(box.min.y, box.max.y, .45);
-  const from = body.clone().addScaledVector(side, 4).addScaledVector(axis, .15).setY(midY);
-  const hit = new T.Raycaster(from, side.clone().negate(), 0, 8).intersectObject(armoured?.root ?? model, true)[0];
-  const port = hit ? hit.point.clone().addScaledVector(side, -.04) : body.clone().addScaledVector(side, 1.2).setY(midY);
-  const slot = new T.Group(); slot.position.copy(port); slot.lookAt(port.clone().add(side)); district.group.add(slot);
-  const slotMat = new T.MeshStandardMaterial({ color: '#2a2f33', metalness: .6, roughness: .45 });
-  const rimMat = new T.MeshStandardMaterial({ color: '#9a9f94', metalness: .8, roughness: .3 });
-  const slotGeos = [new T.BoxGeometry(.42, .3, .06), new T.TorusGeometry(.26, .022, 8, 32)];
-  slot.add(new T.Mesh(slotGeos[0], slotMat)); const rim = new T.Mesh(slotGeos[1], rimMat); rim.scale.set(1, .72, 1); rim.position.z = .03; slot.add(rim);
-  const mouth = port.clone().addScaledVector(side, .7).setY(port.y + .1), seated = port.clone().addScaledVector(side, .16);
-  const faceSlot = Math.atan2(-side.x, -side.z), tmpP = new T.Vector3(), redEye = new T.Color('#ff2414');
+  // The limiter's mount (tracker N-04): flat on his right chest plate, face out, long side along his
+  // body. Kept relative to the chest bone so it moves with him once fitted.
+  const tmpP = new T.Vector3(), redEye = new T.Color('#ff2414'), tmpM = new T.Matrix4();
+  const mountLocal = new T.Matrix4(), mountPos = new T.Vector3(), mountQ = new T.Quaternion(), mountS = new T.Vector3(), mountN = new T.Vector3();
+  const stagedQ = new T.Quaternion().setFromEuler(new T.Euler(0, .5, 0));
+  const spot = armoured?.chestSpot(-.3, .16) ?? null;
+  if (spot) {
+    const n = spot.normal.clone().normalize(), up = new T.Vector3(0, 1, 0).applyQuaternion(spot.bone.getWorldQuaternion(new T.Quaternion()));
+    const x = up.addScaledVector(n, -up.dot(n)).normalize(), z = new T.Vector3().crossVectors(x, n);
+    const mw = new T.Matrix4().makeBasis(x, n, z).setPosition(spot.point.clone().addScaledVector(n, -.03)).scale(limiter.scale.clone());
+    mountLocal.copy(spot.bone.matrixWorld).invert().multiply(mw);
+  }
   let shake = 0, clunk = 0, contacted = false; const baseY = model.position.y, baseRotZ = model.rotation.z;
   const hipsP5 = model.children.filter(c => c.name.startsWith('hip-')), hipBase = hipsP5.map(h => h.rotation.x);
-  const limiterBase = new T.Vector3();
   const headQ = new T.Quaternion(), headRestInv = new T.Quaternion().setFromEuler(headBase).invert(), legE = new T.Euler();
   const legQ = (h: T.Object3D | undefined) => h ? new T.Quaternion().setFromEuler(legE.set(h.rotation.x - 1.42, 0, h.rotation.z)) : undefined;
   const ss = (x: number, a: number, b: number) => T.MathUtils.smoothstep(x, a, b), pulse = (x: number, a: number, b: number) => Math.sin(Math.PI * T.MathUtils.clamp((x - a) / (b - a), 0, 1));
@@ -72,12 +70,13 @@ export async function createBay() {
       district.update(t, dt, false);
       // Lift off the apron and carry to the slot mouth (0–.6), line up (.6–.8), push home with a
       // small settle (.8–1).
-      const f = s.fitted, carry = T.MathUtils.smootherstep(f, 0, .6), push = T.MathUtils.smootherstep(f, .8, .97);
-      tmpP.lerpVectors(staged, mouth, carry); tmpP.y = T.MathUtils.lerp(ground, mouth.y, carry) + Math.sin(Math.PI * carry) * .35;
-      limiter.position.copy(tmpP).lerp(seated, push);
-      limiter.position.addScaledVector(side, -Math.sin(Math.PI * T.MathUtils.clamp((f - .95) / .05, 0, 1)) * .02);
-      limiter.rotation.set(T.MathUtils.lerp(0, -Math.PI / 2, T.MathUtils.smoothstep(f, .3, .75)), T.MathUtils.lerp(.5, faceSlot, T.MathUtils.smoothstep(f, .2, .8)), 0, 'YXZ');
-      rimMat.emissive.set(f > .97 ? '#ffb15a' : '#000000'); rimMat.emissiveIntensity = f > .97 ? .6 + .4 * s.power : 0;
+      const f = s.fitted, carry = T.MathUtils.smootherstep(f, 0, .6), push = T.MathUtils.smootherstep(f, .75, .97);
+      if (spot) tmpM.copy(spot.bone.matrixWorld).multiply(mountLocal).decompose(mountPos, mountQ, mountS);
+      mountN.set(0, 1, 0).applyQuaternion(mountQ);
+      tmpP.lerpVectors(staged, mountPos.clone().addScaledVector(mountN, .5), carry); tmpP.y += Math.sin(Math.PI * carry) * .35;
+      limiter.position.copy(tmpP).lerp(mountPos, push);
+      limiter.position.addScaledVector(mountN, -Math.sin(Math.PI * T.MathUtils.clamp((f - .95) / .05, 0, 1)) * .02);
+      limiter.quaternion.copy(stagedQ).slerp(mountQ, T.MathUtils.smoothstep(f, .25, .8));
       limiter.led.color.set(s.power > .05 ? '#ffb15a' : s.fitted > .99 ? '#7dffa6' : '#2a3a33');
       // The needle climbs with the load and stops short of the red: that's the limit holding.
       limiter.setGauge(s.fitted > .99 ? .1 + Math.min(s.power, 1) * .32 + Math.sin(t * 9) * .006 * s.power : .05);
@@ -110,8 +109,7 @@ export async function createBay() {
       // One leg kicks as he first tries to get his feet under him.
       hipsP5.forEach((h, i) => { h.rotation.x = hipBase[i] + (i === 0 ? -.22 : -.1) * pulse(p, .25, .5) * (s.held ? 0 : 1); });
       // The limiter takes the load: it buzzes and its lamp flares on contact and each renewed push.
-      if (!limiterBase.lengthSq() && s.fitted > .99) limiterBase.copy(limiter.position);
-      if (limiterBase.lengthSq() && s.fitted > .99) limiter.position.copy(limiterBase).addScaledVector(side, Math.sin(t * 57) * .006 * (press + clunk + test));
+      if (s.fitted > .99) limiter.position.addScaledVector(mountN, Math.sin(t * 57) * .005 * (press + clunk + test));
       if (clunk > .5 || test > .6) limiter.led.color.set('#fff1c4');
       // The suit follows this rig: his reaching arm (+x pivot = the suit's left), the leg kick, the head.
       if (armoured) armoured.drive({
@@ -123,7 +121,6 @@ export async function createBay() {
     },
     dispose() {
       limiter.dispose();
-      slotGeos.forEach(g => g.dispose()); slotMat.dispose(); rimMat.dispose(); slot.removeFromParent();
       eyes.forEach(m => m.dispose()); bay.dispose(); district.dispose();
     },
   };
