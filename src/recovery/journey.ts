@@ -1,10 +1,11 @@
 import type { ComponentType } from 'react';
+import type { ArmouredBaymax } from '../characters/ArmouredBaymax';
 import type { Camera, Group, Scene, WebGLRenderer } from 'three';
 import type { ChestBay } from '../characters/ChestBay';
 import type { District } from './district';
 
 /** INSPECT BAYMAX hands on the live harbour and character, preserving the camera and Canvas. */
-export type JourneyWorld = { baymax: Group; bay: ChestBay; district: District };
+export type JourneyWorld = { baymax: Group; bay: ChestBay; district: District; armoured?: ArmouredBaymax };
 
 /**
  * The engineering scene takes ownership of the existing harbour camera; its Overlay is DOM.

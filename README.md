@@ -69,4 +69,6 @@ The environment has close cable/glass/dust, the street and Baymax, displaced mid
 
 The stylized Baymax model, street geometry and textures, portal shader, and ambience are original procedural assets. `npm run assets` exports the reusable model to `public/models/baymax-shell.glb` (approximately 250 KB). This is an intentionally simplified approximation, ready to replace with a more detailed model. No external film model, soundtrack or voice recording is included. Interface fonts load from Google Fonts with local fallbacks. Dependency licenses remain with their installed packages.
 
+The armoured Baymax (`public/models/baymax-armoured.glb`) is converted from ["Armored Baymax (from Disney's Big Hero 6)"](http://www.blendswap.com/blends/view/76636) by DoodleNotes1, licensed [CC BY 3.0](http://creativecommons.org/licenses/by/3.0) and marked as non-commercial fan art; see `public/models/baymax-armoured.CREDITS.txt` for the changes made.
+
 This is a fan concept made for the supplied Big Hero 6 competition brief, without affiliation with Disney.

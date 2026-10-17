@@ -9,7 +9,7 @@ import { createLimiter } from '../phase4/limiter';
  * and lamp show the load.
  */
 export async function createBay() {
-  const { district, baymax: model, bay } = await createHarbourWorld();
+  const { district, baymax: model, bay, armoured } = await createHarbourWorld();
   district.group.add(model);
   district.group.traverse(object => {
     if (!('isPointLight' in object)) return;
@@ -50,7 +50,7 @@ export async function createBay() {
   // Found by casting in from the lane at mid-torso height, so it sits on his actual surface.
   const box = new T.Box3().setFromObject(model), midY = T.MathUtils.lerp(box.min.y, box.max.y, .45);
   const from = body.clone().addScaledVector(side, 4).addScaledVector(axis, .15).setY(midY);
-  const hit = new T.Raycaster(from, side.clone().negate(), 0, 8).intersectObject(model, true)[0];
+  const hit = new T.Raycaster(from, side.clone().negate(), 0, 8).intersectObject(armoured?.root ?? model, true)[0];
   const port = hit ? hit.point.clone().addScaledVector(side, -.04) : body.clone().addScaledVector(side, 1.2).setY(midY);
   const slot = new T.Group(); slot.position.copy(port); slot.lookAt(port.clone().add(side)); district.group.add(slot);
   const slotMat = new T.MeshStandardMaterial({ color: '#2a2f33', metalness: .6, roughness: .45 });
@@ -62,6 +62,8 @@ export async function createBay() {
   let shake = 0, clunk = 0, contacted = false; const baseY = model.position.y, baseRotZ = model.rotation.z;
   const hipsP5 = model.children.filter(c => c.name.startsWith('hip-')), hipBase = hipsP5.map(h => h.rotation.x);
   const limiterBase = new T.Vector3();
+  const headQ = new T.Quaternion(), headRestInv = new T.Quaternion().setFromEuler(headBase).invert(), legE = new T.Euler();
+  const legQ = (h: T.Object3D | undefined) => h ? new T.Quaternion().setFromEuler(legE.set(h.rotation.x - 1.42, 0, h.rotation.z)) : undefined;
   const ss = (x: number, a: number, b: number) => T.MathUtils.smoothstep(x, a, b), pulse = (x: number, a: number, b: number) => Math.sin(Math.PI * T.MathUtils.clamp((x - a) / (b - a), 0, 1));
   return {
     district, model, bay, body, side, axis,
@@ -111,6 +113,12 @@ export async function createBay() {
       if (!limiterBase.lengthSq() && s.fitted > .99) limiterBase.copy(limiter.position);
       if (limiterBase.lengthSq() && s.fitted > .99) limiter.position.copy(limiterBase).addScaledVector(side, Math.sin(t * 57) * .006 * (press + clunk + test));
       if (clunk > .5 || test > .6) limiter.led.color.set('#fff1c4');
+      // The suit follows this rig: his reaching arm (+x pivot = the suit's left), the leg kick, the head.
+      if (armoured) armoured.drive({
+        armL: arm.quaternion,
+        legL: legQ(hipsP5.find(h => h.name === 'hip-right')), legR: legQ(hipsP5.find(h => h.name === 'hip-left')),
+        head: head ? headQ.setFromEuler((head as T.Object3D).rotation).multiply(headRestInv) : undefined,
+      });
       bay.update({ t, open: 4.6, seated: 1, red: .9, seamGlow: .15 + p * .35 });
     },
     dispose() {

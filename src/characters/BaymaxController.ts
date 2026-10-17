@@ -1,9 +1,9 @@
-import { AdditiveBlending, CanvasTexture, Color, ConeGeometry, Group, MathUtils, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, Object3D, PointLight, Quaternion, RepeatWrapping, ShaderMaterial, Sprite, SpriteMaterial, Vector3 } from 'three';
+import { Box3, Euler, type Material, AdditiveBlending, CanvasTexture, Color, ConeGeometry, Group, MathUtils, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, Object3D, PointLight, Quaternion, RepeatWrapping, ShaderMaterial, Sprite, SpriteMaterial, Vector3 } from 'three';
 import { BAYMAX_POSITION } from '../config/experience';
 import type { Phase } from '../state/SceneStateManager';
 import type { SequenceDirector } from '../systems/SequenceDirector';
 import { createChestAccess } from './ChestAccess.js';
-import { fitArmour, type Armour } from './BaymaxArmour';
+import { createArmouredBaymax, mountArmour, type ArmouredBaymax } from './ArmouredBaymax';
 
 /** After the combat chip takes over: plated. It assembles during 'corrupting' (tracker P1-01). */
 const ARMOURED:Phase[]=['threat','ignition','chase','fracture','pulled','handoff'];
@@ -49,7 +49,9 @@ export class BaymaxController {
   private tmp=new Vector3();private tmp2=new Vector3();private q=new Quaternion();private q2=new Quaternion();
   private eyeColor=new Color();private lastBeatTime=0;
   private hole={uHoleCenter:{value:new Vector3()},uHoleNormal:{value:new Vector3(0,0,1)},uHoleRadius:{value:.196},uHoleOpen:{value:0}};
-  private armour?: Armour;
+  // The armoured suit (tracker PW-03), loaded in the background and mounted on the shell.
+  private suit?: ArmouredBaymax;private suitLoading=false;private suitBaseY=0;private wasCovered=false;private white?:Mesh[];private suitStandY=0;private box=new Box3();private eul=new Euler();
+  private qs=[new Quaternion(),new Quaternion(),new Quaternion(),new Quaternion(),new Quaternion()];
   constructor(public readonly shell: Group) {
     shell.position.set(...BAYMAX_POSITION);
     shell.rotation.order='YXZ';shell.rotation.y=-.18;
@@ -147,8 +149,13 @@ export class BaymaxController {
     if(phase!==this.phase){this.phase=phase;this.phaseTime=0;}
     this.phaseTime+=dt*seq.slowmo;
     const t=this.phaseTime,T=this.target;
-    this.armour??=fitArmour(this.shell);
-    this.armour.set(phase==='corrupting'?(reduced?1:MathUtils.smoothstep(t,.8,3.4)):ARMOURED.includes(phase)?1:0);
+    if(!this.suitLoading){
+      this.suitLoading=true;
+      createArmouredBaymax({eye:this.eyes[0]?.material as Material|undefined,hole:()=>this.chest.holeOpen?this.dockWorld():null})
+        .then(a=>{mountArmour(a,this.shell,{y:.55,z:.28},2.42);this.suitBaseY=a.root.position.y;this.suit=a;})
+        .catch(()=>{/* stays white if the suit can't load */});
+    }
+    const armourK=phase==='corrupting'?(reduced?1:MathUtils.smoothstep(t,.8,3.4)):ARMOURED.includes(phase)?1:0;
     this.restPose(T);
     if(phase==='awakening'||phase==='approaching'||phase==='loading'){T.aim.set(0,0,0);this.snap();}
     // ---------------------------------------------------------------- shell + boot
@@ -229,6 +236,7 @@ export class BaymaxController {
       this.q.setFromUnitVectors(DOWN,this.tmp);this.q2.identity();this.armR.quaternion.slerpQuaternions(this.q2,this.q,Math.min(1,P.arm));
     }else this.armR.rotation.set(0,0,P.arm*.6);
     this.shell.updateMatrixWorld();
+    if(this.suit)this.dressSuit(armourK,P.stand);
     this.hand.getWorldPosition(seq.muzzle);
     // ---------------------------------------------------------------- light and tone
     this.eyeColor.set('#0b0f11').lerp(this.tmpColor('#e0140c'),red);
@@ -353,5 +361,27 @@ export class BaymaxController {
     T.pos.z-=drag;T.pos.y+=span(t,3.1,4.2)*2.2;T.pitch=-.25*span(t,1.3,3.1)-.5*span(t,3.1,4);T.roll=Math.sin(t*2.1)*.06*span(t,1.3,3.1);
     T.arm=.4*span(t,1.4,2.2);T.aim.set(camera.x,camera.y+2,camera.z);
   }
-  dispose(){this.armour?.dispose();this.shell.removeFromParent();}
+  /** Pose the suit from this rig, swap it in or out, and keep its feet on the white rig's ground line. */
+  private dressSuit(k:number,stand:number){
+    const a=this.suit!;a.set(k);
+    const covered=a.covers(k);
+    if(covered!==this.wasCovered){
+      this.wasCovered=covered;
+      if(!this.white){this.white=[];this.shell.traverse(o=>{if(o instanceof Mesh&&!this.underChest(o)&&!this.inSuit(o))this.white!.push(o);});}
+      this.white.forEach(m=>{m.visible=!covered;});this.eyeGlow.forEach(g=>{g.visible=!covered;});
+    }
+    if(k<=0)return;
+    const [aL,aR,lL,lR,h]=this.qs;
+    // The shell's +x pivots are the suit's .L side.
+    a.drive({armL:aL.copy(this.armR.quaternion),armR:aR.setFromEuler(this.armL.rotation),
+      legL:lL.setFromEuler(this.eul.set(this.legR.rotation.x-LEG_SWING,0,this.legR.rotation.z)),legR:lR.setFromEuler(this.eul.set(this.legL.rotation.x-LEG_SWING,0,this.legL.rotation.z)),
+      head:this.head?h.setFromEuler(this.head.rotation):undefined});
+    // Standing: learn how far to lift the suit so its feet meet the white rig's ground line.
+    if(stand>.9){let low=Infinity;for(const leg of [this.legR,this.legL])leg.children.forEach(c=>{if(c instanceof Mesh){this.box.setFromObject(c);low=Math.min(low,this.box.min.y);}});
+      this.suitStandY+=(low-a.footLow())/Math.max(1e-3,this.shell.scale.y*a.root.scale.y)*.5;}
+    a.root.position.y=this.suitBaseY+this.suitStandY*stand;
+  }
+  private underChest(o:Object3D){for(let q:Object3D|null=o;q;q=q.parent)if(q===this.chest.root)return true;return false;}
+  private inSuit(o:Object3D){for(let q:Object3D|null=o;q;q=q.parent)if(q===this.suit?.root)return true;return false;}
+  dispose(){this.suit?.dispose();this.shell.removeFromParent();}
 }

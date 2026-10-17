@@ -1,5 +1,5 @@
 import * as T from 'three';
-import { fitArmour } from '../characters/BaymaxArmour';
+import { createArmouredBaymax, mountArmour } from '../characters/ArmouredBaymax';
 import { assets } from '../systems/AssetManager';
 import { mountChestBay } from '../characters/ChestBay';
 
@@ -65,7 +65,6 @@ export async function createBaymax() {
     hips.push(hip); ankles.push(ankle); shoulders.push(shoulder);
   }
   const bay = mountChestBay(model);
-  const armour = fitArmour(model);
 
   let head: T.Object3D | null = null;
   model.traverse(o => { if (o.name === 'dormant-head') head = o; });
@@ -74,6 +73,11 @@ export async function createBaymax() {
   // The eyes and the line between them share one material: dark, red, or soft white.
   const eyeMat = new T.MeshBasicMaterial({ color: '#0b0f11', toneMapped: false });
   headNode?.traverse(o => { if (o instanceof T.Mesh && o.material instanceof T.MeshBasicMaterial) o.material = eyeMat; });
+  // The combat armour (tracker PW-03): the armoured suit, mounted in this rig and posed from it.
+  const holeAt = new T.Vector3();
+  const armoured = await createArmouredBaymax({ eye: eyeMat, hole: () => bay.root.getObjectByName('dock')!.getWorldPosition(holeAt) });
+  mountArmour(armoured, model, { y: .55, z: .28 }, 2.42);
+  const under = (o: T.Object3D, roots: T.Object3D[]) => { for (let q: T.Object3D | null = o; q; q = q.parent) if (roots.includes(q)) return true; return false; };
 
   // Jets: two from the back pack, one under each foot.
   const flameMat = new T.ShaderMaterial({ vertexShader: FLAME_VS, fragmentShader: FLAME_FS, uniforms: { uTime: { value: 0 }, uPower: { value: 0 } }, transparent: true, depthWrite: false, blending: T.AdditiveBlending, side: T.DoubleSide });
@@ -120,6 +124,10 @@ export async function createBaymax() {
   const kick = (amount: number) => { vel.squash += amount * 6; };
   const mode = { tense: 0, slug: 0 };
   const shell = meshes.filter(m => { m.geometry.computeBoundingBox(); return !!m.geometry.boundingBox; });
+  // While he's armoured: the white body hides (the chest bay stays), and his torso plus the suit's feet ground him.
+  const whiteParts = meshes.filter(m => !under(m, [bay.root]));
+  const whiteTorso = shell.filter(m => !under(m, [...hips, ...shoulders]));
+  const qA = new T.Quaternion(), qB = new T.Quaternion(), qC = new T.Quaternion(), qD = new T.Quaternion(), qH = new T.Quaternion(), eul = new T.Euler(), headRest = new T.Quaternion();
   const box = new T.Box3();
   return {
     root, model, bay, pose, combatChip, dock, eyeMat,
@@ -135,7 +143,8 @@ export async function createBaymax() {
     /** His current (smoothed) facing. */
     facing: () => cur.yaw,
     update(t: number) {
-      armour.set(pose.armour);
+      armoured.set(pose.armour);
+      const covered = armoured.covers(pose.armour); whiteParts.forEach(m => { m.visible = !covered; });
       const p = pose;
       const gap = last < 0 ? 1 : t - last; last = t;
       const dt = Math.min(.05, Math.max(0, gap)); lastDt = dt;
@@ -261,8 +270,18 @@ export async function createBaymax() {
       // Find the lowest point of the shell (not the jets or the bay) and sit it on the ground.
       root.rotation.y = cur.yaw;
       root.updateMatrixWorld(true);
+      // Pose the suit from this rig: shoulder pivots (side +1 is his left), hips (relative to straight down), head.
+      if (pose.armour > 0) {
+        headRest.setFromEuler(headBase).invert();
+        armoured.drive({
+          armL: qA.setFromEuler(shoulders[1].rotation), armR: qB.setFromEuler(shoulders[0].rotation),
+          legL: qC.setFromEuler(eul.set(hips[1].rotation.x - 1.42, 0, hips[1].rotation.z)), legR: qD.setFromEuler(eul.set(hips[0].rotation.x - 1.42, 0, hips[0].rotation.z)),
+          head: headNode ? qH.setFromEuler(headNode.rotation).multiply(headRest) : undefined,
+        });
+      }
       let low = Infinity;
-      for (const m of shell) { box.copy(m.geometry.boundingBox!).applyMatrix4(m.matrixWorld); low = Math.min(low, box.min.y); }
+      if (pose.armour > .5) { for (const m of whiteTorso) { box.copy(m.geometry.boundingBox!).applyMatrix4(m.matrixWorld); low = Math.min(low, box.min.y); } low = Math.min(low, armoured.footLow()); }
+      else for (const m of shell) { box.copy(m.geometry.boundingBox!).applyMatrix4(m.matrixWorld); low = Math.min(low, box.min.y); }
       const parentY = root.parent ? root.parent.matrixWorld.elements[13] : 0;
       body.position.y = root.position.y + parentY - low + bounce + hitch;
       if (headNode) {
@@ -283,7 +302,7 @@ export async function createBaymax() {
       combatChip.visible = p.chipInBay && p.open > .4;
     },
     dispose() {
-      armour.dispose(); bay.dispose(); flameGeo.dispose(); flameMat.dispose(); eyeMat.dispose();
+      armoured.dispose(); bay.dispose(); flameGeo.dispose(); flameMat.dispose(); eyeMat.dispose();
       root.removeFromParent();
     },
   };
