@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { SceneKit, seeded, type Pose } from '../phase2/SceneKit';
-import { buildSanFransokyo } from './sanFransokyo';
+import { buildSanFransokyo } from '../environment/SanFransokyoSkyline';
 import { chipOutline } from '../characters/RedChip.js';
 import type { Pose as BaymaxPose } from './baymax';
 import type { HiroPose } from '../characters/HiroModel';
@@ -84,7 +84,7 @@ export function createHome() {
   const petalGeo = k.ownGeometry(new T.BufferGeometry()); petalGeo.setAttribute('position', new T.BufferAttribute(petalPos, 3));
   const petals = new T.Points(petalGeo, k.ownMaterial(new T.PointsMaterial({ color: '#f3c2cd', size: .06, sizeAttenuation: true })));
   k.root.add(petals);
-  // Across the water: San Fransokyo at sunset (sanFransokyo.ts).
+  // Across the water: San Fransokyo at sunset (environment/SanFransokyoSkyline.ts).
   const sf = buildSanFransokyo(k, new T.Vector3(-.25, .06, -1));
   // A tram line pole and overhead wire running along the promenade.
   for (const x of [-20, 0, 20]) k.box({ p: [x, 3, 11], s: [.12, 6, .12] }, rail);

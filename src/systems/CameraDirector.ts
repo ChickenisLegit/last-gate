@@ -35,12 +35,14 @@ const LOOK:Partial<Record<Phase,[number,number]>>={
  */
 const ZOOM_SHOTS:Partial<Record<Phase,[number,number]>>={'chip-focus':[-.55,.7],'chest-focus':[-.6,.55],'socket-ready':[-.5,.3]};
 export const ZOOM_PHASES=Object.keys(ZOOM_SHOTS) as Phase[];
+/** Beats where Baymax is elsewhere (the other side of the portal) or the camera isn't on yet. */
+const AWAY=new Set(['loading','through-portal','sf-arrival','sf-turnback','back-decision','back-through']);
 export type ShotContext={chest:Vector3;normal:Vector3;chip:Vector3;baymax:Vector3;head:Vector3};
 
 /** Sole owner of the camera. Each phase is a directed shot; impulses come from the sequence. */
 export class CameraDirector {
   private progress=0;private wakeTime=0;private time=0;private replay=-1;
-  private look=new Vector3();private target=new Vector3();private gaze=new Vector3();
+  private keep=new Vector3();private keepAt=new Vector3();private look=new Vector3();private target=new Vector3();private gaze=new Vector3();
   private velocity=0;private footfall=0;
   public visualProgress=0;public wake=0;public focusDistance=19;
   public pointer={x:0,y:0};public holding=false;
@@ -122,6 +124,14 @@ export class CameraDirector {
     camera.rotateY(-this.gaze.x*this.lookRange[0]);camera.rotateX(-this.gaze.y*this.lookRange[1]);
     camera.rotateZ(roll);
     cameraRig.apply(camera,dt); // global camera language: motivated shake + transition FOV kicks
+    // Tracker P1-03: whatever the shot or the free look does, Baymax stays in frame while he's in
+    // this world. If he drifts past the edge margin the view turns back toward him, gently.
+    if(ctx&&!AWAY.has(state.phase)){
+      camera.updateProjectionMatrix();camera.updateMatrixWorld();
+      this.keep.copy(ctx.baymax).setY(ctx.baymax.y+1.2);this.keepAt.copy(this.keep).project(camera);
+      const over=this.keepAt.z>1?1:Math.max(0,Math.abs(this.keepAt.x)-.86)+Math.max(0,Math.abs(this.keepAt.y)-.86);
+      if(over>0){const ahead=camera.getWorldDirection(this.keepAt).multiplyScalar(camera.position.distanceTo(this.keep)).add(camera.position);camera.lookAt(ahead.lerp(this.keep,Math.min(1,over*1.8)*.6));camera.rotateZ(roll);}
+    }
     camera.updateProjectionMatrix();camera.updateMatrixWorld();
     this.initialized=true;this.lastPos.copy(camera.position);this.lastLook.copy(this.target);this.lastRoll=roll;
     this.visualProgress=p;this.wake=wake;

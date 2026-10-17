@@ -1,6 +1,7 @@
 import * as T from 'three';
 import { SceneKit, seeded, type Pose } from '../phase2/SceneKit';
 import { batchStaticGeometry } from '../phase4/environmentDetail';
+import { buildSanFransokyo } from './SanFransokyoSkyline';
 
 /** A complete inhabited waterfront, built once and batched by surface material. */
 export function createSanFransokyo() {
@@ -86,6 +87,14 @@ export function createSanFransokyo() {
   let lastTraffic=-1;
   const dummy=new T.Object3D();
   k.root.visible=false;
-  return { group:k.root,thresholdZ:24,update(t:number){ waterMaterial.uniforms.uTime.value=t; if(t-lastTraffic>.1){lastTraffic=t;for(let i=0;i<24;i++){dummy.position.set(((i*6.5+t*(i%2?1.5:-1.5)+200)%156)-78,7.7,90+(i%2)*2);dummy.scale.set(.14,.12,.35);dummy.updateMatrix();traffic.setMatrixAt(i,dummy.matrix);}traffic.instanceMatrix.needsUpdate=true;} },dispose(){ownTextures.forEach(t=>t.dispose());k.dispose();} };
+  // Tracker P1-02: the detailed skyline from the finale (lit facades, bridge towers, turbines, signs)
+  // stands behind this waterfront, turned to face the gate and pushed back past it.
+  const far = new SceneKit('SanFransokyoFar'), skyline = buildSanFransokyo(far, new T.Vector3(-.3, .5, .6));
+  far.root.rotation.y = Math.PI; far.root.position.set(0, -.5, 80); k.root.add(far.root);
+  // Built for sunset; retinted to this night: cool bodies, blue haze, the lit windows kept.
+  const nightBase = new T.Color('#2a4256'), nightHaze = new T.Color('#19374b');
+  far.root.traverse(o => { const m = (o as T.Mesh).material as T.ShaderMaterial | undefined; const u = m?.uniforms; if (u?.uHaze && u.uBase) { u.uBase.value.lerp(nightBase, .7); u.uHaze.value.copy(nightHaze); } });
+  let lastT = -1;
+  return { group:k.root,thresholdZ:24,update(t:number){ skyline.update(t, lastT < 0 ? 0 : Math.min(.1, t - lastT)); lastT = t; waterMaterial.uniforms.uTime.value=t; if(t-lastTraffic>.1){lastTraffic=t;for(let i=0;i<24;i++){dummy.position.set(((i*6.5+t*(i%2?1.5:-1.5)+200)%156)-78,7.7,90+(i%2)*2);dummy.scale.set(.14,.12,.35);dummy.updateMatrix();traffic.setMatrixAt(i,dummy.matrix);}traffic.instanceMatrix.needsUpdate=true;} },dispose(){ownTextures.forEach(t=>t.dispose());skyline.dispose();far.dispose();k.dispose();} };
 }
 export type SanFransokyo=ReturnType<typeof createSanFransokyo>;
