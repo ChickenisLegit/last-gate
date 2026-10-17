@@ -80,11 +80,11 @@ export async function createBaymax() {
   headNode?.traverse(o => { if (o instanceof T.Mesh && o.material instanceof T.MeshBasicMaterial) o.material = eyeMat; });
   // The combat armour (tracker PW-03): the armoured suit, mounted in this rig and posed from it.
   const holeAt = new T.Vector3();
-  const armoured = await createArmouredBaymax({ eye: eyeMat, hole: () => bay.root.getObjectByName('dock')!.getWorldPosition(holeAt) });
+  const armoured = await createArmouredBaymax({ eye: eyeMat, hole: () => bay.holeOpen ? bay.root.getObjectByName('dock')!.getWorldPosition(holeAt) : null });
   mountArmour(armoured, model, { y: .55, z: .28 }, 2.42);
   // The limiter Hiro fitted in Phase 5 stays on his chest plate (tracker N-04); Hiro's remote drives its lamp.
   const limiter = createLimiter(); limiter.scale.setScalar(.62 / armoured.root.scale.x); armoured.root.add(limiter);
-  armoured.drive({}); armoured.mountOnChest(limiter, -.3, .16);
+  armoured.drive({}); armoured.mountOnChest(limiter, -.3, .36);
   // While armoured the chest bay sits in the suit's chest plating (tracker N-03); it goes back on the white chest at the boot.
   let unseatBay: (() => void) | null = null;
   const under = (o: T.Object3D, roots: T.Object3D[]) => { for (let q: T.Object3D | null = o; q; q = q.parent) if (roots.includes(q)) return true; return false; };

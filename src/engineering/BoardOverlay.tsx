@@ -85,10 +85,10 @@ export function BoardOverlay() {
       </ol>
       <h2 id="board-summary-title">He can move again.<br /><em>The healthcare chip is missing.</em></h2>
       <dl>
-        <div><dt>BODY</dt><dd className="tone-done">PARTIALLY RESTORED</dd></div>
-        <div><dt>MOVEMENT</dt><dd className="tone-done">AVAILABLE</dd></div>
-        <div><dt>COMBAT SYSTEM</dt><dd className="tone-red">ACTIVE</dd></div>
-        <div><dt>HEALTHCARE SYSTEM</dt><dd className="tone-red">ABSENT</dd></div>
+        <div><dt>BODY</dt><dd className="tone-done">PARTIALLY RESTORED</dd><dd className="board-summary-note">Power, thrusters and shoulder fixed. The armour is still cracked.</dd></div>
+        <div><dt>MOVEMENT</dt><dd className="tone-done">AVAILABLE</dd><dd className="board-summary-note">He can stand, walk and lift again.</dd></div>
+        <div><dt>COMBAT SYSTEM</dt><dd className="tone-red">ACTIVE</dd><dd className="board-summary-note">The combat chip is in, locked on override.</dd></div>
+        <div><dt>HEALTHCARE SYSTEM</dt><dd className="tone-red">ABSENT</dd><dd className="board-summary-note">His slot is empty. The chip isn't in him.</dd></div>
       </dl>
       <p className="board-question">If the healthcare program can't be restored, how does Hiro stay close to him safely?</p>
       <div className="board-summary-actions">
@@ -254,7 +254,7 @@ function ChipTask() {
     <ul className="board-findings"><li>Behaviour lives in the chip bay. This is the part that decides who Baymax is.</li></ul>
     <div className="board-task">
       <p className="board-kicker">CHECK <span>PROGRAM CORE</span></p>
-      {!open ? <button className="board-primary" onClick={() => { sfx.play('chip.hiss'); sfx.play('sting.empty', { delay: 1.7 }); useBoard.setState({ bayOpen: true }); }}>OPEN THE CHIP BAY</button> : <>
+      {!open ? <button className="board-primary" onClick={() => { sfx.play('sting.empty', { delay: .5 }); useBoard.setState({ bayOpen: true }); }}>SCAN THE CHIP BAY</button> : <>
         <dl className="board-readings">
           <div><dt>COMBAT CHIP</dt><dd className="tone-red">SEATED · ACTIVE</dd></div>
           <div><dt>COMBAT SLOT</dt><dd className="tone-red">OVERRIDE · WON'T RELEASE</dd></div>

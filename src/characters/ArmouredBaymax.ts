@@ -100,7 +100,8 @@ export async function createArmouredBaymax(opts: { eye?: T.Material; hole?: () =
   const restF = { L: relQ(lArm.L), R: relQ(lArm.R) }, bendQ = new T.Quaternion(), X = new T.Vector3(1, 0, 0), invU = new T.Quaternion(), invH = new T.Quaternion();
   const legDown = (side: 'L' | 'R') => {
     const from = lLeg[side].getWorldPosition(new T.Vector3()).sub(uLeg[side].getWorldPosition(new T.Vector3())).normalize();
-    return new T.Quaternion().setFromUnitVectors(from, new T.Vector3(0, -1, 0));
+    // A little out from straight down: his thigh plates are wider than his hips, so straight legs grind through each other (tracker Q-05).
+    return new T.Quaternion().setFromUnitVectors(from, new T.Vector3(side === 'L' ? .16 : -.16, -1, 0).normalize());
   };
   const legQ = { L: legDown('L'), R: legDown('R') };
   // Each hand rides on the end of its forearm, as it sat at rest.
@@ -192,12 +193,21 @@ export async function createArmouredBaymax(opts: { eye?: T.Material; hole?: () =
       if (normal.dot(fwd) < 0) normal.negate();
       return { point: hit ? hit.point.clone() : aim.addScaledVector(fwd, .6 * sc), normal, bone: chest as T.Object3D };
     },
+    /**
+     * A frame lying along the chest plating at (lateral, up): x runs up his body along the plate's
+     * slope (the chord between two spots `span` apart), y points out of the plate, z completes it.
+     * A long box set on this frame touches the plate at both ends instead of rocking on its middle.
+     */
+    chestFrame(lateral: number, up: number, span = .14) {
+      const a = api.chestSpot(lateral, up - span), b = api.chestSpot(lateral, up + span), c = api.chestSpot(lateral, up);
+      const x = b.point.clone().sub(a.point).normalize();
+      const n = a.normal.clone().add(b.normal).add(c.normal).normalize(); n.addScaledVector(x, -n.dot(x)).normalize();
+      return { point: a.point.clone().add(b.point).multiplyScalar(.5), x, n, z: new T.Vector3().crossVectors(x, n), bone: chest as T.Object3D };
+    },
     /** Fix an object flat on the chest plating at (lateral, up): its +Y out of the plate, its X along his body. */
     mountOnChest(obj: T.Object3D, lateral: number, up: number) {
-      const spot = api.chestSpot(lateral, up), n = spot.normal.clone().normalize();
-      const upv = new T.Vector3(0, 1, 0).applyQuaternion(chest.getWorldQuaternion(new T.Quaternion()));
-      const x = upv.addScaledVector(n, -upv.dot(n)).normalize(), z = new T.Vector3().crossVectors(x, n);
-      const mw = new T.Matrix4().makeBasis(x, n, z).setPosition(spot.point.addScaledVector(n, -.03)).scale(obj.getWorldScale(new T.Vector3()));
+      const f = api.chestFrame(lateral, up);
+      const mw = new T.Matrix4().makeBasis(f.x, f.n, f.z).setPosition(f.point.addScaledVector(f.n, -.02)).scale(obj.getWorldScale(new T.Vector3()));
       chest.add(obj); obj.matrix.copy(new T.Matrix4().copy(chest.matrixWorld).invert().multiply(mw)); obj.matrix.decompose(obj.position, obj.quaternion, obj.scale);
     },
     /** His helmet in world space (the camera's eye target once he's armoured). */

@@ -114,24 +114,48 @@ export function createStreet() {
   for (const [x, z, rx, rz] of [[-3.9, -10, .12, .1], [4, -24, -.12, -.15], [-4.3, -39, .1, -.08], [3.7, -52, -.15, .12], [-3.6, -63, .08, .1]]) k.box({ p: [x, .1, z], s: [3.2, .22, 3.6], r: [rx, rand(-.3, .3), rz] }, k.concrete);
   for (const side of [-1, 1]) for (let z = 4; z > -72; z -= 5.5) if (random() > .25) k.box({ p: [side * 5.9, .32, z], s: [.45, .65, rand(2.2, 4)], r: [0, 0, side * rand(0, .05)] }, k.ivory);
   const allWin: Pose[] = [], lit: Pose[] = [], cracks: { x: number; y: number; z: number; side: number }[] = [];
-  const block = (x: number, z: number, w: number, h: number, d: number, side: number) => {
-    const tilt = side * rand(-.05, .07);
-    k.box({ p: [x, h / 2 - .05, z], s: [w, h, d], r: [0, side * rand(-.06, .06), tilt] }, random() > .5 ? k.ivory : k.concrete);
-    const win: Pose[] = [];
-    for (let r = 1; r < h / 1.7 - 1; r++) for (let c = 0; c < 3; c++) win.push({ p: [x - side * (w / 2 + .02), r * 1.7, z - d / 3 + c * d / 3], s: [.03, .9, 1], r: [0, 0, tilt] });
-    allWin.push(...win);
-    // Tracker P6-08: a lived-in city gone wrong. Storefront band and ledges, a few windows still
-    // lit, rooftop clutter, and on some facades a cyan dimensional crack.
-    const face = x - side * (w / 2 + .04);
-    k.box({ p: [face, 1.6, z], s: [.08, 3.2, d * .96], r: [0, 0, tilt] }, k.dark);
-    for (const y of [3.4, h * .62]) k.box({ p: [x - side * (w / 2 + .12), y, z], s: [.24, .14, d * 1.02], r: [0, 0, tilt] }, k.metal);
-    for (let r = 1; r < h / 1.7 - 1; r++) for (let c = 0; c < 3; c++) if (random() > .9) lit.push({ p: [face - side * .01, r * 1.7, z - d / 3 + c * d / 3], s: [.02, .85, .95], r: [0, 0, tilt] });
-    if (random() > .55) k.box({ p: [x + rand(-1, 1), h + .6, z + rand(-1.5, 1.5)], s: [1.1, 1.2, 1.1] }, k.metal);
-    if (random() > .6) k.box({ p: [x, h + 1.6, z], s: [.06, 3.2, .06] }, k.metal);
-    if (random() > .55) cracks.push({ x: face - side * .03, y: rand(4, h - 1), z: z + rand(-d / 3, d / 3), side });
-    if (random() > .62) k.box({ p: [x, h + rand(1.2, 3), z + rand(-1, 1)], s: [w * .9, rand(2, 4), d * .9], r: [rand(-.2, .2), rand(-.6, .6), rand(-.25, .25)] }, k.ivory);
+  // Tracker Q-07: more facade colours than ivory and slate, darker trim, warm awnings and neon.
+  const tones = [k.concrete, k.ivory, k.standard('#5b6f7c', .88, .1), k.standard('#7d8b92', .85, .08), k.standard('#6f625e', .9, .06), k.standard('#3f5566', .9, .1)];
+  const trim = k.standard('#26343e', .8, .3);
+  const awnings = [k.standard('#9c3f2c', .85, .05), k.standard('#2f6c78', .85, .05), k.standard('#b08436', .85, .05)];
+  const neon = [k.basic('#ff5a8a', 1.5), k.basic('#7fe6ff', 1.3), k.basic('#ffc062', 1.4)];
+  const tank = new T.CylinderGeometry(.55, .55, 1.3, 10);
+  const block = (x: number, z: number, w: number, h: number, d: number, side: number, back = false) => {
+    // Every piece is placed in the block's own frame, so a leaning building carries its windows with it.
+    const ry = side * rand(-.06, .06), tilt = side * rand(-.05, .07), r: [number, number, number] = [0, ry, tilt];
+    const frame = new T.Object3D(); frame.position.set(x, 0, z); frame.rotation.set(0, ry, tilt); frame.updateMatrix();
+    const L = (lx: number, ly: number, lz: number) => new T.Vector3(lx, ly, lz).applyMatrix4(frame.matrix).toArray() as [number, number, number];
+    const tone = tones[Math.floor(random() * tones.length)];
+    k.box({ p: L(0, h / 2 - .05, 0), s: [w, h, d], r }, tone);
+    const sx = -side * (w / 2 + .02), rows = Math.floor(h / 1.7) - 1, cols = Math.max(2, Math.round(w / 1.7));
+    // Street face: three bays of windows between pilasters; the ends get their own grid, so no wall reads blank.
+    for (let row = 1; row < rows; row++) for (let c = 0; c < 3; c++) {
+      allWin.push({ p: L(sx, row * 1.7, -d / 3 + c * d / 3), s: [.03, .9, 1], r });
+      if (random() > .9) lit.push({ p: L(sx - side * .01, row * 1.7, -d / 3 + c * d / 3), s: [.02, .85, .95], r });
+    }
+    for (const ez of [d / 2 + .02, -d / 2 - .02]) for (let row = 1; row < rows; row++) for (let c = 0; c < cols; c++) {
+      allWin.push({ p: L(-w / 2 + (c + .5) * w / cols, row * 1.7, ez), s: [.8, .9, .03], r });
+      if (random() > .93) lit.push({ p: L(-w / 2 + (c + .5) * w / cols, row * 1.7, ez + Math.sign(ez) * .01), s: [.75, .85, .02], r });
+    }
+    // Cornice round the roof; pilasters between the bays.
+    k.box({ p: L(0, h + .1, 0), s: [w + .3, .22, d + .3], r }, trim);
+    for (const c of [-.5, -1 / 6, 1 / 6, .5]) k.box({ p: L(sx - side * .08, h / 2, c * d * .97), s: [.14, h, .2], r }, trim);
+    if (random() > .5) k.mesh(tank, k.metal, { p: L(rand(-w / 4, w / 4), h + .85, rand(-d / 4, d / 4)), r });
+    if (random() > .55) k.box({ p: L(rand(-1, 1), h + .6, rand(-1.5, 1.5)), s: [1.1, 1.2, 1.1], r }, k.metal);
+    if (random() > .6) k.box({ p: L(0, h + 1.6, 0), s: [.06, 3.2, .06], r }, k.metal);
+    if (back) return;
+    // Shopfront: a dark band, ledges, sometimes an awning or a neon blade sign.
+    k.box({ p: L(sx - side * .02, 1.6, 0), s: [.08, 3.2, d * .96], r }, k.dark);
+    for (const y of [3.4, h * .62]) k.box({ p: L(-side * (w / 2 + .12), y, 0), s: [.24, .14, d * 1.02], r }, k.metal);
+    if (random() > .4) k.box({ p: L(sx - side * .55, 3.05, rand(-d / 6, d / 6)), s: [1.1, .08, d * .6], r: [0, ry, tilt + side * .28] }, awnings[Math.floor(random() * awnings.length)]);
+    if (random() > .5) k.box({ p: L(sx - side * .4, rand(4.6, 7.2), rand(-d / 3, d / 3)), s: [.1, rand(1.6, 2.8), .45], r }, neon[Math.floor(random() * neon.length)]);
+    if (random() > .55) cracks.push({ x: x + sx - side * .03, y: rand(4, h - 1), z: z + rand(-d / 3, d / 3), side });
+    // A storey or two sheared off the roof and hanging askew: smaller than the block, in its colour.
+    if (random() > .72) k.box({ p: L(0, h + rand(1, 2.2), rand(-1, 1)), s: [w * .7, rand(1.6, 2.6), d * .7], r: [rand(-.15, .15), ry + rand(-.4, .4), tilt + rand(-.2, .2)] }, tone);
   };
   for (const side of [-1, 1]) for (let z = 8; z > -74; z -= rand(6.5, 8.5)) { const w = rand(4, 6.5); block(side * (7.4 + w / 2 + rand(0, 1.2)), z, w, rand(8, 19), rand(5, 7), side); }
+  // A taller back row, so the skyline steps up in layers instead of ending at one roofline.
+  for (const side of [-1, 1]) for (let z = 4; z > -80; z -= rand(8, 11)) { const w = rand(5, 8); block(side * (17 + w / 2 + rand(0, 3)), z, w, rand(18, 32), rand(6, 8), side, true); }
   k.instances(allWin, k.dim); k.instances(lit, k.basic('#ffc879', 1.1));
   // Cyan cracks: jagged slivers on the facades, one shared material that pulses.
   const crackGlow = k.ownMaterial(new T.MeshBasicMaterial({ color: '#7fe6ff', transparent: true, opacity: .8, toneMapped: false, side: T.DoubleSide }));

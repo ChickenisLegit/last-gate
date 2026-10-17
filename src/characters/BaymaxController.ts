@@ -50,7 +50,7 @@ export class BaymaxController {
   private eyeColor=new Color();private lastBeatTime=0;
   private hole={uHoleCenter:{value:new Vector3()},uHoleNormal:{value:new Vector3(0,0,1)},uHoleRadius:{value:.196},uHoleOpen:{value:0}};
   // The armoured suit (tracker PW-03), loaded in the background and mounted on the shell.
-  private suit?: ArmouredBaymax;private suitLoading=false;private suitBaseY=0;private wasCovered=false;private white?:Mesh[];private suitStandY=0;private box=new Box3();private eul=new Euler();
+  private suit?: ArmouredBaymax;private suitBaseY=0;private wasCovered=false;private white?:Mesh[];private suitStandY=0;private box=new Box3();private eul=new Euler();
   private qs=[new Quaternion(),new Quaternion(),new Quaternion(),new Quaternion(),new Quaternion()];
   constructor(public readonly shell: Group) {
     shell.position.set(...BAYMAX_POSITION);
@@ -145,16 +145,19 @@ export class BaymaxController {
     normal.set(0,0,1).applyQuaternion(this.chest.root.getWorldQuaternion(this.q2)).normalize();
   }
 
+  private suitReady?:Promise<void>;
+  /** Load and mount the armoured suit once. The boot warm-up awaits it, so parsing it never stalls the intro (tracker Q-02). */
+  prepareSuit(){
+    if(this.suitReady)return this.suitReady;
+    return this.suitReady=createArmouredBaymax({eye:this.eyes[0]?.material as Material|undefined,hole:()=>this.chest.holeOpen?this.dockWorld():null})
+      .then(a=>{mountArmour(a,this.shell,{y:.55,z:.28},2.42);this.suitBaseY=a.root.position.y;this.suit=a;})
+      .catch(()=>{/* stays white if the suit can't load */});
+  }
   update(time:number,dt:number,reduced:boolean,phase:Phase,seq:SequenceDirector,camera:Vector3){
     if(phase!==this.phase){this.phase=phase;this.phaseTime=0;}
     this.phaseTime+=dt*seq.slowmo;
     const t=this.phaseTime,T=this.target;
-    if(!this.suitLoading){
-      this.suitLoading=true;
-      createArmouredBaymax({eye:this.eyes[0]?.material as Material|undefined,hole:()=>this.chest.holeOpen?this.dockWorld():null})
-        .then(a=>{mountArmour(a,this.shell,{y:.55,z:.28},2.42);this.suitBaseY=a.root.position.y;this.suit=a;})
-        .catch(()=>{/* stays white if the suit can't load */});
-    }
+    void this.prepareSuit();
     const armourK=phase==='corrupting'?(reduced?1:MathUtils.smoothstep(t,.8,3.4)):ARMOURED.includes(phase)?1:0;
     this.restPose(T);
     if(phase==='awakening'||phase==='approaching'||phase==='loading'){T.aim.set(0,0,0);this.snap();}

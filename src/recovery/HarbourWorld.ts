@@ -40,7 +40,7 @@ export async function createHarbourWorld(): Promise<JourneyWorld> {
   const bay = mountChestBay(model);
   // He's been on the combat chip since the opening: armoured (tracker PW-03). The suit is posed from
   // this rig's hips; the white body hides (the chest bay stays) and he's re-seated on the suit's shape.
-  const armoured = await createArmouredBaymax({ hole: () => bay.root.getObjectByName('dock')?.getWorldPosition(new Vector3()) ?? null });
+  const armoured = await createArmouredBaymax({ hole: () => bay.holeOpen ? bay.root.getObjectByName('dock')?.getWorldPosition(new Vector3()) ?? null : null });
   mountArmour(armoured, model, { y: .55, z: .28 }, 2.42);
   const legQ = (h: Object3D | undefined) => h ? new Quaternion().setFromEuler(new Euler(h.rotation.x - 1.42, 0, h.rotation.z)) : undefined;
   armoured.set(1); armoured.drive({ legL: legQ(hips.find(h => h.name === 'hip-right')), legR: legQ(hips.find(h => h.name === 'hip-left')) });

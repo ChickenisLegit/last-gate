@@ -51,11 +51,10 @@ export async function createBay() {
   const tmpP = new T.Vector3(), redEye = new T.Color('#ff2414'), tmpM = new T.Matrix4();
   const mountLocal = new T.Matrix4(), mountPos = new T.Vector3(), mountQ = new T.Quaternion(), mountS = new T.Vector3(), mountN = new T.Vector3();
   const stagedQ = new T.Quaternion().setFromEuler(new T.Euler(0, .5, 0));
-  const spot = armoured?.chestSpot(-.3, .16) ?? null;
+  const spot = armoured?.chestFrame(-.3, .36) ?? null;
   if (spot) {
-    const n = spot.normal.clone().normalize(), up = new T.Vector3(0, 1, 0).applyQuaternion(spot.bone.getWorldQuaternion(new T.Quaternion()));
-    const x = up.addScaledVector(n, -up.dot(n)).normalize(), z = new T.Vector3().crossVectors(x, n);
-    const mw = new T.Matrix4().makeBasis(x, n, z).setPosition(spot.point.clone().addScaledVector(n, -.03)).scale(limiter.scale.clone());
+    const n = spot.n;
+    const mw = new T.Matrix4().makeBasis(spot.x, n, spot.z).setPosition(spot.point.clone().addScaledVector(n, -.02)).scale(limiter.scale.clone());
     mountLocal.copy(spot.bone.matrixWorld).invert().multiply(mw);
   }
   let shake = 0, clunk = 0, contacted = false; const baseY = model.position.y, baseRotZ = model.rotation.z;

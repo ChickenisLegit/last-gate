@@ -10,8 +10,8 @@ export const SHELL_DURATIONS:Partial<Record<Phase,number>> = {
 /** Tiny in-world readouts beside the focus point. Never instructions; the world teaches. */
 export const SHELL_ACTIONS:Partial<Record<Phase,{label:string;description:string}>> = {
   discovery:{label:'Baymax…?',description:'Check Baymax for a response'},
-  'chip-focus':{label:'CMB-01',description:'Press and hold to pick up the red chip'},
-  'chest-focus':{label:'ACCESS SEAM',description:'Press and hold to release Baymax’s chest access'},
+  'chip-focus':{label:'TAKE THE CHIP',description:'Press and hold to pick up the red chip'},
+  'chest-focus':{label:'OPEN CHIP BAY',description:'Press and hold to release Baymax’s chest access'},
   'socket-ready':{label:'',description:'Guide the chip into the keyed socket, or hold E'}
 };
 /** Seconds a hold must last before it commits. */

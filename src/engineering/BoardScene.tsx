@@ -156,9 +156,9 @@ export function BoardScene({ world }: { world: JourneyWorld }) {
     }
     internals.update(time, dt, s);
 
-    // The chest bay opens only when Hiro asks to see the chips.
-    bayOpen.current += ((s.bayOpen ? 1 : 0) - bayOpen.current) * (reducedMotion ? 1 : Math.min(1, dt * 1.3));
-    world.bay.update({ t: time, open: bayOpen.current * 4.6, seated: 1, red: .9, seamGlow: .12 + .2 * bayOpen.current });
+    // The chest bay stays shut here (tracker Q-03): its seam only glows while Hiro reads the chips.
+    bayOpen.current += ((s.bayOpen && !s.assessment ? 1 : 0) - bayOpen.current) * (reducedMotion ? 1 : Math.min(1, dt * 1.3));
+    world.bay.update({ t: time, open: 0, seated: 1, red: .9, seamGlow: .12 + .3 * bayOpen.current });
 
     // Hotspots follow their systems on screen; hidden behind the camera or under a panel.
     for (const system of SYSTEMS) {

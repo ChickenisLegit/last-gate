@@ -47,6 +47,8 @@ export function mountChestBay(shell: Group) {
     root: chest.root,
     /** Socket centre in world space, for camera framing. */
     dockWorld: () => chest.dockWorld(),
+    /** True while the bay is open; the armour only cuts its hole then. */
+    get holeOpen() { return chest.holeOpen as boolean; },
     chestWorld: (out: Vector3) => chest.root.getWorldPosition(out),
     chestNormal: (out: Vector3) => out.set(0, 0, 1).applyQuaternion(chest.root.getWorldQuaternion(q)).normalize(),
     update({ t, open, seated, red, seamGlow }: ChestBayState) {

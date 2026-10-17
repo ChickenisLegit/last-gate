@@ -66,3 +66,10 @@
 .organic-blink .blink-lid{position:absolute;left:-5%;width:110%;height:65%;display:block;background:#020506;will-change:transform;backface-visibility:hidden}
 .organic-blink .blink-top{top:0;clip-path:polygon(0 0,100% 0,100% 100%,94% 96%,86% 91%,77% 86%,68% 82.5%,59% 80.5%,50% 80%,41% 80.8%,32% 83.5%,23% 87.5%,14% 92%,6% 96.5%,0 100%);transform:translate3d(0,calc(var(--eye-open,0)*-110%),0)}
 .organic-blink .blink-bottom{bottom:0;clip-path:polygon(0 0,6% 3.5%,14% 8%,23% 12.5%,32% 16.5%,41% 19.2%,50% 20%,59% 19.5%,68% 17.5%,77% 14%,86% 9%,94% 4%,100% 0,100% 100%,0 100%);transform:translate3d(0,calc(var(--eye-open,0)*110%),0)}
+/* Q-01: the chip and chest-bay markers read at a glance: bigger, orange, pulsing, and say what to do straight away. */
+.phase-chip-focus .shell-interaction,.phase-chest-focus .shell-interaction{opacity:1;font-size:10px;letter-spacing:.16em;color:#F3E6D8;gap:14px}
+.phase-chip-focus .interaction-ring,.phase-chest-focus .interaction-ring{width:46px!important;height:46px!important}
+.phase-chip-focus .interaction-ring:after,.phase-chest-focus .interaction-ring:after{inset:17px!important;background:#F08A3C;box-shadow:0 0 14px #F08A3C}
+.phase-chip-focus .interaction-ring:before,.phase-chest-focus .interaction-ring:before{inset:-8px;border:2px solid #F08A3Ccc;animation:focus-pulse 1.6s ease-in-out infinite}
+.phase-chip-focus .interaction-label,.phase-chest-focus .interaction-label{background:rgba(8,14,18,.78);padding:7px 11px;border-radius:9px;opacity:1}
+.phase-chip-focus .shell-action .interaction-label small,.phase-chest-focus .shell-action .interaction-label small{opacity:1;animation:none;font-size:8px;color:#1F2326;background:#F08A3C;border:0;border-radius:5px;padding:3px 6px}

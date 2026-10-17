@@ -381,7 +381,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         // Full power: up above the roofs, down the street, and stop face to face with Hiro.
         const hover = v3(LANDING.x, HOVER_Y, LANDING.z);
         feet.copy(DECK_SPOT);
-        const start = ROUTE.getPointAt(m.trail).setY(0);
+        const start = ROUTE.getPointAt(clamp01(m.trail)).setY(0);
         if (s.stage === 'flyin') {
           if (e < .05) m.bayAt.copy(start);
           const rise = span(e, .7, 2.3), travel = span(e, 2.2, 5.2);

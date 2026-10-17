@@ -36,6 +36,7 @@ const MARKER_PHASES:Phase[]=['discovery','chip-focus','chest-focus'];
 const STREET_BG=new Color('#101c31'),CORRIDOR_BG=new Color('#061420'),STREET_FOG=new Color('#253e59'),CORRIDOR_FOG=new Color('#123349');
 const SF_BG=new Color('#0d1b30'),SF_FOG=new Color('#1b3450');
 const INTRO_PORTAL:Phase[]=['portal-sighted','call-baymax','to-portal','through-portal','sf-arrival','sf-turnback','back-decision','back-through'];
+const FRAME_TIMED:Phase[]=[...INTRO_PORTAL,'reentry'];
 const PORTAL_CLOSE:Partial<Record<Phase,number>>={'portal-sighted':.1,'call-baymax':.16,'to-portal':.24,'through-portal':.3,'sf-arrival':.42,'sf-turnback':.58,'back-decision':.74,'back-through':.95,reentry:.95};
 /** Seconds into the hurt re-entry when the gate behind Hiro collapses (he has turned to look by then). */
 const SEAL_AT=1.45;
@@ -88,8 +89,12 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     // so no blast, tear or corridor stalls the frame the first time it appears.
     let active=true;
     // Compile the linear composer variants, rather than the default framebuffer variants.
-    const previousTarget=gl.getRenderTarget();gl.setRenderTarget(post.composer.readBuffer);
-    const compiled=gl.compileAsync(scene,camera);gl.setRenderTarget(previousTarget);
+    // The armoured suit is parsed and mounted first, so its programs compile with the rest; the
+    // reentry rock is shown for the compile too (tracker Q-02).
+    const compiled=(baymax.current?.prepareSuit()??Promise.resolve()).then(()=>{
+      const previousTarget=gl.getRenderTarget();gl.setRenderTarget(post.composer.readBuffer);rock.visible=true;
+      const c=gl.compileAsync(scene,camera);rock.visible=false;gl.setRenderTarget(previousTarget);return c;
+    });
     void compiled.then(async()=>{
       if(!active)return;
       const lens=camera as PerspectiveCamera,position=lens.position.clone(),rotation=lens.quaternion.clone(),fov=lens.fov;
@@ -133,7 +138,7 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
       if(active)useSceneState.getState().ready();
     }).catch(()=>{if(active)useSceneState.setState({error:'Could not prepare the scene. Reload to try again.'});});
     return()=>{active=false;};
-  },[shell,shellMask,gl,scene,camera,post,sf,gate,environment,worldMasks]);
+  },[shell,shellMask,gl,scene,camera,post,sf,gate,environment,worldMasks,rock]);
   useEffect(()=>seq.on((event:SequenceEvent)=>{
     rupture.onEvent(event,seq,camera as PerspectiveCamera);
     const pan=(p:Vector3)=>{projection.copy(p).project(camera);return Math.max(-1,Math.min(1,projection.x*.8));};
@@ -148,6 +153,8 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     const dt=Math.min(delta,.25);elapsed.current+=dt;const t=elapsed.current;
     if(useSceneState.getState().phase!==prevPhaseRef.current){prevPhaseRef.current=useSceneState.getState().phase;phaseT.current=0;}
     phaseT.current+=dt;
+    // The portal run is timed by the frames it animates on, so a slow frame can't cut it short (tracker Q-02).
+    {const p=useSceneState.getState().phase,d=SHELL_DURATIONS[p];if(d&&FRAME_TIMED.includes(p)&&phaseT.current>=d)useSceneState.getState().advance(p);}
     const state=useSceneState.getState(),phase=state.phase;
     if(state.replay!==replay.current){replay.current=state.replay;rupture.reset();gate.reset();}
     seq.update(dt);
@@ -304,7 +311,7 @@ export function ExperienceDirector(){
   },[phase,seq]);
   useEffect(()=>{
     const duration=SHELL_DURATIONS[phase];
-    if(!duration)return;
+    if(!duration||FRAME_TIMED.includes(phase))return;
     const timer=setTimeout(()=>useSceneState.getState().advance(phase),duration*1000/(reducedMotion&&phase==='silence'?2:1));
     return()=>clearTimeout(timer);
   },[phase,replay]);
@@ -425,7 +432,7 @@ export function ExperienceDirector(){
       onKeyDown={event=>{if(phase==='discovery'&&(event.key==='Enter'||event.key===' ')){event.preventDefault();useSceneState.getState().interact();}}}
       aria-label={action?.description||'Check Baymax for a response'}>
       <span className="interaction-ring"><svg viewBox="0 0 40 40" aria-hidden="true"><circle className="hold-track" cx="20" cy="20" r="18"/><circle className="hold-fill" cx="20" cy="20" r="18"/></svg></span>
-      <span className="interaction-label">{action?.label||'CHECK RESPONSE'} <small>{phase==='discovery'?'E':'HOLD'}</small></span>
+      <span className="interaction-label">{action?.label||'CHECK RESPONSE'} <small>{phase==='discovery'?'E':'CLICK + HOLD'}</small></span>
     </button>
     <div ref={readout} className={`diagnostic ${diagnosticVisible?'visible':''}`} aria-live="polite">
       {diagnosticVisible&&phase!=='threat'&&phase!=='ignition'&&DIAGNOSTIC_LINES.map((line,i)=>
