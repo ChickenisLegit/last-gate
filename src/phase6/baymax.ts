@@ -108,9 +108,11 @@ export async function createBaymax() {
 
   const pose = restPose();
   // Smoothed copies of the pose (springs) and the rig's own memory.
-  const cur: Record<string, number> = { guard: 0, punch: 0, lean: 0, hold: 0, dangle: 0, stride: 0, h0: 0, h1: 0, h2: 0, yaw: 0, squash: 0 };
+  const cur: Record<string, number> = { guard: 0, punch: 0, lean: 0, hold: 0, dangle: 0, stride: 0, h0: 0, h1: 0, h2: 0, yaw: 0, squash: 0, pitch: 0, bank: 0, flail: 0, flop: 0, wob: 0 };
   const vel: Record<string, number> = Object.fromEntries(Object.keys(cur).map(k => [k, 0]));
-  let last = -1, lastDt = 1 / 60, first = true, shuffle = 0, lastStep = 0, stoodUp = false;
+  let last = -1, lastDt = 1 / 60, first = true, shuffle = 0, lastStep = 0, stoodUp = false, braced = false, prevVy = 0;
+  // His own motion, measured from where the director put him: flight posture and falls read it.
+  const prevPos = new T.Vector3(), rawV = new T.Vector3(), velS = new T.Vector3(), accS = new T.Vector3(), rawA = new T.Vector3(), wp = new T.Vector3();
   const spring = (key: string, target: number, k: number, zeta: number, snap: boolean) => {
     if (snap) { cur[key] = target; vel[key] = 0; return; }
     vel[key] += ((target - cur[key]) * k * k - 2 * zeta * k * vel[key]) * lastDt; cur[key] += vel[key] * lastDt;
@@ -149,6 +151,29 @@ export async function createBaymax() {
       mode.tense += (tenseTarget - mode.tense) * (snap ? 1 : 1 - Math.exp(-dt * 4));
       mode.slug += (slugTarget - mode.slug) * (snap ? 1 : 1 - Math.exp(-dt * 2));
       const tense = mode.tense, slug = mode.slug;
+
+      // ── Motion: velocity and acceleration of the root, smoothed, in his own frame.
+      root.getWorldPosition(wp);
+      if (snap) { prevPos.copy(wp); velS.set(0, 0, 0); accS.set(0, 0, 0); rawV.set(0, 0, 0); }
+      else {
+        rawV.copy(wp).sub(prevPos).divideScalar(Math.max(dt, 1e-3)); prevPos.copy(wp);
+        rawA.copy(rawV).sub(velS).divideScalar(Math.max(dt, 1e-3));
+        accS.lerp(rawA, 1 - Math.exp(-dt * 4)); velS.lerp(rawV, 1 - Math.exp(-dt * 8));
+      }
+      const fy = Math.sin(cur.yaw), fz = Math.cos(cur.yaw);
+      const fwdSpeed = velS.x * fy + velS.z * fz, sideSpeed = velS.x * fz - velS.z * fy;
+      const fwdAcc = accS.x * fy + accS.z * fz, sideAcc = accS.x * fz - accS.z * fy;
+      const air = Math.min(1, p.dangle);
+      // Flight: pitch into the speed and flare back when braking; bank into turns.
+      spring('pitch', air * T.MathUtils.clamp(fwdSpeed * .045 - fwdAcc * .025, -.5, .55), 4, .72, snap);
+      spring('bank', air * T.MathUtils.clamp(-sideAcc * .035 - sideSpeed * .02, -.55, .55), 3.4, .7, snap);
+      const sweep = air * T.MathUtils.clamp(Math.abs(fwdSpeed) * .07, 0, .85);
+      // Falling without thrust: arms and legs flail. Landing hard: a big squash, limbs flop, a wobble.
+      const dropping = T.MathUtils.clamp((-rawV.y - 2) / 4, 0, 1) * (1 - Math.min(1, p.thrust * 2));
+      spring('flail', dropping, 8, .6, snap);
+      if (!snap && prevVy < -4 && rawV.y > -1.2) { kick(1.6); vel.flop += 7; vel.wob += 2.6 * (Math.sin(t * 13) > 0 ? 1 : -1); }
+      prevVy = snap ? 0 : rawV.y;
+      spring('flop', 0, 6, .3, false); spring('wob', 0, 4, .32, false);
       // How quickly he answers: snappy when fighting, syrupy when the limit is on.
       const rate = T.MathUtils.lerp(1, 1.8, tense) * T.MathUtils.lerp(1, .38, slug);
 
@@ -163,8 +188,11 @@ export async function createBaymax() {
         push = sitUp * (1 - settle);       // hands pushing on the ground behind him as he sits up
         brace = crouch * (1 - rise * .8);   // hands planted at his sides as he leans over his feet
         tuck = Math.sin(Math.PI * sitUp) * .35 + crouch * .25 * (1 - rise);
-        if (g > .86 && !stoodUp) { stoodUp = true; kick(.9); }
-        if (g < .5) stoodUp = false;
+        // Rocks forward twice to build up momentum, sinks into the push, rises, then settles.
+        lean += Math.sin(Math.PI * 2 * k(.46, .62)) * .08;
+        if (g > .6 && !braced) { braced = true; kick(.55); }
+        if (g > .86 && !stoodUp) { stoodUp = true; kick(.9); vel.wob += 1.8; }
+        if (g < .5) { stoodUp = false; braced = false; }
       }
 
       // ── Springs: what the director asks for, with weight. Arms overshoot a little.
@@ -197,8 +225,10 @@ export async function createBaymax() {
       const legLean = cur.lean * (1 - sit) * (1 - lie) * .85;
       hips.forEach((h, i) => {
         const s = i === 0 ? 1 : -1;
-        h.rotation.x = (1 - sit) * (1.42 + s * swing * .45 - cur.dangle * .18) - legLean - tuck * .6 * sit;
-        h.rotation.z = -s * cur.dangle * .06 - s * brace * .05;
+        h.rotation.x = (1 - sit) * (1.42 + s * swing * .45 - cur.dangle * .18) - legLean - tuck * .6 * sit
+          + sweep * .35 + cur.flail * Math.sin(t * 8 + i * Math.PI) * .32 + cur.flop * .12;
+        // Heavy steps swing out round the hip a little (more under the limit).
+        h.rotation.z = -s * cur.dangle * .06 - s * brace * .05 - s * Math.max(0, s * Math.cos(gait)) * stride * .05 * heavy;
       });
       ankles.forEach((a, i) => { const s = i === 0 ? 1 : -1; a.rotation.x = -(1 - sit) * 1.42 + cur.dangle * .55 + Math.max(0, -s * swing) * .3 + tuck * .4; });
 
@@ -209,17 +239,19 @@ export async function createBaymax() {
         const right = i === 1, s = right ? 1 : -1;
         const guard = cur.guard * (1 - slug * .3);
         const fwd = guard * (.75 + tense * .12) + (right ? cur.punch * 1.05 : -cur.punch * .25) + (!right ? cur.hold * .5 : 0)
-          + Math.sin(gait + (right ? 0 : Math.PI)) * stride * .22 * heavy - sag * (1 - guard) + tremor
+          + Math.sin(gait - .5 + (right ? 0 : Math.PI)) * stride * .24 * heavy - sag * (1 - guard) + tremor
+          + cur.flail * (.9 + .4 * Math.sin(t * 9 + i * 2))
           - push * .9 + brace * .25;
         // Lying, the arms rest back along the ground.
-        sh.rotation.x = -fwd + lie * (1 - cur.hold) * .35;
-        sh.rotation.z = s * (guard * .28 + cur.dangle * .32 + (!right ? cur.hold * .55 : 0) + push * .2 + brace * .32 - sag * .05 + tense * .04);
+        sh.rotation.x = -fwd + lie * (1 - cur.hold) * .35 + sweep * .6 + cur.flop * .28;
+        sh.rotation.z = s * (sweep * .12 + cur.flail * (.35 + .3 * Math.sin(t * 7 + i)) + guard * .28 + cur.dangle * .32 + (!right ? cur.hold * .55 : 0) + push * .2 + brace * .32 - sag * .05 + tense * .04);
         sh.rotation.y = -s * guard * .2;
       });
 
       // Body: lean, the weight shift and roll over the stance foot, the jiggle.
       const shift = Math.sin(gait) * stride * .075 * heavy;
-      body.rotation.set(cur.lean * (1 - lie) - lie * Math.PI / 2, 0, (Math.sin(gait) * stride * .055 * heavy + Math.sin(shuffle) * shuffleAmp * .04) * (1 - lie));
+      body.rotation.set(cur.lean * (1 - lie) - lie * Math.PI / 2 + cur.pitch + Math.abs(Math.sin(gait)) * stride * .03 * heavy, 0,
+        (Math.sin(gait) * stride * .07 * heavy + Math.sin(shuffle) * shuffleAmp * .04 + cur.wob * .09) * (1 - lie) + cur.bank);
       body.position.set(shift * (1 - lie), 0, lie * .9);
       // Combat: a coiled, ready bounce, sunk a little lower. Sluggish: a periodic hitch.
       const bounce = tense * (Math.sin(t * 5.2) * .012 - .05) * (1 - stride);
@@ -235,7 +267,7 @@ export async function createBaymax() {
       body.position.y = root.position.y + parentY - low + bounce + hitch;
       if (headNode) {
         const lead = T.MathUtils.clamp(yawErr * .55, -.5, .5);
-        headNode.rotation.set(headBase.x + cur.h0 + tense * .1 + slug * .1 + tuck * .3 - push * .1, headBase.y + cur.h1 + lead, headBase.z * (1 - cur.guard) + cur.h2);
+        headNode.rotation.set(headBase.x + cur.h0 + tense * .1 + slug * .1 + tuck * .3 - push * .1 + Math.sin(gait * 2 - .8) * stride * .035 - cur.flail * .25 - cur.pitch * .4, headBase.y + cur.h1 + lead, headBase.z * (1 - cur.guard) + cur.h2);
       }
       eyeMat.color.copy(p.eyes).multiplyScalar(1 + p.eyeGlow * (.8 + tense * .25 * (.5 + .5 * Math.sin(t * 6))));
       p.getUp = 0; p.tension = 0; p.sluggish = 0;
