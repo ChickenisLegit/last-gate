@@ -5,7 +5,7 @@ import { createRedChip } from '../characters/RedChip.js';
 import { reducedMotion } from '../config/experience';
 import { createBaymax, type Baymax } from './baymax';
 import { createHiro } from './hiro';
-import { createFirstPersonHands, createLimiterController } from './controller';
+import { createFirstPersonHands, createLimiterController } from '../characters/RegulatorController';
 import { FirstPerson } from './fp';
 import { createRelay, BAYMAX_YARD, BAYMAX_REACH_Z } from './relay';
 import { RECORDER } from './relay';

@@ -22,8 +22,19 @@ export async function createHarbourWorld(): Promise<JourneyWorld> {
   model.rotation.order = 'YXZ'; model.rotation.set(-Math.PI / 2, -.5, -.08); model.updateMatrixWorld(true);
   const bounds = new Box3().setFromObject(model), center = bounds.getCenter(new Vector3()), a = district.baymaxAnchor;
   model.position.set(a.x - center.x, -1.02 - bounds.min.y, a.z - center.z); model.updateMatrixWorld(true);
-  // Settle the soft shell into the apron so he reads as collapsed, not hovering.
-  model.position.y -= .1; model.updateMatrixWorld(true);
+  // A little settling (tracker P5-02): the legs ease until his back rests on the apron instead of
+  // being propped up on them, then the whole shell sinks in so everything touches the ground.
+  const torso = meshes.reduce((big, m) => { const v = new Box3().setFromObject(m).getSize(new Vector3()); const bv = new Box3().setFromObject(big).getSize(new Vector3()); return v.x * v.y * v.z > bv.x * bv.y * bv.z ? m : big; });
+  const hips = model.children.filter(c => c.name.startsWith('hip-'));
+  const lift = () => { model.updateMatrixWorld(true); return new Box3().setFromObject(torso).min.y - new Box3().setFromObject(model).min.y; };
+  for (let i = 0, gap = lift(); i < 40 && gap > .02; i++) {
+    let best = 0, bestGap = gap;
+    for (const d of [-.04, .04]) { hips.forEach(h => { h.rotation.x += d; }); const g = lift(); if (g < bestGap) { best = d; bestGap = g; } hips.forEach(h => { h.rotation.x -= d; }); }
+    if (!best) break;
+    hips.forEach(h => { h.rotation.x += best; }); gap = bestGap;
+  }
+  model.updateMatrixWorld(true);
+  model.position.y += -1.02 - new Box3().setFromObject(model).min.y - .1; model.updateMatrixWorld(true);
   const bay = mountChestBay(model);
   const red = new PointLight('#ff3626', .35, 3.5, 2); red.position.set(.42, 2.2, .9); model.add(red);
   const c = document.createElement('canvas'); c.width = c.height = 128;

@@ -7,6 +7,23 @@ import { batchSolids, createReceiver, link } from './receiverModel';
 /** Four recorded fixes, in chronological order, on the actual outgoing bearing. */
 export const SIGNAL_FIXES: [number, number, number][] = [[1.6, 6.9, -14], [-2, 14, -40], [-6, 23, -67], [-9.5, 30, -95]];
 
+/** The middle console's readout once the receiver has the chip's last transmission: it isn't here. */
+function transmissionTexture() {
+  const canvas = document.createElement('canvas'); canvas.width = 768; canvas.height = 384;
+  const ctx = canvas.getContext('2d')!;
+  ctx.fillStyle = '#10181b'; ctx.fillRect(0, 0, 768, 384);
+  ctx.fillStyle = '#91b7ad'; ctx.font = '500 24px "IBM Plex Mono",monospace'; ctx.fillText('RX / LAST TRANSMISSION', 28, 42);
+  ctx.fillStyle = '#c6cfc2'; ctx.font = '20px "IBM Plex Mono",monospace';
+  [['SOURCE', 'HEALTHCARE CHIP'], ['HEADING', 'OUTBOUND'], ['LAST FIX', 'OLD PORTAL SITE'], ['BOUNDARY', 'CROSSED'], ['LOCAL SIGNAL', 'NONE']]
+    .forEach(([k, v], i) => { ctx.fillStyle = '#7f948c'; ctx.fillText(k, 28, 96 + i * 40); ctx.fillStyle = '#e6ece4'; ctx.fillText(v, 210, 96 + i * 40); });
+  ctx.fillStyle = '#F08A3C'; ctx.font = '600 34px "IBM Plex Mono",monospace'; ctx.fillText('NOT IN THIS CITY', 28, 330);
+  // A small plan: the city ring, the track leaving it.
+  ctx.strokeStyle = '#425a5c'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(600, 190, 110, 0, Math.PI * 2); ctx.stroke();
+  ctx.strokeStyle = '#F08A3C'; ctx.setLineDash([10, 8]); ctx.beginPath(); ctx.moveTo(560, 250); ctx.lineTo(640, 150); ctx.lineTo(700, 70); ctx.stroke(); ctx.setLineDash([]);
+  ctx.fillStyle = '#F08A3C'; ctx.beginPath(); ctx.moveTo(712, 54); ctx.lineTo(688, 66); ctx.lineTo(706, 82); ctx.fill();
+  const texture = new T.CanvasTexture(canvas); texture.colorSpace = T.SRGBColorSpace; texture.anisotropy = 4; return texture;
+}
+
 function consoleTexture() {
   const canvas = document.createElement('canvas'); canvas.width = 768; canvas.height = 384;
   const ctx = canvas.getContext('2d')!;
@@ -38,6 +55,8 @@ export function createFacility() {
   const glowMat = k.ownMaterial(new T.MeshBasicMaterial({ color: '#bdc6ac', toneMapped: false }));
   const screenMap = consoleTexture();
   const screenMat = k.ownMaterial(new T.MeshBasicMaterial({ color: '#061014', map: screenMap, toneMapped: false }));
+  const readoutMap = transmissionTexture();
+  const readoutMat = k.ownMaterial(new T.MeshBasicMaterial({ map: readoutMap, toneMapped: false, transparent: true, opacity: 0 }));
   const ledMat = k.ownMaterial(new T.MeshBasicMaterial({ color: '#1a2a24', toneMapped: false }));
   const panelMat = k.ownMaterial(new T.MeshBasicMaterial({ color: '#343d39', toneMapped: false }));
   const cyl = (radius: number, height: number, p: [number, number, number], material: T.Material, r?: [number, number, number], parent: T.Object3D = room) =>
@@ -96,7 +115,10 @@ export function createFacility() {
     k.box({ p: [x - .77, .88, -1.43], s: [.18, .055, .18] }, red, room);
     cyl(.045, .035, [x - .77, .93, -1.43], ochre);
     k.label(`RX / 0${Math.round((x + 3.25) / 3.25) + 1}`, { p: [x - .72, .67, -.985] }, .8, '#b9c2b7', room);
-  }
+  }  // The middle console's screen switches to the chip's last transmission.
+  const readoutScreen = k.mesh(k.ownGeometry(new T.PlaneGeometry(1.44, .72)), readoutMat, { p: [0, 1.26, -1.993], r: [-.12, 0, 0] }, room);
+  readoutScreen.visible = false;
+
   // Furniture establishes human scale without adding another interaction.
   for (const x of [-3.25, 3.25]) {
     cyl(.32, .08, [x, .53, -.25], graphite); cyl(.055, .5, [x, .25, -.25], aluminium);
@@ -240,7 +262,8 @@ export function createFacility() {
   let reveal = 0;const viewDirection=new T.Vector3();
   return {
     root: k.root,
-    update(t: number, dt: number, s: { powered: boolean; leads: number; snr: number; az: number; el: number; strength: number; traced: boolean; breakers: boolean[]; traceCount?: number }, camera?: T.Camera) {
+    update(t: number, dt: number, s: { powered: boolean; leads: number; snr: number; az: number; el: number; strength: number; traced: boolean; breakers: boolean[]; traceCount?: number; readout?: boolean }, camera?: T.Camera) {
+      readoutMat.opacity = T.MathUtils.damp(readoutMat.opacity, s.readout && s.powered ? 1 : 0, 3, dt); readoutScreen.visible = readoutMat.opacity > .01;
       if(camera){
         camera.getWorldDirection(viewDirection);
         const exterior=camera.position.z < -5.8 || camera.position.y > 4.9 || viewDirection.z < -.65;
@@ -265,7 +288,7 @@ export function createFacility() {
       (warmPool.material as T.ShaderMaterial).uniforms.opacity.value = on ? .16 : .1;
       (coolPool.material as T.ShaderMaterial).uniforms.opacity.value = on ? .1 : .025;
     },
-    dispose() { city.dispose(); floorMap.dispose(); screenMap.dispose(); k.dispose(); },
+    dispose() { city.dispose(); floorMap.dispose(); screenMap.dispose(); readoutMap.dispose(); k.dispose(); },
   };
 }
 export type Facility = ReturnType<typeof createFacility>;

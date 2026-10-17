@@ -5,7 +5,8 @@ import { createLimiter } from '../phase4/limiter';
 /**
  * Back at the harbour bay: the same district and the same Baymax pose as the landing and the
  * engineering board (on his apron, clear of the debris), plus the power regulator Hiro found in
- * Bay 6 (Phase 4's createLimiter), cabled into his open bay. Its gauge and lamp show the load.
+ * Bay 6 (Phase 4's createLimiter), lifted off the apron and docked into a slot on his flank. Its gauge
+ * and lamp show the load.
  */
 export async function createBay() {
   const { district, baymax: model, bay } = await createHarbourWorld();
@@ -41,35 +42,37 @@ export async function createBay() {
   const red = new T.PointLight('#ff2a1c', 0, 6, 1.8); red.position.copy(body).add(new T.Vector3(-.6, 1.2, .4)); district.group.add(red);
 
   const limiter = createLimiter();
-  limiter.scale.setScalar(1.15);
+  limiter.scale.setScalar(.8);
   const ground = -1.02;
-  const staged = body.clone().addScaledVector(side, 2.9).addScaledVector(axis, -.4).setY(ground);
-  const fitted = body.clone().addScaledVector(side, 1.75).addScaledVector(axis, .2).setY(ground);
+  const staged = body.clone().addScaledVector(side, 2.6).addScaledVector(axis, -.4).setY(ground);
   limiter.position.copy(staged); limiter.rotation.y = .5; district.group.add(limiter);
-  // Feed cable from the limiter into the chest bay, drawn once the unit is in place.
-  const dock = bay.dockWorld().clone();
-  const cableCurve = new T.CatmullRomCurve3([fitted.clone().add(new T.Vector3(0, .14, 0)), fitted.clone().addScaledVector(side, -.55).setY(ground + .05), dock.clone().addScaledVector(side, .5).setY(dock.y + .25), dock]);
-  const cable = new T.Mesh(new T.TubeGeometry(cableCurve, 40, .028, 8), new T.MeshStandardMaterial({ color: '#1b1d1f', roughness: .7 }));
-  cable.name = 'limiter-feed';
-  cable.visible = false; district.group.add(cable);
-  const plug = new T.Mesh(new T.CylinderGeometry(.055, .055, .16, 16), new T.MeshStandardMaterial({ color: '#9a9f94', metalness: .75, roughness: .3 }));
-  plug.name = 'limiter-connector';
-  district.group.add(plug); plug.visible = false;
-  const tangent = new T.Vector3(), up = new T.Vector3(0, 1, 0), redEye = new T.Color('#ff2414');
-
+  // The slot: a recessed port on his flank, facing the lane, at the height of his side.
+  // Found by casting in from the lane at mid-torso height, so it sits on his actual surface.
+  const box = new T.Box3().setFromObject(model), midY = T.MathUtils.lerp(box.min.y, box.max.y, .45);
+  const from = body.clone().addScaledVector(side, 4).addScaledVector(axis, .15).setY(midY);
+  const hit = new T.Raycaster(from, side.clone().negate(), 0, 8).intersectObject(model, true)[0];
+  const port = hit ? hit.point.clone().addScaledVector(side, -.04) : body.clone().addScaledVector(side, 1.2).setY(midY);
+  const slot = new T.Group(); slot.position.copy(port); slot.lookAt(port.clone().add(side)); district.group.add(slot);
+  const slotMat = new T.MeshStandardMaterial({ color: '#2a2f33', metalness: .6, roughness: .45 });
+  const rimMat = new T.MeshStandardMaterial({ color: '#9a9f94', metalness: .8, roughness: .3 });
+  const slotGeos = [new T.BoxGeometry(.42, .3, .06), new T.TorusGeometry(.26, .022, 8, 32)];
+  slot.add(new T.Mesh(slotGeos[0], slotMat)); const rim = new T.Mesh(slotGeos[1], rimMat); rim.scale.set(1, .72, 1); rim.position.z = .03; slot.add(rim);
+  const mouth = port.clone().addScaledVector(side, .7).setY(port.y + .1), seated = port.clone().addScaledVector(side, .16);
+  const faceSlot = Math.atan2(-side.x, -side.z), tmpP = new T.Vector3(), redEye = new T.Color('#ff2414');
   let shake = 0; const baseY = model.position.y;
   return {
     district, model, bay, body, side, axis,
     /** fitted: 0 staged → 1 on his flank. power: 0 dormant → 1 running against the limit. */
     update(t: number, dt: number, s: { fitted: number; power: number; held: boolean }) {
       district.update(t, dt, false);
-      limiter.position.lerpVectors(staged, fitted, T.MathUtils.smootherstep(s.fitted, 0, 1));
-      limiter.position.y = ground + Math.sin(Math.PI * s.fitted) * .12;
-      limiter.rotation.y = Math.atan2(axis.x, axis.z) + T.MathUtils.lerp(.5, 0, s.fitted);
-      const connected = T.MathUtils.smoothstep(s.fitted, .55, 1);
-      cable.visible = connected > 0; plug.visible = connected > 0;
-      cable.geometry.setDrawRange(0, Math.floor(cable.geometry.index!.count * connected / 3) * 3);
-      cableCurve.getPoint(connected, plug.position); cableCurve.getTangent(connected, tangent); plug.quaternion.setFromUnitVectors(up, tangent);
+      // Lift off the apron and carry to the slot mouth (0–.6), line up (.6–.8), push home with a
+      // small settle (.8–1).
+      const f = s.fitted, carry = T.MathUtils.smootherstep(f, 0, .6), push = T.MathUtils.smootherstep(f, .8, .97);
+      tmpP.lerpVectors(staged, mouth, carry); tmpP.y = T.MathUtils.lerp(ground, mouth.y, carry) + Math.sin(Math.PI * carry) * .35;
+      limiter.position.copy(tmpP).lerp(seated, push);
+      limiter.position.addScaledVector(side, -Math.sin(Math.PI * T.MathUtils.clamp((f - .95) / .05, 0, 1)) * .02);
+      limiter.rotation.set(T.MathUtils.lerp(0, -Math.PI / 2, T.MathUtils.smoothstep(f, .3, .75)), T.MathUtils.lerp(.5, faceSlot, T.MathUtils.smoothstep(f, .2, .8)), 0, 'YXZ');
+      rimMat.emissive.set(f > .97 ? '#ffb15a' : '#000000'); rimMat.emissiveIntensity = f > .97 ? .6 + .4 * s.power : 0;
       limiter.led.color.set(s.power > .05 ? '#ffb15a' : s.fitted > .99 ? '#7dffa6' : '#2a3a33');
       // The needle climbs with the load and stops short of the red: that's the limit holding.
       limiter.setGauge(s.fitted > .99 ? .1 + Math.min(s.power, 1) * .32 + Math.sin(t * 9) * .006 * s.power : .05);
@@ -89,8 +92,7 @@ export async function createBay() {
     },
     dispose() {
       limiter.dispose();
-      for (const root of [cable, plug]) root.geometry.dispose();
-      for (const mesh of [cable, plug]) (mesh.material as T.Material).dispose();
+      slotGeos.forEach(g => g.dispose()); slotMat.dispose(); rimMat.dispose(); slot.removeFromParent();
       eyes.forEach(m => m.dispose()); bay.dispose(); district.dispose();
     },
   };

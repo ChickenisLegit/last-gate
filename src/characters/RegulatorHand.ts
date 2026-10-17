@@ -1,5 +1,5 @@
 import * as T from 'three';
-import { createFirstPersonHands } from './controller';
+import { createFirstPersonHands } from './RegulatorController';
 
 /**
  * The switch close-up: Hiro's own limiter controller in his hands, seen from his eyes. The left

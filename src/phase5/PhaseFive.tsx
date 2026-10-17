@@ -3,7 +3,8 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as T from 'three';
 import { create } from 'zustand';
 import { createBay, type Bay } from './bay';
-import { createFacility, SIGNAL_FIXES } from './facility';
+import { createFacility } from './facility';
+import { createHandInsert, INSERT, INSERT_CAMERA } from '../characters/RegulatorHand';
 import type { PhaseFiveStep } from './entry';
 import { phaseFiveExit } from './exit';
 import { reducedMotion } from '../config/experience';
@@ -24,8 +25,7 @@ import './phase-five.css';
 type Stage = 'fit' | 'fitting' | 'test' | 'testing' | 'held' | 'transit' | 'facility' | 'found';
 type Task = 'power' | 'patch' | 'spectrum' | 'dish' | 'trace';
 const TASKS: Task[] = ['power', 'patch', 'spectrum', 'dish', 'trace'];
-const TASK_NAMES: Record<Task, string> = { power: 'Restore console power', patch: 'Reconnect the signal path', spectrum: 'Remove interference', dish: 'Calibrate the receiver', trace: 'Reconstruct the trajectory' };
-const signalLabels = new Map<number, HTMLElement>();
+const TASK_NAMES: Record<Task, string> = { power: 'Restore console power', patch: 'Reconnect the signal path', spectrum: 'Remove interference', dish: 'Calibrate the receiver', trace: 'Read the last transmission' };
 const CIRCUITS = [
   { id: 'console', label: 'CONSOLES', amps: 12, need: true },
   { id: 'receiver', label: 'RECEIVER', amps: 18, need: true },
@@ -93,7 +93,10 @@ function BayScene() {
   const [bay, setBay] = useState<Bay | null>(null);
   const rig = useMemo(() => new CameraShot(), []);
   const pos = useMemo(() => new T.Vector3(), []), focus = useMemo(() => new T.Vector3(), []);
-  const motion = useRef({ fitted: 0, power: 0, since: 0 });
+  const motion = useRef({ fitted: 0, power: 0, since: 0, pressed: false, clicked: false, inInsert: false, back: new T.Vector3(), backQ: new T.Quaternion() });
+  // Hiro's own regulator remote: POWER HIM UP is his thumb on it, seen close, before the load comes on.
+  const insert = useMemo(createHandInsert, []);
+  useEffect(() => { scene.add(insert.root); return () => insert.dispose(); }, [scene, insert]);
   useCentreBesidePanel();
   useEffect(() => {
     let alive = true, made: Bay | null = null;
@@ -112,12 +115,20 @@ function BayScene() {
     // The unit is carried over and seated while FIT runs; POWER drives him up against the limit.
     const m = motion.current;
     m.fitted = s.stage === 'fitting' ? (reducedMotion ? 1 : Math.min(1, m.fitted + dt / 2.2)) : s.stage === 'fit' ? 0 : 1;
-    m.power = s.stage === 'testing' ? (reducedMotion ? 1 : Math.min(1, m.power + dt / 4.5)) : ['held', 'transit'].includes(s.stage) ? 1 : 0;
+    if (s.stage === 'testing' && !m.pressed) {
+      m.pressed = true; m.clicked = reducedMotion; m.inInsert = !reducedMotion;
+      m.back.copy(camera.position); m.backQ.copy(camera.quaternion);
+      if (!reducedMotion) insert.play('on', () => { sfx.play('ui.toggle'); m.clicked = true; }, () => { m.inInsert = false; camera.position.copy(m.back); camera.quaternion.copy(m.backQ); });
+    }
+    if (s.stage !== 'testing') { m.pressed = false; m.inInsert = false; }
+    insert.update(t);
+    m.power = s.stage === 'testing' ? (m.clicked ? Math.min(1, m.power + (reducedMotion ? 1 : dt / 4.5)) : 0) : ['held', 'transit'].includes(s.stage) ? 1 : 0;
     m.since += dt;
     if (['fitting', 'testing'].includes(s.stage) && (m.since > .1 || m.fitted === 1 && s.fitted !== 1 || m.power === 1 && s.power !== 1)) {
       m.since = 0; useP5.setState({ fitted: m.fitted, power: m.power });
     }
     bay.update(t, dt, { fitted: m.fitted, power: m.power, held: s.stage === 'held' });
+    if (m.inInsert) { camera.position.copy(INSERT).add(INSERT_CAMERA.pos); camera.lookAt(INSERT.clone().add(INSERT_CAMERA.look)); return; }
     // Side-on from the lane, like the board's overview: all of him, the limiter between him and Hiro.
     const b = bay.body, close = s.stage === 'testing' || s.stage === 'held' ? 1 : 0;
     const distance = zoom.update(dt, reducedMotion ? 20 : 7);
@@ -136,7 +147,8 @@ const FACILITY_SHOTS: Record<Task | 'done', [[number, number, number], [number, 
   spectrum: [[-.9, 1.75, 1.7], [0, 1.4, -1.95]],
   dish: [[8, 12.2, -23], [1.6, 6.9, -14]],
   // High over the relay roof, so the whole track reads from the dish to the boundary.
-  trace: [[22, 40, 24], [-3, 12, -44]],
+  // In at the middle console's screen: the chip's last transmission.
+  trace: [[0, 1.42, -.35], [0, 1.24, -2]],
   done: [[20, 44, 28], [-5, 17, -58]],
 };
 function FacilityScene() {
@@ -144,7 +156,6 @@ function FacilityScene() {
   const facility = useMemo(createFacility, []);
   const rig = useMemo(() => new CameraShot(), []);
   const pos = useMemo(() => new T.Vector3(), []), focus = useMemo(() => new T.Vector3(), []);
-  const projection = useMemo(() => new T.Vector3(), []);
   const route = useRef<{ key: string; leg: number; shots: { p: [number, number, number]; l: [number, number, number]; duration: number }[] }>({ key: '', leg: 0, shots: [] });
   useCentreBesidePanel();
   useEffect(() => {
@@ -153,7 +164,7 @@ function FacilityScene() {
   }, [scene, camera, facility]);
   useFrame(({ clock, pointer }, delta) => {
     const dt = Math.min(delta, .05), s = useP5.getState();
-    facility.update(clock.elapsedTime, dt, { powered: s.powered, leads: s.leads, snr: s.snr, az: s.az, el: s.el, strength: strengthOf(s.az, s.el), traced: s.traced, breakers: s.breakers, traceCount: s.fixes }, camera);
+    facility.update(clock.elapsedTime, dt, { powered: s.powered, leads: s.leads, snr: s.snr, az: s.az, el: s.el, strength: strengthOf(s.az, s.el), traced: s.traced, breakers: s.breakers, traceCount: s.fixes, readout: s.stage === 'found' || TASKS[s.task] === 'trace' }, camera);
     const key = s.stage === 'found' ? 'done' : TASKS[s.task] ?? 'done';
     const [p, l] = FACILITY_SHOTS[key];
     const r = route.current;
@@ -168,12 +179,6 @@ function FacilityScene() {
     const shot = r.shots[r.leg]; pos.set(...shot.p); focus.set(...shot.l);
     if (rig.update(camera, `${key}/${r.leg}`, pos, focus, dt, shot.duration) && r.leg < r.shots.length - 1) r.leg++;
     camera.rotateY(pointer.x * .01); camera.rotateX(pointer.y * .006);
-    for (const [index, label] of signalLabels) {
-      projection.set(...SIGNAL_FIXES[index]).project(camera);
-      const x = (projection.x * .5 + .5) * size.width, y = (-projection.y * .5 + .5) * size.height;
-      label.style.transform = `translate(${x + 14}px,${y - 20}px)`;
-      label.style.visibility = index < s.fixes && projection.z < 1 && x > 430 && x < size.width - 130 && y > 90 && y < size.height - 90 ? 'visible' : 'hidden';
-    }
   });
   return <>
     <color attach="background" args={['#081320']} />
@@ -292,30 +297,16 @@ function DishTask({ done }: { done: () => void }) {
   </>;
 }
 
-const FIXES = [
-  { id: 'a', x: 172, y: 176, label: 'T−14 MIN' }, { id: 'b', x: 152, y: 146, label: 'T−9 MIN' },
-  { id: 'c', x: 128, y: 118, label: 'T−5 MIN' }, { id: 'd', x: 102, y: 92, label: 'T−2 MIN' },
-];
-const SHOWN = [FIXES[2], FIXES[0], FIXES[3], FIXES[1]];
 function TraceTask({ done }: { done: () => void }) {
   const traced = useP5(s => s.traced);
-  const [order, setOrder] = useState<string[]>([]);
-  const [note, setNote] = useState('The recording holds four position fixes of the chip’s transmitter. Place them oldest first.');
-  const pick = (id: string) => {
-    if (order.includes(id) || traced) return;
-    const expected = FIXES[order.length];
-    if (id !== expected.id) { sfx.play('ui.deny'); setNote(`${FIXES.find(f => f.id === id)!.label} isn’t next. Work from the oldest fix.`); return; }
-    const next = [...order, id]; setOrder(next); useP5.setState({ fixes: next.length });
-    setNote(next.length === 4 ? 'Four fixes, one heading. Extrapolate it.' : `${expected.label} placed.`);
-  };
+  const [note, setNote] = useState('The receiver has it. The middle screen shows where the healthcare chip’s signal went.');
   const timer = useRef<number | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-  const extrapolate = () => { if (useP5.getState().traced) return; useP5.setState({ traced: true }); setNote('The track runs straight into the boundary and doesn’t come back.'); timer.current = window.setTimeout(done, 2600); };
+  const save = () => { if (useP5.getState().traced) return; useP5.setState({ traced: true, fixes: 4 }); setNote('Saved to RX/06. It isn’t in this city; the trace ends at the old portal site.'); timer.current = window.setTimeout(done, 2600); };
   return <>
-    <p className="p5-body">Rebuild the transmitter’s path in the city. Place the four recorded fixes from oldest to newest.</p>
-    <div className="p5-trace-progress"><span>POSITION FIXES</span><b>{String(order.length).padStart(2, '0')} / 04</b></div>
-    <div className="p5-fixes" role="group" aria-label="Recorded signal fixes">{SHOWN.map(f => <button key={f.id} className={order.includes(f.id) ? 'placed' : ''} disabled={order.includes(f.id) || traced} aria-label={f.label} onClick={() => pick(f.id)}><i>{order.includes(f.id) ? String(order.indexOf(f.id) + 1).padStart(2, '0') : '+'}</i><span>{f.label}<small>{order.includes(f.id) ? 'POSITION PLACED IN 3D' : 'PLACE RECORDED POSITION'}</small></span><b>{order.includes(f.id) ? '✓' : '↗'}</b></button>)}</div>
-    {order.length === 4 && !traced && <button className="p5-primary" onClick={extrapolate}>EXTRAPOLATE THE TRACK</button>}
+    <p className="p5-body">The chip’s last transmission, on the console screen.</p>
+    <dl className="p5-readout"><div><dt>HEADING</dt><dd>OUTBOUND</dd></div><div><dt>LOCAL SIGNAL</dt><dd>NONE</dd></div><div><dt>LAST FIX</dt><dd>OLD PORTAL SITE</dd></div></dl>
+    {!traced && <button className="p5-primary" onClick={save}>SAVE IT TO RX/06</button>}
     <p className="p5-note" role="status">{note}</p>
   </>;
 }
@@ -400,8 +391,6 @@ export function PhaseFive({ initial: from }: { initial: PhaseFiveStep }) {
           {task === 'trace' && <TraceTask key="trace" done={advanceTask} />}
         </>}
       </aside>}
-      {s.stage === 'facility' && task === 'trace' && <p className="p5-spatial-caption"><span>SPATIAL RECONSTRUCTION</span>{s.traced ? 'PROJECTED TRACK / BOUNDARY CROSSED' : `${s.fixes} OF 4 RECORDED POSITIONS PLACED`}</p>}
-      {s.stage === 'facility' && task === 'trace' && FIXES.map((f, i) => <span key={f.id} className="p5-world-fix" ref={el => { if (el) signalLabels.set(i, el); else signalLabels.delete(i); }} aria-hidden="true"><i>{String(i + 1).padStart(2, '0')}</i>{f.label}</span>)}
       {s.stage === 'found' && <aside className="p5-panel p5-end" role="dialog" aria-labelledby="p5-found-title">
         <p className="p5-kicker">TRACE COMPLETE <span>05 / 05</span></p>
         <ol className="p5-steps">{TASKS.map(t => <li key={t} className="done">{TASK_NAMES[t]}</li>)}</ol>
