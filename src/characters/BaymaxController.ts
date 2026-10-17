@@ -10,6 +10,10 @@ const ARMOURED:Phase[]=['threat','ignition','chase','fracture','pulled','handoff
 
 const ease=(t:number)=>MathUtils.smoothstep(t,0,1);
 const span=(t:number,a:number,b:number)=>MathUtils.smoothstep(t,a,b);
+/** A single smooth pulse between a and b (0 → 1 → 0). */
+const bump=(t:number,a:number,b:number)=>Math.sin(Math.PI*MathUtils.clamp((t-a)/(b-a),0,1));
+/** A sharp jolt at a, decaying (the combat program loading in hits). */
+const jolt=(t:number,a:number,decay=7)=>t<a?0:Math.exp(-(t-a)*decay)*Math.sin((t-a)*38);
 /** Shortest signed difference between two angles, so turns never go the long way round. */
 const wrap=(a:number)=>Math.atan2(Math.sin(a),Math.cos(a));
 const HEAD_YAW=1.05,HEAD_PITCH_UP=.45,HEAD_PITCH_DOWN=.6;
@@ -40,6 +44,8 @@ export class BaymaxController {
   private hand=new Object3D();private charge:Sprite;
   private pose:Pose;private target:Pose;
   private phase:Phase='loading';private phaseTime=0;private beat:string|null=null;
+  // Motion memory for the flight layer (bank, trailing legs) and squash/stretch impulses.
+  private prevPos=new Vector3();private prevYaw=0;private bank=0;private stretch=0;private moved=false;
   private tmp=new Vector3();private tmp2=new Vector3();private q=new Quaternion();private q2=new Quaternion();
   private eyeColor=new Color();private lastBeatTime=0;
   private hole={uHoleCenter:{value:new Vector3()},uHoleNormal:{value:new Vector3(0,0,1)},uHoleRadius:{value:.196},uHoleOpen:{value:0}};
@@ -157,8 +163,13 @@ export class BaymaxController {
       T.inflate=span(t,1.3,2.9);T.pos.y+=span(t,1.3,2.9)*.035;T.roll=span(t,1.6,3)*.018;
       T.head.set(MathUtils.lerp(DORMANT_HEAD.x,.04,span(t,2.1,3.7)),0,MathUtils.lerp(DORMANT_HEAD.z,0,span(t,2.1,3.7)));
       eyeOn=span(t,3.5,3.75);seamGlow=span(t,1.4,2)*.45*(1-span(t,3,4.2));
-      // As his eyes light, he finds Hiro.
+      // Systems coming online: a shiver through the shell, a hand twitches, a first deep breath
+      // that overshoots, and a small double-take as his eyes light and find Hiro.
+      T.roll+=Math.sin(t*31)*.006*bump(t,1.5,2.7);
+      T.arm=.07*bump(t,2.3,2.7)+.05*bump(t,2.85,3.2);
+      T.inflate+=.05*bump(t,2.5,3.6);
       this.lookAt(camera,T,span(t,3.2,4.6)*.9);
+      T.head.y+=.09*bump(t,3.6,4.5);
     }
     if(after(['diagnostic','corrupting','threat','ignition','chase','fracture','pulled','handoff'])){open=4.6;seated=1;seal=1;T.inflate=1;T.pos.y+=.035;eyeOn=1;T.head.set(.04,0,0);}
     if(phase==='diagnostic'){
@@ -170,12 +181,15 @@ export class BaymaxController {
     }
     if(phase==='corrupting'){
       const k=span(t,.2,4.6);seamGlow=.3+k*.5;
-      T.pitch=.055*k;T.head.set(.04-.06*k,0,0);T.arm=.06*k;T.pos.y+=.02*k;
+      T.pitch=.055*k;T.head.set(.04-.06*k,0,0);T.arm=.06*k+.08*span(t,2.8,4.2);T.pos.y+=.02*k;
       // He never stops watching Hiro; the corruption is in how he holds the look.
       this.lookAt(camera,T,.85+span(t,3,4.8)*.15);
+      // The combat program loads in hits: three jolts through the body, each squaring him up more.
+      const j=jolt(t,1.05)+jolt(t,1.85)*.8+jolt(t,2.65)*1.1;
+      T.roll+=j*.03;T.pitch+=Math.abs(j)*.02;T.head.z+=j*.08;T.head.x+=.05*span(t,3.2,4.4);
     }
     if(phase==='threat'){
-      seamGlow=.8;T.pitch=.055;T.arm=.06;T.pos.y+=.02;
+      seamGlow=.8;T.pitch=.055;T.arm=.14;T.pos.y+=.02;
       this.face(camera,T,.55*span(t,.6,2.4));this.lookAt(camera,T,span(t,.15,1.7));
     }
     const red=seq.red;
@@ -193,14 +207,22 @@ export class BaymaxController {
     P.head.lerp(T.head,k(fast?4.5:phase==='threat'?2.4:1.6));P.look=MathUtils.lerp(P.look,T.look,k(2.2));
     P.arm=MathUtils.lerp(P.arm,T.arm,k(fast?6:2));if(P.aim.lengthSq()===0)P.aim.copy(T.aim);else P.aim.lerp(T.aim,k(8));
     P.thrust=MathUtils.lerp(P.thrust,T.thrust,k(T.thrust>P.thrust?4:2.5));P.inflate=MathUtils.lerp(P.inflate,T.inflate,k(1.5));P.stand=MathUtils.lerp(P.stand,T.stand,k(fast?3.2:2));
-    const breathe=reduced?0:Math.sin(time*1.05)*.004*P.inflate;
+    // Flight layer: bank into turns, legs trail with speed and sway on the thruster, the free arm sweeps back.
+    const yawVel=this.moved?wrap(P.yaw-this.prevYaw)/Math.max(dt,1e-3):0,speed=this.moved?this.tmp2.subVectors(P.pos,this.prevPos).length()/Math.max(dt,1e-3):0;
+    this.prevYaw=P.yaw;this.prevPos.copy(P.pos);this.moved=!reduced;
+    this.bank=MathUtils.damp(this.bank,MathUtils.clamp(-yawVel*.2,-.5,.5)*P.thrust,4,dt);
+    const trail=Math.min(.45,speed*.025)*P.thrust,sway=reduced?0:Math.sin(time*1.7)*.07*P.thrust*P.stand;
+    this.stretch=MathUtils.damp(this.stretch,0,5,dt);
+    // Breathing: soft and slow as himself; faster and heavier once the combat program has him.
+    const red0=seq.red,breathe=reduced?0:Math.sin(time*MathUtils.lerp(1.05,2.3,red0))*MathUtils.lerp(.004,.007,red0)*P.inflate;
     this.shell.position.copy(P.pos);this.shell.position.y+=breathe-.009*(1-Math.exp(-time*.18))*(1-P.inflate)+P.stand*STAND_LIFT;
-    this.legR.rotation.set(P.stand*LEG_SWING,0,P.stand*-.05);this.legL.rotation.set(P.stand*LEG_SWING,0,P.stand*.05);
-    this.shell.rotation.set(P.pitch,P.yaw,P.roll);
-    this.shell.scale.set(1+P.inflate*.006+breathe*.4,1+P.inflate*.012+breathe,1+P.inflate*.006+breathe*.4);
+    this.legR.rotation.set(P.stand*LEG_SWING+trail+sway,0,P.stand*-.05);this.legL.rotation.set(P.stand*LEG_SWING+trail-sway*.8,0,P.stand*.05);
+    this.shell.rotation.set(P.pitch,P.yaw,P.roll+this.bank);
+    const st=this.stretch;
+    this.shell.scale.set(1+P.inflate*.006+breathe*.4-st*.03,1+P.inflate*.012+breathe+st*.05,1+P.inflate*.006+breathe*.4-st*.03);
     if(this.head){this.head.rotation.set(P.head.x,P.head.y,P.head.z);}
     // Arms: rest, a slight shoulder rise under corruption, or aimed at a world target.
-    this.armL.rotation.set(0,0,-P.arm*.6);
+    this.armL.rotation.set(trail*1.2,0,-P.arm*.6-.12*P.thrust);
     if(P.aim.lengthSq()>0){
       this.shell.updateMatrixWorld();
       this.tmp.copy(P.aim);this.shell.worldToLocal(this.tmp);this.tmp.sub(this.armR.position).normalize();
@@ -277,7 +299,9 @@ export class BaymaxController {
   }
   private ignition(t:number,T:Pose,camera:Vector3){
     // He stands. The first thing the corrupted state does is rise to full height over Hiro.
-    T.inflate=1;T.pos.y+=.035;T.stand=span(t,0,1.05);
+    T.inflate=1;T.pos.y+=.035-.07*bump(t,0,.45);T.stand=span(t,.25,1.05);
+    // A squash as the thruster catches, then he stretches up and away.
+    if(t>2.3&&t<2.33)this.stretch=-.6;if(t>2.5&&t<2.53)this.stretch=.7;
     // Tension, aim, discharge, recoil, spool, launch.
     this.face(camera,T,.45*span(t,0,.6));this.lookAt(camera,T,1);
     T.pitch=.12*span(t,0,.5)-.1*span(t,1.6,1.75)*(1-span(t,1.9,2.3));
@@ -317,7 +341,7 @@ export class BaymaxController {
       const high=new Vector3(2.2,9.6,-29.6),ground=new Vector3(1.9,-.08,-30.4);
       if(u<1.05)this.flyToward(V(-6,14,-24).clone(),high,T,u/1.05,.85);
       else if(u<2.05){T.pos.copy(high);T.pos.y+=Math.sin(u*3)*.1;this.face(camera,T);this.lookAt(camera,T,1);T.thrust=.7;T.arm=span(u,1.05,1.5);T.aim.copy(camera);}
-      else{const d=span(u,2.05,2.3);T.pos.lerpVectors(high,ground,d*d);this.face(camera,T);T.pitch=.35*d;T.arm=.9;T.aim.copy(ground).setY(-1);T.thrust=1-d*.6;}
+      else{const d=span(u,2.05,2.3);if(u>2.28&&u<2.32)this.stretch=-1;T.pos.lerpVectors(high,ground,d*d);this.face(camera,T);T.pitch=.35*d;T.arm=.9;T.aim.copy(ground).setY(-1);T.thrust=1-d*.6;}
     }
   }
   private fracture(t:number,T:Pose,camera:Vector3){
