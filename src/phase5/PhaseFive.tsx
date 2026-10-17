@@ -5,6 +5,7 @@ import { create } from 'zustand';
 import { createBay, type Bay } from './bay';
 import { createFacility, SIGNAL_FIXES } from './facility';
 import type { PhaseFiveStep } from './entry';
+import { phaseFiveExit } from './exit';
 import { reducedMotion } from '../config/experience';
 import { ZoomController } from '../systems/ZoomController';
 import { SceneQuality } from '../presentation/SceneQuality';
@@ -305,6 +306,8 @@ export function PhaseFive({ initial: from }: { initial: PhaseFiveStep }) {
   const s = useP5();
   const advancing = useRef(false), advanceTimer = useRef<number | null>(null);
   useEffect(() => () => { if (advanceTimer.current) clearTimeout(advanceTimer.current); }, []);
+  // Warm up whatever comes next once the trace is found.
+  useEffect(() => { if (s.stage === 'found') void phaseFiveExit()?.prepare?.().catch(() => {}); }, [s.stage]);
   const advanceTask = () => {
     if (advancing.current) return;
     advancing.current = true;
@@ -377,6 +380,7 @@ export function PhaseFive({ initial: from }: { initial: PhaseFiveStep }) {
       {s.stage === 'found' && <section className="p5-found" role="dialog" aria-labelledby="p5-found-title">
         <h2 id="p5-found-title">Signal crossed the boundary.</h2>
         <p className="p5-body">Healthcare chip not found.</p>
+        {phaseFiveExit() && <button className="p5-primary" onClick={phaseFiveExit()!.go}>{phaseFiveExit()!.label} <i>→</i></button>}
       </section>}
     </>}
   </main>;
