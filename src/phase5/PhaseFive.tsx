@@ -291,7 +291,7 @@ export function PhaseFive({ initial: from }: { initial: PhaseFiveStep }) {
       {(s.stage === 'fit' || s.stage === 'fitting') && <>
         <p className="p5-kicker">BACK AT THE BAY <span>01 / 02</span></p>
         <h1>Fit the limiter.</h1>
-        <p className="p5-body">The relay takes his main feed, the governor sits on the motor run, the clamp closes on the thruster branch. One lead goes into the open bay.</p>
+        <p className="p5-body">The regulator from Bay 6 goes on his main feed. One lead runs into the open bay.</p>
         <button className="p5-primary" disabled={s.stage === 'fitting'} onClick={() => useP5.setState({ stage: 'fitting' })}>{s.stage === 'fitting' ? 'SEATING…' : 'FIT THE LIMITER'}</button>
       </>}
       {(s.stage === 'test' || s.stage === 'testing' || s.stage === 'held') && <>

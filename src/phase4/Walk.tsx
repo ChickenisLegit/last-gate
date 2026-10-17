@@ -4,14 +4,14 @@ import * as T from 'three';
 import { SceneKit, seeded, type Pose } from '../phase2/SceneKit';
 import { createPortalDimension } from '../environment/PortalDimension.js';
 import { reducedMotion } from '../config/experience';
-import { enterDistrictPhase } from './entry';
+import { enterServiceBay } from './entry';
 import './walk.css';
 
 /**
  * Between the board and Bay 6: Hiro leaves Baymax and walks the corrupted city, following the
  * one thing still alive in it, a service cable whose current runs toward Bay 6. Same world as
  * every earlier phase (slate architecture, cyan haze, displaced blocks, the fracture skyline);
- * the route ends at the maintenance yard's gate, the facade Phase 4 opens on.
+ * the route ends at the maintenance yard's gate, where the bay itself (ServiceBay) picks up.
  */
 
 const EYE = 1.62, GATE_Z = -64;
@@ -183,7 +183,12 @@ export function Walk() {
   }, [progress]);
   useEffect(() => { if (!line) return; const t = window.setTimeout(() => setLine(null), 3600); return () => window.clearTimeout(t); }, [line]);
 
-  const enter = () => { if (leaving) return; setLeaving(true); window.setTimeout(enterDistrictPhase, reducedMotion ? 50 : 1100); };
+  const enter = () => {
+    if (leaving) return; setLeaving(true);
+    // Build the bay behind the fade so it's ready when the gate opens.
+    window.setTimeout(() => { void import('./ServiceBay'); void import('./bayScene').then(m => m.prepareServiceBay()); }, 150);
+    window.setTimeout(() => enterServiceBay(), reducedMotion ? 50 : 1100);
+  };
 
   useEffect(() => {
     const s = state.current, fwd = ['KeyW', 'ArrowUp', 'Space'], back = ['KeyS', 'ArrowDown'];
@@ -212,11 +217,11 @@ export function Walk() {
       <WalkWorld state={state} onProgress={setProgress} />
     </Canvas></div>
     <div className="walk-grade" aria-hidden="true" />
-    <header className="walk-brand"><span>THE LAST GATE</span><small>PHASE 04 · NORTH SERVICE DISTRICT</small></header>
-    <div className="walk-objective" role="status"><span>FOLLOW THE SERVICE CURRENT</span><b>BAY 6 <i>·</i> {metres} m</b></div>
+    <header className="walk-brand"><span>The Last Gate</span><small>Phase 4 · North service district</small></header>
+    <div className="walk-objective" role="status"><span>FOLLOW THE LIVE CABLE</span><b>Bay 6 <i>·</i> {metres} m</b></div>
     {line && <p className="walk-line" key={line} role="status"><small>HIRO</small>{line}</p>}
     {!moved && !arrived && <p className="walk-hint">HOLD <b>W</b> · SPACE · OR THE MOUSE TO WALK <i>·</i> SCROLL TO STEP</p>}
-    {arrived && <button className="walk-enter" onClick={enter}>ENTER BAY 6 <i>→</i></button>}
+    {arrived && <button className="walk-enter" onClick={enter}>Enter Bay 6 <i>→</i></button>}
     <p className="sr-only">Hold W, Space or the mouse button to walk along the street, or scroll to step. Move the pointer to look around. At the gate, press Enter or E, or select Enter Bay 6.</p>
   </main>;
 }
