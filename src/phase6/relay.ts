@@ -7,7 +7,10 @@ import { createFacility } from '../phase5/facility';
  * the sky. Outside the blown-out back wall is the yard where Baymax followed Hiro and sat down
  * under the limit; the service road runs off it into the city.
  */
-export const BAYMAX_YARD = new T.Vector3(-.8, 0, -11.5);
+// Centred in the yard between its rails, far enough back that his reach stops short of the wall.
+export const BAYMAX_YARD = new T.Vector3(.6, 0, -11.5);
+/** How far toward the relay he gets under the limit before the punch: still outside the back wall. */
+export const BAYMAX_REACH_Z = -10.3;
 export const RELAY_STATE = { powered: true, leads: 3, snr: 12, az: 212, el: 38, strength: 100, traced: true, breakers: [true, true, false, false] };
 
 export function createRelay() {

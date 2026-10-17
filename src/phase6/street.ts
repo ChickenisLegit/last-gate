@@ -1,20 +1,30 @@
 import * as T from 'three';
 import { SceneKit, seeded, type Pose } from '../phase2/SceneKit';
 import { createPortalDimension } from '../environment/PortalDimension.js';
-import { chipOutline, CHIP_W, CHIP_H, CHIP_KEY } from '../characters/RedChip.js';
 
 /**
  * Deeper into the same city: a service street running from the relay's yard to the old portal
  * site, a plaza where the first gate was built. The frame is dead, ringed in scaffolding, with a
  * work deck on its left; three ring segments on its face carry power from the feed at the top
- * round to the frame, and a keyed socket sits empty at its centre.
+ * round to the frame. A reader on a pedestal to its right listens for a signal and the frame opens
+ * onto where that signal goes. Powered, it locks onto the strongest one nearby: Baymax's combat
+ * chip, which is from this side, so the frame folds back on itself. With the chip pulled the
+ * reader is clear, and a capture cartridge played into it tunes the frame. A steel walkway the old
+ * crew left runs up over the ring's lower lip, so a load can be taken straight through.
  *
  * Same look as Phases 4 and 5: slate blocks, cyan haze, warm practicals, the displaced skyline.
  */
 export const EYE = 1.62;
 export const FRAME = new T.Vector3(0, 3.4, -92);
 export const FRAME_R = 3.3;
-export const DECK = { x: -2.7, y: 2.6, z: -90.2 };
+export const DECK = { x: -3.55, y: 2.6, z: -90.2 };
+/** The walkway through the ring: up from the paving to WALK_Y, flat through the frame. */
+export const WALK_Y = 1, WALK_HALF = 1.55, RAMP_FROM = -87, RAMP_TO = -90.4, WALK_END = -93.6;
+export const rampY = (z: number) => z > RAMP_FROM ? 0 : z > RAMP_TO ? WALK_Y * (RAMP_FROM - z) / (RAMP_FROM - RAMP_TO) : WALK_Y;
+/** The gate's reader, on its pedestal to the right of the walkway. */
+export const PEDESTAL = new T.Vector3(2.75, 0, -88.6);
+/** The work deck's ladder, at its far (left) end, away from the walkway. */
+export const LADDER_X = -4.9;
 export const LANDING = new T.Vector3(-2.2, 0, -85.2);
 export const ROUTE = new T.CatmullRomCurve3([
   [0, EYE, 6], [.9, EYE, -6], [-.8, EYE, -18], [-.4, EYE, -30], [1, EYE, -42], [.2, EYE, -54], [-.6, EYE, -66], [-1.2, EYE, -76],
@@ -112,11 +122,12 @@ export function createStreet() {
   for (const side of [-1, 1]) for (let z = 8; z > -74; z -= rand(6.5, 8.5)) { const w = rand(4, 6.5); block(side * (7.4 + w / 2 + rand(0, 1.2)), z, w, rand(8, 19), rand(5, 7), side); }
   for (let i = 0; i < 10; i++) k.box({ p: [rand(-9, 9), rand(9, 18), rand(-70, 4)], s: [rand(.6, 2.4), rand(.3, 1), rand(.6, 2)], r: [rand(0, 3), rand(0, 3), rand(0, 3)] }, k.concrete);
   // Signs toward the old gate.
-  const signs: [string, number, number, string][] = [['旧ゲート跡 GATE SITE  →  400 m', -3.6, -12, '#8fe9ff'], ['立入禁止 / NO ENTRY', 3.9, -33, '#ff9a63'], ['GATE SITE  ゲート  →  90 m', -3.7, -56, '#8fe9ff']];
+  // Posts on the kerb line and boards hung high and short of the lane, so nothing tall walks through them.
+  const signs: [string, number, number, string][] = [['旧ゲート跡 GATE SITE  →  400 m', -5.4, -12, '#8fe9ff'], ['立入禁止 / NO ENTRY', 5.4, -33, '#ff9a63'], ['GATE SITE  ゲート  →  90 m', -5.4, -56, '#8fe9ff']];
   for (const [text, x, z, color] of signs) {
-    k.box({ p: [x, 1.6, z], s: [.12, 3.2, .12] }, k.metal);
-    k.box({ p: [x - Math.sign(x) * 1.5, 3.25, z], s: [3.6, .55, .08] }, k.dark);
-    k.label(text, { p: [x - Math.sign(x) * 1.5 + .25, 3.22, z + .05] }, 3.8, color);
+    k.box({ p: [x, 2.45, z], s: [.12, 4.9, .12] }, k.metal);
+    k.box({ p: [x - Math.sign(x) * 1.6, 4.65, z], s: [3.3, .55, .08] }, k.dark);
+    k.label(text, { p: [x - Math.sign(x) * 1.6 + .2, 4.62, z + .05] }, 3.5, color);
   }
   const lamps: T.Vector3[] = [];
   for (const [x, z, live] of [[5.3, -4, true], [-5.3, -20, false], [5.3, -38, true], [-5.3, -58, true], [5.3, -70, false]] as [number, number, boolean][]) {
@@ -155,11 +166,11 @@ export function createStreet() {
   // Spokes from the ring to the hub, set back so the segments turn in front of them.
   const spokes: T.Mesh[] = [];
   for (let i = 0; i < 4; i++) { const a = Math.PI / 4 + i * Math.PI / 2; const m = k.box({ p: [Math.sin(a) * FRAME_R / 2, Math.cos(a) * FRAME_R / 2, -.12], s: [.12, FRAME_R - .2, .1], r: [0, 0, -a] }, k.metal, frame); spokes.push(m); }
-  // The socket: a hub whose keyed slot repeats the chip's outline. It stays dark until filled.
+  // The hub, where the spokes meet. Its face is the emitter: dark glass that lights with whatever the reader plays.
   const hub = new T.Group(); hub.position.z = .05; frame.add(hub);
   k.mesh(k.ownGeometry(new T.CylinderGeometry(.42, .46, .3, 32)), k.dark, { p: [0, 0, 0], r: [Math.PI / 2, 0, 0] }, hub);
-  const slotShape = chipOutline(CHIP_W * 1.9 + .04, CHIP_H * 1.9 + .04, CHIP_KEY * 1.9 + .02, .03);
-  k.mesh(k.ownGeometry(new T.ShapeGeometry(slotShape)), k.ownMaterial(new T.MeshBasicMaterial({ color: '#05080b' })), { p: [0, 0, .152] }, hub);
+  const lens = k.ownMaterial(new T.MeshBasicMaterial({ color: '#05080b', toneMapped: false }));
+  k.mesh(k.ownGeometry(new T.CircleGeometry(.3, 32)), lens, { p: [0, 0, .152] }, hub);
   const socketRim = k.ownMaterial(new T.MeshBasicMaterial({ color: '#1a2026', toneMapped: false }));
   const rimGeo = k.ownGeometry(new T.TorusGeometry(.4, .02, 8, 48));
   k.mesh(rimGeo, socketRim, { p: [0, 0, .155] }, hub);
@@ -182,7 +193,8 @@ export function createStreet() {
   // Scaffolding: a full tower behind the ring, and in front only the bay that carries the work
   // deck on the left, so the opening itself stays clear. A ladder runs up the deck's inner end.
   const scaff = k.standard('#7d8b92', .5, .55), plank = k.standard('#6a5848', .85, .05);
-  const BACK = -94.6, FRONT = -89.4, DL = -5.2, DR = -1.1;
+  // The front bay stops well short of the walkway, and its ladder is at the far end.
+  const BACK = -94.6, FRONT = -89.4, DL = -5.2, DR = -1.9;
   for (const x of [-5.4, -3.6, -1.6, 1.6, 3.6, 5.4]) k.box({ p: [x, 4.3, BACK], s: [.07, 8.6, .07] }, scaff);
   for (const y of [1.2, 2.6, 4.6, 6.6, 8.2]) k.box({ p: [0, y, BACK], s: [11, .06, .06] }, scaff);
   for (const [x, y] of [[-4.5, 3.6], [-2.6, 5.6], [2.6, 3.6], [4.5, 5.6]]) k.box({ p: [x, y, BACK], s: [2.2, .05, .05], r: [0, 0, x < 0 ? .78 : -.78] }, scaff);
@@ -191,10 +203,47 @@ export function createStreet() {
   for (const y of [1.2, DECK.y - .05]) k.box({ p: [(DL + DR) / 2, y, FRONT], s: [DR - DL, .06, .06] }, scaff);
   k.box({ p: [(DL + DR) / 2, DECK.y + .95, FRONT], s: [DR - DL, .05, .05] }, scaff);
   for (const x of [DL, DR]) k.box({ p: [x, DECK.y / 2, -91.3], s: [.07, DECK.y, .07] }, scaff);
-  k.box({ p: [DECK.x, DECK.y - .05, -90.3], s: [3.9, .1, 1.9] }, plank);
+  k.box({ p: [DECK.x, DECK.y - .05, -90.3], s: [DR - DL + .1, .1, 1.9] }, plank);
   k.box({ p: [3.6, 6.55, -93.4], s: [3.4, .1, 1.6] }, plank);
-  for (let y = .3; y < DECK.y; y += .35) k.box({ p: [DR + .25, y, FRONT + .05], s: [.5, .04, .04] }, scaff);
-  for (const x of [DR, DR + .5]) k.box({ p: [x, DECK.y / 2, FRONT + .05], s: [.05, DECK.y + .9, .05] }, scaff);
+  for (let y = .3; y < DECK.y; y += .35) k.box({ p: [LADDER_X, y, FRONT + .05], s: [.5, .04, .04] }, scaff);
+  for (const x of [LADDER_X - .25, LADDER_X + .25]) k.box({ p: [x, DECK.y / 2, FRONT + .05], s: [.05, DECK.y + .9, .05] }, scaff);
+
+  // The walkway: a ramp up from the paving, then a plate across the lower lip of the ring.
+  const steel = k.standard('#5d6a70', .45, .7), tread = k.standard('#2b3236', .8, .3);
+  const rampLen = Math.hypot(RAMP_FROM - RAMP_TO, WALK_Y), rampTilt = Math.atan2(WALK_Y, RAMP_FROM - RAMP_TO);
+  k.box({ p: [0, WALK_Y / 2 - .05, (RAMP_FROM + RAMP_TO) / 2], s: [WALK_HALF * 2, .1, rampLen], r: [rampTilt, 0, 0] }, steel);
+  k.box({ p: [0, WALK_Y - .05, (RAMP_TO + WALK_END) / 2], s: [WALK_HALF * 2, .1, RAMP_TO - WALK_END] }, steel);
+  const treads: Pose[] = [];
+  for (let z = RAMP_FROM - .25; z > WALK_END + .1; z -= .45) treads.push({ p: [0, rampY(z) + .006, z], s: [WALK_HALF * 2 - .2, .012, .07], r: [z > RAMP_TO ? rampTilt : 0, 0, 0] });
+  k.instances(treads, tread);
+  for (const x of [-WALK_HALF + .1, WALK_HALF - .1]) for (const z of [-88.6, RAMP_TO, -92.9]) k.box({ p: [x, rampY(z) / 2, z], s: [.1, rampY(z), .1] }, steel);
+  for (const x of [-WALK_HALF, WALK_HALF]) k.box({ p: [x, WALK_Y + .03, (RAMP_TO + WALK_END) / 2], s: [.05, .06, RAMP_TO - WALK_END] }, k.basic('#c9a24a', .7));
+
+  // The reader: a waist-high pedestal with a slanted face, a cartridge slot and a small screen.
+  const ped = new T.Group(); ped.position.copy(PEDESTAL); k.root.add(ped);
+  k.box({ p: [0, .5, 0], s: [.34, 1, .3] }, k.metal, ped);
+  k.box({ p: [0, .03, 0], s: [.6, .06, .5] }, k.dark, ped);
+  const head = new T.Group(); head.position.set(0, 1.04, .02); head.rotation.x = .55; ped.add(head);
+  k.box({ p: [0, 0, 0], s: [.5, .08, .36] }, k.dark, head);
+  const readerScreen = k.ownMaterial(new T.MeshBasicMaterial({ color: '#16211c', toneMapped: false }));
+  k.mesh(k.ownGeometry(new T.PlaneGeometry(.3, .12)), readerScreen, { p: [0, .041, -.09], r: [-Math.PI / 2, 0, 0] }, head);
+  k.mesh(k.ownGeometry(new T.PlaneGeometry(.11, .024)), k.ownMaterial(new T.MeshBasicMaterial({ color: '#030506' })), { p: [0, .041, .08], r: [-Math.PI / 2, 0, 0] }, head);
+  const readerLamp = k.ownMaterial(new T.MeshBasicMaterial({ color: '#3a2a20', toneMapped: false }));
+  k.mesh(k.ownGeometry(new T.CircleGeometry(.012, 12)), readerLamp, { p: [.17, .041, .08], r: [-Math.PI / 2, 0, 0] }, head);
+  k.label('READER  旧ゲート', { p: [0, .042, .145], r: [-Math.PI / 2, 0, 0] }, .32, '#c5b484', head);
+  const slot = new T.Object3D(); slot.position.set(0, .046, .08); head.add(slot);
+  // Its cable runs along the paving to the frame's cradle.
+  k.mesh(k.ownGeometry(new T.TubeGeometry(new T.CatmullRomCurve3([new T.Vector3(PEDESTAL.x, .05, PEDESTAL.z - .12), new T.Vector3(2.95, .05, -90.4), new T.Vector3(3.3, .3, -91.6)]), 20, .035, 6)), k.dark, { p: [0, 0, 0] });
+
+  // Debris for the chase: chunks that come off the blocks, fall, bounce once and settle.
+  const chunkGeo = k.ownGeometry(new T.DodecahedronGeometry(1, 0));
+  const chunks = Array.from({ length: 8 }, () => {
+    const m = k.mesh(chunkGeo, k.concrete, { p: [0, -50, 0] }); m.visible = false;
+    return { m, v: new T.Vector3(), spin: new T.Vector3(), size: 1, live: false, bounced: false, land: null as null | ((at: T.Vector3) => void) };
+  });
+  let nextChunk = 0;
+  // One warm light that follows the nearest working street lamp, and stutters.
+  const lampLight = new T.PointLight('#ffb35e', 0, 16, 1.6); k.root.add(lampLight);
   // Work lights clamped to the scaffold.
   const worklight = k.basic('#ffd9a1', 1.4);
   for (const [x, y, z] of [[-5.3, 4.8, -91.9], [5.3, 6.9, -91.9]]) k.mesh(k.ownGeometry(new T.BoxGeometry(.3, .2, .16)), worklight, { p: [x, y, z] });
@@ -228,16 +277,46 @@ export function createStreet() {
   const portalLight = new T.PointLight('#9a86e0', 0, 26, 1.6); portalLight.position.set(0, 0, 2.5); frame.add(portalLight);
 
   const purple = new T.Color('#5B4B8A'), copper = new T.Color('#7a4a24'), hot = new T.Color('#ffc58a');
+
+  const lockRed = new T.Color('#ff3a2c');
   return {
     root: k.root, lamps, portalMat, frame, hub,
-    /** Socket centre in world space. */
-    socketWorld: (out = new T.Vector3()) => hub.getWorldPosition(out).add(new T.Vector3(0, 0, .16)),
+    /** The reader's cartridge slot in world space, and how it sits (for seating the cartridge). */
+    readerWorld: (out = new T.Vector3()) => slot.getWorldPosition(out),
+    readerQuat: (out = new T.Quaternion()) => slot.getWorldQuaternion(out),
     kickDust,
-    update(t: number, dt: number, s: { angles: number[]; live: number[]; powered: number; open: number; flash: number; cracked: number; socket: number }) {
+    /** Drops a chunk from `from` with a push; `onLand` fires where it first hits the paving. */
+    debris(from: T.Vector3, push: T.Vector3, size: number, onLand?: (at: T.Vector3) => void) {
+      const c = chunks[nextChunk++ % chunks.length];
+      c.m.position.copy(from); c.v.copy(push); c.size = size; c.m.scale.set(size, size * .7, size * .9);
+      c.spin.set(rand(-4, 4), rand(-4, 4), rand(-4, 4)); c.live = true; c.bounced = false; c.land = onLand ?? null; c.m.visible = true;
+    },
+    update(t: number, dt: number, s: { angles: number[]; live: number[]; powered: number; open: number; flash: number; cracked: number; socket: number; lock?: number; eye?: T.Vector3; dread?: number }) {
       skyline.update(t, dt, false, 0, 'approaching');
+      // Debris: falls, bounces once, settles where it lands.
+      for (const c of chunks) {
+        if (!c.live) continue;
+        c.v.y -= 15 * dt; c.m.position.addScaledVector(c.v, dt);
+        c.m.rotation.x += c.spin.x * dt; c.m.rotation.y += c.spin.y * dt; c.m.rotation.z += c.spin.z * dt;
+        const floor = c.size * .55;
+        if (c.m.position.y <= floor) {
+          c.m.position.y = floor;
+          if (!c.bounced) { c.bounced = true; c.v.set(c.v.x * .35, Math.abs(c.v.y) * .22, c.v.z * .35); c.spin.multiplyScalar(.4); c.land?.(c.m.position.clone()); kickDust(c.m.position.clone().setY(0), .35 + c.size * .25); }
+          else { c.live = false; }
+        }
+      }
+      // The street lamp nearest the eye, live and stuttering, harder as he closes.
+      if (s.eye && lamps.length) {
+        let best = lamps[0]; for (const l of lamps) if (l.distanceToSquared(s.eye) < best.distanceToSquared(s.eye)) best = l;
+        lampLight.position.copy(best);
+        const d = s.dread ?? 0, stutter = Math.sin(t * 23) * Math.sin(t * 7.3 + 1) > .55 - d * .5 ? .15 : 1;
+        lampLight.intensity = 7 * stutter * (1 - d * .3);
+      } else lampLight.intensity = 0;
       // Segments turn with their angle; contacts go from cold copper to live as current reaches them.
       segments.forEach((seg, i) => {
         seg.g.rotation.z = -s.angles[i] * Math.PI / 180;
+        // Open: each ring slides out to the rim and leaves the opening clear.
+        seg.g.scale.setScalar(T.MathUtils.lerp(1, (FRAME_R - .27 + i * .03) / RINGS[i].r, s.open));
         seg.contactMats.forEach((m, j) => {
           const k2 = s.live[i] >= 1 ? (j === 0 || s.live[i + 1] >= 1 ? 1 : .55 + .45 * Math.sin(t * 5)) : j === 0 ? s.live[i] : 0;
           m.color.copy(copper).lerp(hot, Math.min(1, k2)).multiplyScalar(1 + k2 * (1.2 + .3 * Math.sin(t * 30 + i)));
@@ -247,8 +326,17 @@ export function createStreet() {
       feedLight.intensity = 1.5 + s.live[0] * 2;
       // Powered: the ring hums dusk purple. The socket only lights once the chip is in it.
       frameGlow.emissiveIntensity = s.powered * (.55 + .2 * Math.sin(t * 3.1)) + s.open * .8;
+      // Locked onto the combat chip, the hub beats red in the chip's own rhythm (baymax.ts: sin(t·4)).
+      const lock = s.socket ? 0 : (s.lock ?? 0), beat = lock * Math.max(0, .35 + .65 * Math.sin(t * 4));
       socketRim.color.copy(purple).multiplyScalar(s.socket * (1.6 + .5 * Math.sin(t * 5))).addScalar(s.socket ? 0 : .1);
-      if (!s.socket) socketRim.color.set('#1a2026');
+      if (!s.socket) socketRim.color.set('#1a2026').lerp(lockRed, beat);
+      lens.color.copy(purple).multiplyScalar(s.socket * (1.2 + .8 * Math.sin(t * 7))).addScalar(s.socket ? 0 : .02);
+      if (!s.socket && beat > 0) lens.color.lerp(lockRed, beat * .6);
+      // The hub rides up the top spoke into the crown as the gate opens.
+      hub.position.y = s.open * (FRAME_R - .62); hub.scale.setScalar(1 - s.open * .35);
+      readerScreen.color.set(s.socket ? '#c0d0ac' : '#16211c').multiplyScalar(s.socket ? .9 + .15 * Math.sin(t * 9) : 1);
+      readerLamp.color.set(s.socket ? '#c9dca8' : s.powered ? '#cbb48c' : '#3a2a20').multiplyScalar(s.powered && !s.socket ? .8 + .5 * Math.sin(t * 4) : 1.2);
+      if (beat > 0) { readerScreen.color.lerp(lockRed, beat * .7); readerLamp.color.copy(lockRed).multiplyScalar(.6 + 1.4 * beat); }
       spokes.forEach((m, i) => { m.scale.y = 1 - s.open * .98; m.position.setLength((FRAME_R / 2) * (1 + s.open * .9)); m.visible = s.open < .97; void i; });
       portal.visible = s.open > .001;
       portalMat.uniforms.uOpen.value = s.open; portalMat.uniforms.uTime.value = t; portalMat.uniforms.uFlash.value = s.flash;
@@ -272,3 +360,22 @@ export function createStreet() {
   };
 }
 export type Street = ReturnType<typeof createStreet>;
+
+/**
+ * The relay's capture cartridge: the drive Hiro pulled from RX/06 with the healthcare chip's last
+ * transmission on it. Thumb-sized, ribbed grip, a sage label and gold contacts at the end that
+ * goes in (-Z). `glow` lights its status lamp while it plays.
+ */
+export function createCartridge() {
+  const root = new T.Group(); root.name = 'capture-cartridge';
+  const own: { dispose(): void }[] = [];
+  const add = (geo: T.BufferGeometry, mat: T.Material, p: [number, number, number], parent: T.Object3D = root) => { own.push(geo, mat); const m = new T.Mesh(geo, mat); m.position.set(...p); parent.add(m); return m; };
+  add(new T.BoxGeometry(.06, .014, .085), new T.MeshStandardMaterial({ color: '#2b3336', roughness: .5, metalness: .3 }), [0, 0, 0]);
+  add(new T.BoxGeometry(.062, .016, .022), new T.MeshStandardMaterial({ color: '#1b2124', roughness: .9 }), [0, 0, .034]);
+  add(new T.PlaneGeometry(.044, .034), new T.MeshBasicMaterial({ color: '#c0d0ac', toneMapped: false }), [0, .0072, -.006]).rotation.x = -Math.PI / 2;
+  add(new T.PlaneGeometry(.03, .004), new T.MeshBasicMaterial({ color: '#1f2a24' }), [0, .0074, -.01]).rotation.x = -Math.PI / 2;
+  add(new T.BoxGeometry(.04, .004, .008), new T.MeshStandardMaterial({ color: '#d4b25c', roughness: .3, metalness: .9 }), [0, 0, -.044]);
+  const glow = new T.MeshBasicMaterial({ color: '#2a332c', toneMapped: false });
+  add(new T.SphereGeometry(.0035, 8, 6), glow, [.022, .008, .03]);
+  return { root, glow, dispose() { own.forEach(x => x.dispose()); glow.dispose(); root.removeFromParent(); } };
+}

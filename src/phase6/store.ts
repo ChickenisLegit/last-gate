@@ -7,6 +7,9 @@ import type { PhaseSixStep } from './entry';
  *
  *   1 wake → switchOn1 · 2 limited · 3 escape · 4 gate → powered · 5 choice → switchOff → flyin
  *   6 faceoff → switchOn2 → drop · 7 carry → bloom · 8 home → seated → boot → end
+ *
+ * In carry Hiro pulls the combat chip out of the open bay (chip: bay → held → out), then plays the
+ * relay's capture of the healthcare chip's last transmission into the gate (cart: hand → held → slot).
  */
 export type Stage =
   | 'wake' | 'switchOn1' | 'limited' | 'escape' | 'gate' | 'powered' | 'choice' | 'switchOff' | 'flyin'
@@ -30,7 +33,9 @@ export const START_ANGLES = [215, 40, 300];
 type State = {
   stage: Stage; since: number;
   regulator: boolean; angles: number[];
-  chip: 'bay' | 'held' | 'socket'; care: 'ground' | 'held' | 'seated';
+  chip: 'bay' | 'held' | 'out'; cart: 'hand' | 'held' | 'slot'; care: 'ground' | 'held' | 'seated';
+  /** When the combat chip came out (Hiro then walks to the gate's reader). */
+  pulledAt: number;
 };
 const regulatorFor = (s: Stage) => (atLeast(s, 'limited') && !atLeast(s, 'flyin')) || atLeast(s, 'drop');
 
@@ -38,7 +43,9 @@ function stateFor(stage: Stage): State {
   return {
     stage, since: now(), regulator: regulatorFor(stage),
     angles: atLeast(stage, 'powered') ? [0, 140, 240] : [...START_ANGLES],
-    chip: atLeast(stage, 'bloom') ? 'socket' : 'bay',
+    chip: atLeast(stage, 'bloom') ? 'out' : 'bay',
+    cart: atLeast(stage, 'bloom') ? 'slot' : 'hand',
+    pulledAt: 0,
     care: atLeast(stage, 'seated') ? 'seated' : 'ground',
   };
 }

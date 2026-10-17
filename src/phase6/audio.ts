@@ -2,19 +2,32 @@
  * Phase 6 sound, all synthesized: the switch click, his jets (and their stutter under the limit),
  * heavy footfalls, the fall, the frame's hum, the gate opening, and the boot chime. It starts on
  * the first gesture and closes with the phase.
+ *
+ * The chase has its own layers: Hiro's footsteps, a heartbeat that quickens as Baymax closes, a low
+ * servo drone that grows with his nearness, falling debris, near-miss swings and the warp of the
+ * crossing. Each is one method, so a shared sound engine can take any of them over later.
  */
+import { sfx } from '../audio/sfx';
+
 export class PhaseSixAudio {
   private ctx: AudioContext | null = null;
   private master: GainNode | null = null;
   private jet: GainNode | null = null; private jetFilter: BiquadFilterNode | null = null;
   private hum: GainNode | null = null; private air: GainNode | null = null; private calm: GainNode | null = null;
   private noise: AudioBuffer | null = null;
+  private near: GainNode | null = null; private nextBeat = 0;
+  private unsubscribeMute: (() => void) | null = null;
+
+  private syncMute = () => {
+    if (this.ctx && this.master) this.master.gain.setTargetAtTime(sfx.getMuted() ? 0 : .5, this.ctx.currentTime, .025);
+  };
 
   unlock() {
-    if (this.ctx) { void this.ctx.resume(); return; }
+    if (this.ctx) { void this.ctx.resume().catch(() => undefined); return; }
     try {
       const c = new AudioContext(); this.ctx = c;
-      this.master = c.createGain(); this.master.gain.value = .5; this.master.connect(c.destination);
+      this.master = c.createGain(); this.master.gain.value = sfx.getMuted() ? 0 : .5; this.master.connect(c.destination);
+      this.unsubscribeMute = sfx.subscribe(this.syncMute);
       const buf = c.createBuffer(1, c.sampleRate * 3, c.sampleRate), d = buf.getChannelData(0);
       for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
       this.noise = buf;
@@ -27,11 +40,14 @@ export class PhaseSixAudio {
       // The frame's hum: two close low tones beating slowly.
       this.hum = c.createGain(); this.hum.gain.value = 0; this.hum.connect(this.master);
       for (const f of [55, 55.7, 110.4]) { const o = c.createOscillator(); o.frequency.value = f; const g = c.createGain(); g.gain.value = f > 100 ? .25 : .5; o.connect(g); g.connect(this.hum); o.start(); }
-    } catch { this.ctx = null; }
+      // Him, close: a low growling servo drone, filtered saw with a slow wobble.
+      this.near = c.createGain(); this.near.gain.value = 0; const nearF = c.createBiquadFilter(); nearF.type = 'lowpass'; nearF.frequency.value = 260; nearF.connect(this.near); this.near.connect(this.master);
+      for (const f of [41, 61.5]) { const o = c.createOscillator(); o.type = 'sawtooth'; o.frequency.value = f; const lfo = c.createOscillator(), depth = c.createGain(); lfo.frequency.value = .7 + f / 100; depth.gain.value = 1.6; lfo.connect(depth); depth.connect(o.frequency); o.connect(nearF); o.start(); lfo.start(); }
+    } catch { this.dispose(); }
   }
 
   /** Continuous layers, set every frame (smoothed). */
-  set(s: { jet: number; sputter: number; hum: number; air: number; calm: number }) {
+  set(s: { jet: number; sputter: number; hum: number; air: number; calm: number; dread?: number; near?: number }) {
     const c = this.ctx; if (!c || !this.jet || !this.hum || !this.air || !this.calm || !this.jetFilter) return;
     const now = c.currentTime;
     const gate = s.sputter > 0 && Math.random() < .35 ? .1 : 1;
@@ -40,6 +56,14 @@ export class PhaseSixAudio {
     this.hum.gain.setTargetAtTime(s.hum * .16, now, .4);
     this.air.gain.setTargetAtTime(s.air * .06, now, .8);
     this.calm.gain.setTargetAtTime(s.calm * .05, now, 1.2);
+    this.near?.gain.setTargetAtTime((s.near ?? 0) * .22, now, .25);
+    // Heartbeat: lub-dub, quicker and louder as the dread rises.
+    const dread = s.dread ?? 0;
+    if (dread > .05 && now >= this.nextBeat) {
+      const level = .25 + dread * .55;
+      this.tone('sine', 62, 38, .16, level * .6); this.tone('sine', 58, 36, .14, level * .42, .17);
+      this.nextBeat = now + 60 / (72 + dread * 84);
+    } else if (dread <= .05) this.nextBeat = now;
   }
 
   private tone(type: OscillatorType, f0: number, f1: number, dur: number, level: number, at = 0, attack = .005) {
@@ -64,9 +88,25 @@ export class PhaseSixAudio {
   ignite() { this.burst(300, .5, .7, .35, 'lowpass'); this.tone('sawtooth', 80, 160, .6, .05); }
   seat() { this.tone('sine', 520, 760, .25, .12); this.burst(3000, 2, .03, .3, 'highpass'); }
   contact() { this.burst(5200, 3, .08, .25, 'highpass'); this.tone('sine', 660, 990, .18, .06); }
+  /** The gate trying and failing: a rising hum that catches, then drops out. */
+  falter() { this.tone('sine', 90, 340, .7, .07); this.tone('sawtooth', 340, 60, .5, .03, .7); this.burst(700, .5, .9, .2, 'lowpass', .6); }
   bloom() { this.burst(400, .4, 2.6, .35, 'lowpass'); [392, 494, 587, 784].forEach((f, i) => this.tone('sine', f, f * 1.002, 2.4, .05, i * .14, .4)); }
+  /** Hiro's footfall on paving: a scuff, heavier and sharper when he runs. */
+  footstep(side: -1 | 1, speed: number) { const run = Math.min(1, speed / 4.5); this.burst(side > 0 ? 520 : 470, .9, .07 + run * .04, .08 + run * .12, 'lowpass'); this.burst(2400, 1.2, .025, .02 + run * .05, 'bandpass', .01); }
+  /** A swing that misses: air torn past the ear. */
+  whoosh() { const c = this.ctx; if (!c || !this.master || !this.noise) return; const t = c.currentTime, src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain(); src.buffer = this.noise; f.type = 'bandpass'; f.Q.value = 1.4; f.frequency.setValueAtTime(300, t); f.frequency.exponentialRampToValueAtTime(2200, t + .18); f.frequency.exponentialRampToValueAtTime(500, t + .42); g.gain.setValueAtTime(.0001, t); g.gain.linearRampToValueAtTime(.55, t + .12); g.gain.exponentialRampToValueAtTime(.0001, t + .45); src.connect(f); f.connect(g); g.connect(this.master); src.start(t, Math.random()); src.stop(t + .5); }
+  /** Concrete coming down: a thud, grit, and a few skittering bits after. */
+  crash(level = 1) { this.tone('sine', 80, 30, .7, .6 * level); this.burst(260, .6, .8, .7 * level, 'lowpass'); this.burst(1800, .8, .35, .25 * level, 'bandpass', .02); [.12, .2, .31].forEach(d => this.burst(3200, 2, .05, .1 * level, 'highpass', d)); }
+  /** His arm motors driving a swing. */
+  servo() { this.tone('sawtooth', 140, 420, .35, .05); this.tone('square', 70, 210, .35, .025); }
+  /** The crossing: a swell that rises through the surface and tears. */
+  warp() { this.burst(500, .4, 1.6, .35, 'lowpass'); this.tone('sine', 110, 880, 1.2, .08, 0, .5); this.tone('triangle', 220, 1760, 1, .03, .15, .4); this.burst(4000, 1, .4, .15, 'highpass', .9); }
   /** His boot chime: four soft rising notes. */
   chime() { [659.3, 830.6, 987.8, 1318.5].forEach((f, i) => { this.tone('triangle', f, f, 1.6, .09, i * .16, .02); this.tone('sine', f * 2, f * 2, 1.1, .025, i * .16, .02); }); }
 
-  dispose() { void this.ctx?.close(); this.ctx = null; }
+  dispose() {
+    this.unsubscribeMute?.(); this.unsubscribeMute = null;
+    if (this.ctx && this.ctx.state !== 'closed') void this.ctx.close().catch(() => undefined);
+    this.ctx = null; this.master = null;
+  }
 }

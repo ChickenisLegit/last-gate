@@ -74,7 +74,7 @@ function DesktopGate() {
     if (!import.meta.env.DEV) return;
     const skipPhase = (event: KeyboardEvent) => {
       if (!event.ctrlKey || event.altKey || event.shiftKey || event.metaKey || event.code !== 'KeyM') return;
-      if ((event.target as HTMLElement | null)?.closest('input, textarea, select, [contenteditable="true"]')) return;
+      if (event.target instanceof Element && event.target.closest('input, textarea, select, [contenteditable="true"]')) return;
       event.preventDefault();
 
       if (phaseTwoEntry.active) return;

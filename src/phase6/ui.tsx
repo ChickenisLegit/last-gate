@@ -5,7 +5,7 @@ import { RINGS, FEED_AT, RETURN_AT, ringLive } from './street';
 import { useP6, go } from './store';
 import type { PhaseSixAudio } from './audio';
 
-/** A soft white card that fades and lifts in (GSAP), and again whenever its `id` changes. */
+/** A panel that fades and lifts in (GSAP), and again whenever its `id` changes. */
 export function Card({ id, children, className = '' }: { id: string; children: ReactNode; className?: string }) {
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
@@ -28,15 +28,15 @@ export function FadeIn({ children, className, delay = 0, as: Tag = 'div' }: { ch
 }
 
 /**
- * The regulator switch: a large pill with a sliding knob. Pressing it starts the close-up; the
- * knob only slides when the store's regulator state changes, the moment the hand clicks it.
+ * The regulator switch on Hiro's remote, as the page shows it: a rounded rocker with a lever that
+ * throws when the store's regulator state changes (the moment the hand clicks it), not on press.
  */
-export function RegulatorToggle({ action, busy, onPress }: { action: 'on' | 'off'; busy: boolean; onPress: () => void }) {
+export function RegulatorToggle({ action, busy, onPress, disabled = false, note }: { action: 'on' | 'off'; busy: boolean; onPress: () => void; disabled?: boolean; note?: string }) {
   const on = useP6(s => s.regulator);
-  const label = action === 'on' ? 'SWITCH ON REGULATOR' : 'SWITCH OFF REGULATOR';
-  return <button className={`p6-toggle ${on ? 'is-on' : ''}`} role="switch" aria-checked={on} aria-label={label} disabled={busy} onClick={onPress}>
-    <span className="p6-toggle-knob" aria-hidden="true" />
-    <span className="p6-toggle-text">{busy ? (on ? 'REGULATOR ON' : 'REGULATOR OFF') : label}</span>
+  const label = action === 'on' ? 'Activate' : 'Switch off';
+  return <button className={`p6-toggle ${on ? 'is-on' : ''}`} role="switch" aria-checked={on} aria-label={`${label} regulator`} disabled={busy || disabled} onClick={onPress}>
+    <span className="p6-toggle-lever" aria-hidden="true"><i /></span>
+    <span className="p6-toggle-text">{note ?? (busy ? (on ? 'Active' : 'Off') : label)}</span>
   </button>;
 }
 
@@ -51,14 +51,35 @@ export function OutputMeter({ value }: { value: number }) {
     } });
     return () => { tween.kill(); };
   }, [value, shown]);
-  return <div className="p6-meter"><span>OUTPUT</span><b ref={num}>100%</b><i><em ref={bar} /></i></div>;
+  return <div className="p6-meter"><span>Output</span><b ref={num}>100%</b><i><em ref={bar} /></i></div>;
 }
 
 /** A small hand glyph that mimes the drag: press, carry, let go. */
 export function DragHand() {
   return <svg className="p6-draghand" viewBox="0 0 48 48" aria-hidden="true">
-    <path d="M19 26V12a3 3 0 0 1 6 0v10m0-2a3 3 0 0 1 6 0v3m0-1a3 3 0 0 1 6 0v8c0 7-4 12-11 12h-2c-5 0-8-3-10-6l-5-8a3 3 0 0 1 5-3l3 4" fill="#fff" stroke="#3C4A5C" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M19 26V12a3 3 0 0 1 6 0v10m0-2a3 3 0 0 1 6 0v3m0-1a3 3 0 0 1 6 0v8c0 7-4 12-11 12h-2c-5 0-8-3-10-6l-5-8a3 3 0 0 1 5-3l3 4" fill="#d9dfd2" stroke="#101a1d" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />
   </svg>;
+}
+
+export type Row = [label: string, value: string, tone?: '' | 'red' | 'cyan' | 'orange' | 'ok' | 'dim'];
+
+/**
+ * One small contextual panel: what it's reading (a label), a few short readings, and the one
+ * control or action for the moment. No paragraphs; the scene shows the why.
+ */
+export function Panel({ id, label, tone = '', title, rows = [], action, children }: { id: string; label: string; tone?: '' | 'red' | 'cyan'; title?: string; rows?: Row[]; action?: ReactNode; children?: ReactNode }) {
+  return <Card id={id} className={`p6-panel ${tone ? `is-${tone}` : ''}`}>
+    <p className="p6-label"><span className="p6-tick" aria-hidden="true" />{label}</p>
+    {title && <h1>{title}</h1>}
+    {rows.length > 0 && <dl className="p6-rows">{rows.map(([k, v, t]) => <div key={k} className={t ? `is-${t}` : ''}><dt>{k}</dt><dd>{v}</dd></div>)}</dl>}
+    {children}
+    {action && <p className="p6-action">{action}</p>}
+  </Card>;
+}
+
+/** Hiro, out loud. */
+export function HiroLine({ text }: { text: string }) {
+  return <FadeIn className="p6-say" key={text} as="p"><b aria-hidden="true">H</b><span><small>Hiro</small>{text}</span></FadeIn>;
 }
 
 const NAMES = ['OUTER', 'MIDDLE', 'INNER'];

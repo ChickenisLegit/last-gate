@@ -15,11 +15,20 @@ export type Pose = {
   head: [number, number, number];
   eyes: T.Color; eyeGlow: number; thrust: number; sputter: number;
   open: number; chipGlow: number; chipInBay: boolean; careSeated: boolean;
+  /**
+   * 0..1 through the staged get-up from lying on his back: sit up (pushing on the ground behind),
+   * settle, lean over his feet with his hands planted, push up, wobble to a stand. Overrides
+   * lie/sit/lean while above 0. Like tension and sluggish, it is cleared after each update(), so
+   * the director writes it every frame it wants it.
+   */
+  getUp: number;
+  /** Force the combat tension or the limited sluggishness (otherwise read from guard, eyes and sputter). */
+  tension: number; sluggish: number;
 };
 export const restPose = (): Pose => ({
   sit: 1, lie: 0, lean: 0, guard: 0, punch: 0, hold: 0, stride: 0, gait: 0, dangle: 0, yaw: 0,
   head: [0, 0, 0], eyes: new T.Color('#0b0f11'), eyeGlow: 0, thrust: 0, sputter: 0,
-  open: 0, chipGlow: 0, chipInBay: true, careSeated: false,
+  open: 0, chipGlow: 0, chipInBay: true, careSeated: false, getUp: 0, tension: 0, sluggish: 0,
 });
 
 const FLAME_VS = 'varying vec2 vUv;varying float vFace;void main(){vUv=uv;vec4 mv=modelViewMatrix*vec4(position,1.);vFace=abs(dot(normalize(normalMatrix*normal),normalize(-mv.xyz)));gl_Position=projectionMatrix*mv;}';
@@ -38,7 +47,7 @@ export async function createBaymax() {
 
   // Hinges, built in the authored (sitting) pose so attach() keeps every mesh where it was.
   const hips: T.Group[] = [], ankles: T.Group[] = [], shoulders: T.Group[] = [];
-  let palm: T.Mesh | null = null;
+  let palm: T.Mesh | null = null, fist: T.Mesh | null = null;
   for (const side of [-1, 1]) {
     const hip = new T.Group(); hip.position.set(side * .53, .55, .28); model.add(hip);
     const ankle = new T.Group(); ankle.position.set(side * .18, -.27, .86); hip.add(ankle);
@@ -48,7 +57,7 @@ export async function createBaymax() {
       const p = mesh.position, sx = side * p.x;
       if (near(sx, .57) && near(p.y, .48)) hip.attach(mesh);
       else if (near(sx, .71) && (near(p.y, .26) || near(p.y, .04)) && p.z > 1.2) ankle.attach(mesh);
-      else if (sx > .8 && p.y < 2.45 && !(near(p.y, .48) || p.z > 1.2)) { if (side < 0 && near(sx, 1.25) && near(p.y, .35)) palm = mesh; shoulder.attach(mesh); }
+      else if (sx > .8 && p.y < 2.45 && !(near(p.y, .48) || p.z > 1.2)) { if (near(sx, 1.25) && near(p.y, .35)) { if (side < 0) palm = mesh; else fist = mesh; } shoulder.attach(mesh); }
     }
     hips.push(hip); ankles.push(ankle); shoulders.push(shoulder);
   }
@@ -80,7 +89,7 @@ export async function createBaymax() {
   const combatChip = bay.root.getObjectByName('combat-chip')!;
   const dock = bay.root.getObjectByName('dock')!;
 
-  // Measure the two leg poses once so his feet (or seat) always meet the ground.
+  // His standing head height, measured once. (Each frame the shell itself is sat on the ground.)
   const root = new T.Group(); root.name = 'baymax-phase6';
   const body = new T.Group(); root.add(body); body.add(model);
   const setLegs = (sit: number) => {
@@ -88,15 +97,24 @@ export async function createBaymax() {
     ankles.forEach(a => { a.rotation.x = -(1 - sit) * 1.42; });
   };
   const lowest = () => { model.updateMatrixWorld(true); return new T.Box3().setFromObject(model).min.y; };
-  setLegs(1); const sitDrop = -lowest();
   setLegs(0); const standDrop = -lowest();
-  // Belly height above the ground when lying on his back (half his depth).
-  const lieDrop = .72;
   model.updateMatrixWorld(true);
   const headHeight = (headNode ? headNode.getWorldPosition(new T.Vector3()).y : 3) + standDrop;
   setLegs(1);
 
   const pose = restPose();
+  // Smoothed copies of the pose (springs) and the rig's own memory.
+  const cur: Record<string, number> = { guard: 0, punch: 0, lean: 0, hold: 0, dangle: 0, stride: 0, h0: 0, h1: 0, h2: 0, yaw: 0, squash: 0 };
+  const vel: Record<string, number> = Object.fromEntries(Object.keys(cur).map(k => [k, 0]));
+  let last = -1, lastDt = 1 / 60, first = true, shuffle = 0, lastStep = 0, stoodUp = false;
+  const spring = (key: string, target: number, k: number, zeta: number, snap: boolean) => {
+    if (snap) { cur[key] = target; vel[key] = 0; return; }
+    vel[key] += ((target - cur[key]) * k * k - 2 * zeta * k * vel[key]) * lastDt; cur[key] += vel[key] * lastDt;
+  };
+  const kick = (amount: number) => { vel.squash += amount * 6; };
+  const mode = { tense: 0, slug: 0 };
+  const shell = meshes.filter(m => { m.geometry.computeBoundingBox(); return !!m.geometry.boundingBox; });
+  const box = new T.Box3();
   return {
     root, model, bay, pose, combatChip, dock, eyeMat,
     /** World position of the dock (the chip's seat). */
@@ -104,38 +122,118 @@ export async function createBaymax() {
     headWorld: (out = new T.Vector3()) => (headNode ?? model).getWorldPosition(out),
     /** His right hand (the one Hiro takes). */
     handWorld: (out = new T.Vector3()) => (palm ?? model).getWorldPosition(out),
+    /** His other hand, the one `punch` drives (and the fist bump). */
+    fistWorld: (out = new T.Vector3()) => ((fist as T.Mesh | null) ?? model).getWorldPosition(out),
     headHeight,
     chestWorld: (out = new T.Vector3()) => bay.chestWorld(out),
+    /** His current (smoothed) facing. */
+    facing: () => cur.yaw,
     update(t: number) {
       const p = pose;
-      // Legs: sitting ↔ standing, plus a heavy alternating stride and a hang when airborne.
-      const swing = Math.sin(p.gait) * p.stride;
+      const gap = last < 0 ? 1 : t - last; last = t;
+      const dt = Math.min(.05, Math.max(0, gap)); lastDt = dt;
+      // A long gap (a cut, a stage entered cold, the tab coming back) snaps instead of easing.
+      const snap = dt === 0 || gap > .25 || first;
+      first = false;
+
+      // ── Mode: combat tension (red eyes, guard up, full power) vs limited sluggishness.
+      const red = p.eyeGlow > .5 && p.eyes.r > .5 && p.eyes.g < .4 ? 1 : 0;
+      const upright = (1 - p.lie) * (1 - p.sit);
+      const tenseTarget = Math.max(p.tension, p.guard * red * (1 - Math.min(1, p.sputter)) * upright * (1 - p.dangle * .6));
+      const slugTarget = Math.max(p.sluggish, Math.min(1, p.sputter) * upright);
+      mode.tense += (tenseTarget - mode.tense) * (snap ? 1 : 1 - Math.exp(-dt * 4));
+      mode.slug += (slugTarget - mode.slug) * (snap ? 1 : 1 - Math.exp(-dt * 2));
+      const tense = mode.tense, slug = mode.slug;
+      // How quickly he answers: snappy when fighting, syrupy when the limit is on.
+      const rate = T.MathUtils.lerp(1, 1.8, tense) * T.MathUtils.lerp(1, .38, slug);
+
+      // ── The staged get-up overrides the seat, lean and arms (lying → sat up → crouch → stand).
+      let lie = p.lie, sit = p.sit, lean = p.lean, push = 0, brace = 0, tuck = 0;
+      if (p.getUp > 0) {
+        const g = p.getUp, k = (a: number, b: number) => T.MathUtils.smootherstep(g, a, b);
+        const sitUp = k(0, .28), settle = k(.3, .42), crouch = k(.42, .64), rise = k(.62, .86);
+        lie = 1 - sitUp;
+        sit = sitUp * (1 - crouch * .62) * (1 - rise);
+        lean = crouch * .52 * (1 - rise) + rise * .1 * (1 - k(.86, 1));
+        push = sitUp * (1 - settle);       // hands pushing on the ground behind him as he sits up
+        brace = crouch * (1 - rise * .8);   // hands planted at his sides as he leans over his feet
+        tuck = Math.sin(Math.PI * sitUp) * .35 + crouch * .25 * (1 - rise);
+        if (g > .86 && !stoodUp) { stoodUp = true; kick(.9); }
+        if (g < .5) stoodUp = false;
+      }
+
+      // ── Springs: what the director asks for, with weight. Arms overshoot a little.
+      spring('guard', p.guard, 9 * rate, .75, snap);
+      spring('punch', p.punch, (p.punch > cur.punch ? 11 : 6) * rate, .62, snap);
+      spring('lean', lean + tense * .07 + slug * .06, 6 * rate, .8, snap);
+      spring('hold', p.hold, 5 * rate, .85, snap);
+      spring('dangle', p.dangle, 4.5, .7, snap);
+      spring('stride', p.stride, 5 * rate, 1, snap);
+      spring('h0', p.head[0], 7 * rate, .7, snap); spring('h1', p.head[1], 7 * rate, .7, snap); spring('h2', p.head[2], 7 * rate, .7, snap);
+      // Facing: big jumps (a new shot) snap; anything else turns the body round with lag, the
+      // head leading into the turn.
+      let yawErr = Math.atan2(Math.sin(p.yaw - cur.yaw), Math.cos(p.yaw - cur.yaw));
+      if (snap || Math.abs(yawErr) > 1.6) { cur.yaw = p.yaw; vel.yaw = 0; yawErr = 0; }
+      else { const w = 5 * rate; vel.yaw += (yawErr * w * w - 2 * .9 * w * vel.yaw) * dt; cur.yaw += vel.yaw * dt; }
+      // Turning on the spot shuffles the feet.
+      const turning = Math.min(1, Math.abs(vel.yaw) * 1.4) * (1 - cur.stride) * upright * (1 - cur.dangle);
+      if (turning > .05) shuffle += dt * 7 * Math.max(.4, turning);
+      const shuffleAmp = turning * .35;
+
+      // ── Steps: footfalls kick the shell's jiggle; the weight rolls over the stance foot.
+      const stride = cur.stride, gait = p.gait;
+      const step = Math.floor(gait / Math.PI);
+      if (step !== lastStep) { if (stride > .2 && !snap) kick(.35 + slug * .35 + stride * .2); lastStep = step; }
+      spring('squash', 0, 9, .28, false);
+      const swing = Math.sin(gait) * stride + Math.sin(shuffle) * shuffleAmp;
+      const heavy = 1 + slug * .7;
+
+      // Legs: sitting ↔ standing, the stride, the dangle when airborne; kept vertical under a lean.
+      const legLean = cur.lean * (1 - sit) * (1 - lie) * .85;
       hips.forEach((h, i) => {
         const s = i === 0 ? 1 : -1;
-        h.rotation.x = (1 - p.sit) * (1.42 + s * swing * .45 - p.dangle * .18);
-        h.rotation.z = -s * p.dangle * .06;
+        h.rotation.x = (1 - sit) * (1.42 + s * swing * .45 - cur.dangle * .18) - legLean - tuck * .6 * sit;
+        h.rotation.z = -s * cur.dangle * .06 - s * brace * .05;
       });
-      ankles.forEach((a, i) => { const s = i === 0 ? 1 : -1; a.rotation.x = -(1 - p.sit) * 1.42 + p.dangle * .55 + Math.max(0, -s * swing) * .3; });
-      // Arms hang from the shoulder; the guard brings both up and forward, the punch drives the right.
+      ankles.forEach((a, i) => { const s = i === 0 ? 1 : -1; a.rotation.x = -(1 - sit) * 1.42 + cur.dangle * .55 + Math.max(0, -s * swing) * .3 + tuck * .4; });
+
+      // Arms: hanging, guard, punch, hold; combat tremor; the sluggish droop; get-up push and brace.
+      const tremor = tense * Math.sin(t * 29) * .012;
+      const sag = slug * (.18 + .1 * Math.max(0, Math.sin(t * .9)));
       shoulders.forEach((sh, i) => {
         const right = i === 1, s = right ? 1 : -1;
-        // hold: his right arm lifted off the ground and out to the side, where Hiro takes his hand.
-        const fwd = p.guard * .75 + (right ? p.punch * 1.05 : -p.punch * .25) + (!right ? p.hold * .5 : 0) + Math.sin(p.gait + (right ? 0 : Math.PI)) * p.stride * .22;
-        // Lying down the arms rest back along the ground instead of reaching up.
-        sh.rotation.x = -fwd + p.lie * (1 - p.hold) * .35;
-        sh.rotation.z = s * (p.guard * .28 + p.dangle * .32 + (!right ? p.hold * .55 : 0));
-        sh.rotation.y = -s * p.guard * .2;
+        const guard = cur.guard * (1 - slug * .3);
+        const fwd = guard * (.75 + tense * .12) + (right ? cur.punch * 1.05 : -cur.punch * .25) + (!right ? cur.hold * .5 : 0)
+          + Math.sin(gait + (right ? 0 : Math.PI)) * stride * .22 * heavy - sag * (1 - guard) + tremor
+          - push * .9 + brace * .25;
+        // Lying, the arms rest back along the ground.
+        sh.rotation.x = -fwd + lie * (1 - cur.hold) * .35;
+        sh.rotation.z = s * (guard * .28 + cur.dangle * .32 + (!right ? cur.hold * .55 : 0) + push * .2 + brace * .32 - sag * .05 + tense * .04);
+        sh.rotation.y = -s * guard * .2;
       });
-      // Body: stand height, lean, a heavy dip on each step, lying back on the ground.
-      const drop = T.MathUtils.lerp(standDrop, sitDrop, p.sit);
-      const bob = Math.abs(Math.cos(p.gait)) * p.stride * .1;
-      body.position.y = T.MathUtils.lerp(drop - bob, lieDrop, p.lie);
-      body.rotation.set(p.lean * (1 - p.lie) - p.lie * Math.PI / 2, 0, Math.sin(p.gait) * p.stride * .05 * (1 - p.lie));
-      // Lying on his back the shell pivots about its seat; shift him so he lies centred on the spot.
-      body.position.z = p.lie * .9;
-      root.rotation.y = p.yaw;
-      if (headNode) headNode.rotation.set(headBase.x + p.head[0], headBase.y + p.head[1], headBase.z * (1 - p.guard) + p.head[2]);
-      eyeMat.color.copy(p.eyes).multiplyScalar(1 + p.eyeGlow * .8);
+
+      // Body: lean, the weight shift and roll over the stance foot, the jiggle.
+      const shift = Math.sin(gait) * stride * .075 * heavy;
+      body.rotation.set(cur.lean * (1 - lie) - lie * Math.PI / 2, 0, (Math.sin(gait) * stride * .055 * heavy + Math.sin(shuffle) * shuffleAmp * .04) * (1 - lie));
+      body.position.set(shift * (1 - lie), 0, lie * .9);
+      // Combat: a coiled, ready bounce, sunk a little lower. Sluggish: a periodic hitch.
+      const bounce = tense * (Math.sin(t * 5.2) * .012 - .05) * (1 - stride);
+      const hitch = slug * Math.pow(Math.max(0, Math.sin(t * 2.7)), 18) * -.035;
+      const sq = cur.squash;
+      body.scale.set(1 + sq * .03, 1 - sq * .045, 1 + sq * .03);
+      // Find the lowest point of the shell (not the jets or the bay) and sit it on the ground.
+      root.rotation.y = cur.yaw;
+      root.updateMatrixWorld(true);
+      let low = Infinity;
+      for (const m of shell) { box.copy(m.geometry.boundingBox!).applyMatrix4(m.matrixWorld); low = Math.min(low, box.min.y); }
+      const parentY = root.parent ? root.parent.matrixWorld.elements[13] : 0;
+      body.position.y = root.position.y + parentY - low + bounce + hitch;
+      if (headNode) {
+        const lead = T.MathUtils.clamp(yawErr * .55, -.5, .5);
+        headNode.rotation.set(headBase.x + cur.h0 + tense * .1 + slug * .1 + tuck * .3 - push * .1, headBase.y + cur.h1 + lead, headBase.z * (1 - cur.guard) + cur.h2);
+      }
+      eyeMat.color.copy(p.eyes).multiplyScalar(1 + p.eyeGlow * (.8 + tense * .25 * (.5 + .5 * Math.sin(t * 6))));
+      p.getUp = 0; p.tension = 0; p.sluggish = 0;
       // Jets: power, with a broken stutter when the limit starves them.
       const stutter = p.sputter > 0 ? (Math.sin(t * 41) * Math.sin(t * 13.7) > .1 ? 1 : .15) : 1;
       const power = p.thrust * T.MathUtils.lerp(1, stutter * (.35 + .25 * Math.sin(t * 9)), p.sputter);

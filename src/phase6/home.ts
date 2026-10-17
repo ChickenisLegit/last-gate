@@ -1,6 +1,9 @@
 import * as T from 'three';
 import { SceneKit, seeded, type Pose } from '../phase2/SceneKit';
+import { buildSanFransokyo } from './sanFransokyo';
 import { chipOutline } from '../characters/RedChip.js';
+import type { Pose as BaymaxPose } from './baymax';
+import type { HiroPose } from '../characters/HiroModel';
 
 /**
  * The other side: San Fransokyo as it should be, quiet at dusk. A small lawn on the waterfront,
@@ -78,26 +81,8 @@ export function createHome() {
   const petalGeo = k.ownGeometry(new T.BufferGeometry()); petalGeo.setAttribute('position', new T.BufferAttribute(petalPos, 3));
   const petals = new T.Points(petalGeo, k.ownMaterial(new T.PointsMaterial({ color: '#f3c2cd', size: .06, sizeAttenuation: true })));
   k.root.add(petals);
-  // Across the water: the bridge's two red towers and its cables, the hills, the lit city.
-  const bridge = new T.Group(); bridge.position.set(-20, -1.2, -110); bridge.rotation.y = .12; k.root.add(bridge);
-  k.box({ p: [0, 9, 0], s: [170, .8, 4] }, k.standard('#7b6e6a', .8, .1), bridge);
-  for (const x of [-38, 38]) {
-    for (const side of [-1, 1]) k.box({ p: [x, 20, side * 2.2], s: [1.4, 40, 1.2] }, vermilion, bridge);
-    for (const y of [24, 38]) k.box({ p: [x, y, 0], s: [1.6, 1.2, 6] }, vermilion, bridge);
-    k.box({ p: [x, 40.5, 0], s: [10, .9, 7] }, vermilion, bridge);
-  }
-  for (const side of [-1, 1]) {
-    const pts: T.Vector3[] = []; for (let i = 0; i <= 60; i++) { const x = -84 + i * 2.8; pts.push(new T.Vector3(x, 9.5 + 29 * Math.pow(Math.min(1, Math.abs(x) / 38), 2), side * 2.1)); }
-    k.line(pts, '#8a4a40', .9, bridge);
-  }
-  for (let i = 0; i < 8; i++) { const m = k.mesh(k.sphereGeo, k.standard('#4e5466', .95, 0), { p: [-150 + i * 42, -12, -230], s: [40, 26 + random() * 14, 18] }); void m; }
-  const windows: Pose[] = [];
-  for (let i = 0; i < 26; i++) {
-    const x = -90 + i * 7 + rand(-1, 1), h = rand(10, 34), z = -185 + rand(-8, 8), w = rand(4, 6.5);
-    k.box({ p: [x, h / 2 - 1.2, z], s: [w, h, 5] }, city);
-    for (let y = 2; y < h - 2; y += 2.4) for (let c = -1; c <= 1; c++) if (random() > .45) windows.push({ p: [x + c * w * .28, y - 1.2, z + 2.55], s: [.8, .9, .05] });
-  }
-  k.instances(windows, k.basic('#ffcf8a', 1.25));
+  // Across the water: San Fransokyo at sunset (sanFransokyo.ts).
+  const sf = buildSanFransokyo(k, new T.Vector3(-.25, .06, -1));
   // A tram line pole and overhead wire running along the promenade.
   for (const x of [-20, 0, 20]) k.box({ p: [x, 3, 11], s: [.12, 6, .12] }, rail);
   k.line([new T.Vector3(-30, 5.8, 11), new T.Vector3(0, 5.5, 11), new T.Vector3(30, 5.8, 11)], '#2f3640', .9);
@@ -108,7 +93,7 @@ export function createHome() {
   const back = new T.DirectionalLight('#8f86c9', .7); back.position.set(10, 8, 20); k.root.add(back);
   for (const p of lamps) { const l = new T.PointLight('#ffcf8a', 3, 9, 1.8); l.position.copy(p); k.root.add(l); }
   // The gate on this side, closing behind them.
-  const gateMat = k.ownMaterial(new T.MeshBasicMaterial({ color: '#b9a6ff', transparent: true, opacity: 0, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false }));
+  const gateMat = k.ownMaterial(new T.MeshBasicMaterial({ color: '#b9a6ff', side: T.DoubleSide, transparent: true, opacity: 0, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false }));
   const gate = k.mesh(k.ownGeometry(new T.CircleGeometry(3.1, 64)), gateMat, { p: [HOME_GATE.x, HOME_GATE.y, HOME_GATE.z] });
   const gateLight = new T.PointLight('#9a86e0', 0, 18, 1.6); gateLight.position.copy(HOME_GATE).add(new T.Vector3(0, 0, -1.5)); k.root.add(gateLight);
 
@@ -122,6 +107,7 @@ export function createHome() {
     background: new T.Color('#2a2440'),
     update(t: number, dt: number, s: { gate: number; careBlink: number }) {
       waterMat.uniforms.uTime.value = t;
+      sf.update(t, dt);
       for (let i = 0; i < PETALS; i++) {
         const o = i * 3; petalPos[o] += dt * (.35 + Math.sin(t + i) * .1); petalPos[o + 1] -= dt * (.18 + (i % 5) * .03); petalPos[o + 2] += Math.sin(t * .7 + i) * dt * .1;
         if (petalPos[o + 1] < 0) { petalPos[o + 1] = 5; petalPos[o] = rand(-12, 2); }
@@ -133,7 +119,117 @@ export function createHome() {
       care.glow.color.set('#9dffc8').multiplyScalar(.4 + pulse * 2.2);
       careLight.intensity = pulse * 2.4;
     },
-    dispose() { k.dispose(); },
+    dispose() { sf.dispose(); k.dispose(); },
   };
 }
 export type Home = ReturnType<typeof createHome>;
+
+// ─────────────────────────────────────────────────────────────── directing the home beat
+
+const RED_OFF = new T.Color('#0b0f11'), CARE_WHITE = new T.Color('#f4f8ff');
+const sm = (e: number, a: number, b: number) => T.MathUtils.smoothstep(e, a, b);
+const v = (x: number, y: number, z: number) => new T.Vector3(x, y, z);
+/** Where Hiro kneels at Baymax's side (clear of his arm), and where he steps back to as he gets up. */
+export const HIRO_KNEEL = new T.Vector3(HOME_BAYMAX.x + 2.5, 0, HOME_BAYMAX.z + .35);
+export const HIRO_STAND = new T.Vector3(HOME_BAYMAX.x + 2.75, 0, HOME_BAYMAX.z - 1.05);
+/** Where Hiro steps in to for the fist bump. */
+export const HIRO_BUMP = new T.Vector3(HOME_BAYMAX.x + 1.65, 0, HOME_BAYMAX.z - 1.55);
+
+export type HomeCast = {
+  baymax: { root: T.Object3D; pose: BaymaxPose; dock: T.Object3D; handWorld(out?: T.Vector3): T.Vector3; headWorld(out?: T.Vector3): T.Vector3 };
+  hiro: { root: T.Object3D; pose: HiroPose };
+};
+export type HomeShot = { stage: string; e: number; t: number; dt: number; care: 'ground' | 'held' | 'seated'; dragPos: T.Vector3; returning: number; camera: T.Camera };
+
+/**
+ * Everything the home set does each frame: the gate closing, the healthcare chip on the grass (or
+ * in the hand, or seated in his dock), Baymax and Hiro, and where the camera wants to be.
+ *
+ *   home    Baymax on his back, Hiro kneeling at his side; the chip waits on the grass.
+ *   seated  the chip is in; Hiro waits with a hand on him.
+ *   boot    the bay closes; his eyes come on with the chime; Hiro gets up and steps back; Baymax
+ *           gets up in stages (sits up, settles, leans over his feet, pushes up, wobbles still);
+ *           he looks down at Hiro; fist bump.
+ *   end     the two of them at the rail, the city across the water at sunset.
+ *
+ * Returns the camera target and lens; `cue` fires the sounds the moment they happen.
+ */
+export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime(): void; step(level: number): void; done(): void }, camPos: T.Vector3, look: T.Vector3) {
+  const { baymax, hiro } = cast, P = baymax.pose, H = hiro.pose;
+  const { stage, e, t, dt } = s;
+  home.update(t, dt, { gate: 0, careBlink: s.care === 'seated' ? 0 : 1 });
+  baymax.root.position.copy(HOME_BAYMAX);
+  Object.assign(P, { yaw: Math.PI, lie: 1, sit: 0, guard: 0, open: 4.6, chipInBay: false, eyeGlow: 0, careSeated: s.care === 'seated' });
+  P.eyes.copy(RED_OFF);
+  hiro.root.position.copy(HIRO_KNEEL); Object.assign(H, { yaw: -Math.PI / 2, kneel: 1, look: -.15, lookUp: -.25, reach: 0, walk: 0, stride: 0, bump: 0 });
+  camPos.set(6.4, 3.5, 5.2); look.set(-.7, .8, 2.9);
+  let fov = 44, shot = stage;
+
+  // The healthcare chip: on the grass, in the hand, sliding back, or seated in his dock.
+  const care = home.care.chip;
+  if (s.care !== 'seated') {
+    if (s.care === 'held') { care.position.copy(s.dragPos); care.lookAt(s.camera.position); care.scale.setScalar(1.6); }
+    else if (s.returning > 0) { care.position.copy(s.dragPos); }
+    else { care.position.copy(CARE_CHIP_AT); care.rotation.set(-Math.PI / 2, 0, .6); care.scale.setScalar(1); }
+    home.careLight.position.copy(care.position).add(v(0, .25, 0));
+    if (stage === 'home') {
+      // Coming through: the camera settles as Hiro drops to his knee beside him.
+      camPos.set(3, 3.8, 11.5).lerp(v(6.4, 3.5, 5.2), sm(e, 0, 3.5)); look.set(-.5, .8, 1.5).lerp(v(-.7, .8, 2.9), sm(e, 0, 3.5));
+      H.kneel = sm(e, .8, 2.4); H.reach = .35 * sm(e, 2, 3); H.lookUp = -.3;
+    }
+    return { fov, shot };
+  }
+  if (care.parent !== baymax.dock) { baymax.dock.add(care); care.position.set(0, 0, .004); care.rotation.set(0, 0, 0); care.scale.setScalar(1); }
+  P.careSeated = true;
+  if (stage === 'seated') { H.reach = .55; H.lookUp = -.2; return { fov, shot }; }
+
+  // boot / end. `be` runs on past the end of boot so the end holds the final pose.
+  const be = stage === 'end' ? 40 : e;
+  // 0–1.6 the bay closes. 1.9 eyes on, chime.
+  P.open = 4.6 * (1 - sm(be, .2, 1.6));
+  const eyesOn = sm(be, 1.9, 2.9);
+  P.eyes.copy(RED_OFF).lerp(CARE_WHITE, eyesOn); P.eyeGlow = eyesOn * .25;
+  if (stage === 'boot' && be > 1.95 && be - dt <= 1.95) cue.chime();
+  // 2.0–3.4 his head lifts a little off the grass: he looks for who's there.
+  P.head[0] = -.12 * sm(be, 2.2, 3.2) * (1 - sm(be, 4.4, 5.4));
+  P.head[1] = -.35 * sm(be, 2.4, 3.4) * (1 - sm(be, 4.2, 5));
+  // 4.4–10.4 the get-up.
+  const g = T.MathUtils.clamp((be - 4.4) / 6, 0, 1);
+  if (g > 0) P.getUp = g;
+  if (g >= 1) { P.lie = 0; P.sit = 0; P.getUp = 0; P.lean = 0; }
+  // 10.6–12 he looks down at Hiro, head tilted. 12.4–14.2 the fist bump.
+  const lookDown = sm(be, 10.6, 12);
+  P.head[0] += .22 * lookDown; P.head[1] -= .38 * lookDown; P.head[2] = -.22 * lookDown * (1 - sm(be, 13.5, 14.5) * .5);
+  const bump = sm(be, 12.6, 13.8) * (1 - sm(be, 15.2, 16.4) * .7);
+  P.hold = bump * .8;
+
+  // Hiro: kneeling with a hand on his shell; at the chime he sits back; 3.0–4.2 he gets up and
+  // 3.6–5.2 walks back out of reach as Baymax starts to move; watches him rise; steps in for
+  // the bump.
+  const getUpH = sm(be, 3, 4.2), back = sm(be, 3.6, 5.2), stepIn = sm(be, 12, 13.2);
+  H.kneel = 1 - getUpH; H.reach = .4 * (1 - sm(be, 1.2, 2.2));
+  const at = HIRO_KNEEL.clone().lerp(HIRO_STAND, back).lerp(HIRO_BUMP, stepIn);
+  hiro.root.position.copy(at);
+  // Walking: legs move only while he is actually travelling.
+  const moving = (back > 0 && back < 1) || (stepIn > 0 && stepIn < 1);
+  H.stride = moving ? .55 : 0; H.walk = (be - 3.6) * 6.5;
+  // Facing: toward Baymax's middle (or his fist for the bump).
+  const target = stepIn > 0 ? baymax.handWorld() : baymax.root.position.clone().add(v(0, 0, -.4));
+  H.yaw = Math.atan2(target.x - at.x, target.z - at.z) - (back > 0 && back < 1 ? .5 * Math.sin(Math.PI * back) : 0);
+  H.lookUp = T.MathUtils.lerp(-.2, .15, sm(be, 1.9, 2.6)) + .7 * sm(be, 5, 8) - .2 * stepIn;
+  H.bump = sm(be, 12.9, 13.7) * (1 - sm(be, 15.2, 16.4));
+  if (stage === 'boot' && (Math.floor(H.walk / Math.PI) !== Math.floor((H.walk - dt * 6.5) / Math.PI)) && moving) cue.step(.15);
+
+  // Camera: in front, low, his face and Hiro beside him as he comes up; then wider for the bump.
+  camPos.set(3.4, 2.1, -7.6).lerp(v(2.3, 2.7, -9.4), sm(be, 4, 10)); look.set(-1.2, 1.4, 2).lerp(v(-1.3, 2, 2), sm(be, 4, 10));
+  if (be > 11.8) { camPos.lerp(v(.9, 2, -6.9), sm(be, 11.8, 13.4)); look.lerp(v(-1.7, 1.8, 1.2), sm(be, 11.8, 13.4)); }
+  fov = 40;
+  if (stage === 'end') {
+    // Behind the two of them, high and wide: side by side, looking out over the rail at the city.
+    hiro.root.position.set(HOME_BAYMAX.x + 1.75, 0, HOME_BAYMAX.z - .5); Object.assign(H, { yaw: Math.PI, stride: 0, bump: 0, lookUp: .05, look: .25, kneel: 0, reach: 0 });
+    P.hold = 0; P.head[0] = .08; P.head[1] = -.3; P.head[2] = -.12;
+    camPos.set(5.2, 4.6, 15.5).lerp(v(4.4, 5.6, 17.5), sm(e, 0, 20)); look.set(-6, 7, -60); fov = 46; shot = 'end';
+  }
+  if (stage === 'boot' && be > 17) cue.done();
+  return { fov, shot };
+}

@@ -1,24 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Canvas } from '@react-three/fiber';
 import * as T from 'three';
 import { reducedMotion } from '../config/experience';
-import { World, type RunState } from './World';
+import { World, EMERGE, CLUE_AT, CLUE_END, type RunState } from './World';
 import { PhaseSixAudio } from './audio';
-import { Card, FadeIn, RegulatorToggle, OutputMeter, DragHand, RingTask } from './ui';
-import { ROUTE_LENGTH } from './street';
-import { useP6, begin, go, skipBeat, now, setOf, isInsert, type Stage } from './store';
-import { usePhaseSixEntry, type PhaseSixStep } from './entry';
+import { FadeIn, RegulatorToggle, OutputMeter, DragHand, RingTask, Panel, HiroLine, type Row } from './ui';
+import { ROUTE_LENGTH, ringLive } from './street';
+import { useP6, begin, go, skipBeat, now, setOf, isInsert, atLeast, type Stage } from './store';
+import { type PhaseSixStep } from './entry';
+import { SoundToggle } from '../audio/SoundToggle';
 import './phase-six.css';
+import { EndCard } from './EndCard';
 
 /**
- * Phase 6. The combat chip brings Baymax back up at the relay. The regulator holds him to 35%,
- * which only buys time: Hiro runs for the old portal site and brings its frame back, but it needs
- * one more piece. He won't leave Baymax, so he lets him come at full power, then cuts the power
- * mid-air. Baymax falls, his chest opens, and the chip inside is the piece the socket needs.
- * Hiro hauls him through, and on the other side puts the healthcare chip back.
+ * Phase 6, through Hiro's eyes. The combat chip brings Baymax back up at the relay. Hiro's
+ * regulator holds him to 35%, which only buys time: Hiro runs for the old portal site and brings
+ * its frame back. He won't leave Baymax, so he lets him come at full power and cuts him back to 35%
+ * mid-air. Powered, the gate tries and folds shut: its reader has locked onto something, and Hiro
+ * can't tell what. When Baymax falls and his bay opens, the combat chip and the reader beat in the
+ * same rhythm: the chip, from this side, is what the gate is locked onto. Hiro pulls it, the reader
+ * lets go, and he plays the relay's capture of the healthcare chip's last transmission into it.
+ * The frame opens onto where that signal went, and Hiro hauls him through. On the other side he
+ * puts the healthcare chip back.
+ *
+ * The page stays out of the way: one small panel for the moment, readings rather than sentences.
  */
 
-const PLACE: Record<ReturnType<typeof setOf>, string> = { relay: 'TELEMETRY RELAY', street: 'GATE SITE', home: 'SAN FRANSOKYO' };
+const PLACE: Record<ReturnType<typeof setOf>, string> = { relay: 'North relay 06', street: 'Old portal research site', home: 'San Fransokyo' };
 
 /** Re-renders on a timer while a stage runs, for UI that appears partway through it. */
 function useStageTime(stage: Stage) {
@@ -38,8 +46,10 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
   const onReady = useCallback(() => { setReady(true); requestAnimationFrame(() => requestAnimationFrame(() => window.dispatchEvent(new Event('lastgate:scene-ready')))); }, []);
   const grab = useRef<HTMLDivElement>(null), drop = useRef<HTMLDivElement>(null);
   const hints = useMemo(() => ({ grab, drop }), []);
-  const run = useRef<RunState>({ p: 0, speed: 0, forward: false, pointer: new T.Vector2(), impulse: 0 });
-  const [progress, setProgress] = useState(0);
+  const warp = useRef<SVGFEDisplacementMapElement>(null), world = useRef<HTMLDivElement>(null), hurt = useRef<HTMLDivElement>(null);
+  const fx = useMemo(() => ({ warp, world, hurt }), []);
+  const run = useRef<RunState>({ p: 0, speed: 0, forward: false, pointer: new T.Vector2(), impulse: 0, gap: 8, dread: 0, hiro: [0, 0], bay: [0, 0], misses: 0 });
+  const [live, setLive] = useState({ p: 0, gap: 8, dread: 0, hiro: [0, 0] as [number, number], bay: [0, 0] as [number, number], misses: 0 });
   const [moved, setMoved] = useState(false);
   const set = setOf(s.stage);
 
@@ -49,6 +59,15 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
     window.addEventListener('pointerdown', unlock); window.addEventListener('keydown', unlock);
     return () => { window.removeEventListener('pointerdown', unlock); window.removeEventListener('keydown', unlock); };
   }, [audio]);
+
+  // The pointer is where Hiro looks (a little, everywhere; a lot on the run). The page reads the live numbers.
+  useEffect(() => {
+    const r = run.current;
+    const move = (ev: PointerEvent) => r.pointer.set((ev.clientX / innerWidth - .5) * 2, (ev.clientY / innerHeight - .5) * 2);
+    const tick = window.setInterval(() => setLive({ p: r.p, gap: r.gap, dread: r.dread, hiro: [...r.hiro], bay: [...r.bay], misses: r.misses }), 200);
+    window.addEventListener('pointermove', move);
+    return () => { window.clearInterval(tick); window.removeEventListener('pointermove', move); };
+  }, []);
 
   // Development: Ctrl+M skips to the next beat (and keeps the earlier phases' handler out of it).
   useEffect(() => {
@@ -61,124 +80,158 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
     return () => window.removeEventListener('keydown', skip, true);
   }, []);
 
-  // The run: hold W, Space, the up arrow or the mouse; scroll for a step. The pointer looks around.
+  // The run: hold W, Space, the up arrow or the mouse; scroll for a step.
   useEffect(() => {
     if (s.stage !== 'escape') return;
     const r = run.current, fwd = ['KeyW', 'ArrowUp', 'Space'];
     const down = (ev: KeyboardEvent) => { if (fwd.includes(ev.code) && !ev.ctrlKey) { ev.preventDefault(); r.forward = true; setMoved(true); } };
     const up = (ev: KeyboardEvent) => { if (fwd.includes(ev.code)) r.forward = false; };
     const wheel = (ev: WheelEvent) => { ev.preventDefault(); if (ev.deltaY > 0) { r.impulse = Math.min(1.4, r.impulse + .45); setMoved(true); } };
-    const move = (ev: PointerEvent) => r.pointer.set((ev.clientX / innerWidth - .5) * 2, (ev.clientY / innerHeight - .5) * 2);
     const press = (ev: PointerEvent) => { if (ev.button === 0 && !(ev.target as HTMLElement).closest('button')) { r.forward = true; setMoved(true); } };
     const release = () => { r.forward = false; };
-    const tick = window.setInterval(() => setProgress(r.p), 250);
     window.addEventListener('keydown', down); window.addEventListener('keyup', up); window.addEventListener('wheel', wheel, { passive: false });
-    window.addEventListener('pointermove', move); window.addEventListener('pointerdown', press); window.addEventListener('pointerup', release); window.addEventListener('blur', release);
+    window.addEventListener('pointerdown', press); window.addEventListener('pointerup', release); window.addEventListener('blur', release);
     return () => {
-      window.clearInterval(tick); r.forward = false;
+      r.forward = false;
       window.removeEventListener('keydown', down); window.removeEventListener('keyup', up); window.removeEventListener('wheel', wheel);
-      window.removeEventListener('pointermove', move); window.removeEventListener('pointerdown', press); window.removeEventListener('pointerup', release); window.removeEventListener('blur', release);
+      window.removeEventListener('pointerdown', press); window.removeEventListener('pointerup', release); window.removeEventListener('blur', release);
     };
   }, [s.stage]);
 
   const insert = isInsert(s.stage);
   const toggle = (next: Stage) => () => { audio.unlock(); go(next); };
-  const replay = () => usePhaseSixEntry.setState(st => ({ active: true, step: 'wake', run: st.run + 1 }));
-  const metres = Math.max(0, Math.round((1 - progress) * ROUTE_LENGTH + 12));
+  const replay = () => {
+    // A fresh document resets all six chapter stores and releases their scenes/audio.
+    const url = new URL(window.location.href);
+    for (const key of ['phase2', 'recovery', 'phase4', 'phase5', 'phase6']) url.searchParams.delete(key);
+    url.hash = '';
+    window.location.assign(url.href);
+  };
+  const metres = Math.max(0, Math.round((1 - live.p) * ROUTE_LENGTH + 14));
+  const pulled = s.chip === 'out' ? now() - s.pulledAt : 0;
+  const homeUi = s.stage !== 'home' || e > EMERGE + 1.2;
 
-  return <main className={`p6 p6-set-${set} p6-stage-${s.stage} ${insert ? 'p6-insert' : ''}`} aria-label="Phase 6: Baymax wakes again">
-    <div className="p6-world">
-      <Canvas dpr={[1, 1.4]} camera={{ fov: 46, near: .02, far: 900, position: [2, 2, 2] }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
-        <World audio={audio} hints={hints} run={run} onReady={onReady} />
+  const st = s.stage;
+
+  // ---- Hiro's line for the moment.
+  const line = st === 'wake' && e > 5.4 ? 'Baymax? Hey, buddy. It’s me.'
+    : st === 'limited' && e > 9.8 ? 'The trace went to the old gate. That’s where he is.'
+    : st === 'escape' && live.dread > .75 ? 'Don’t look back. Don’t look back.'
+    : st === 'escape' && live.p < .2 ? 'Go, go, go.'
+    : st === 'powered' && e > .7 && e < 2.4 ? 'Come on…'
+    : st === 'powered' && e >= 2.4 ? 'It tried. Something’s still missing.'
+    : (st === 'choice' || st === 'switchOff') && e > .5 ? 'I’m not leaving you again.'
+    : st === 'flyin' && e > 2.4 ? 'Wait for it.'
+    : st === 'faceoff' && e > .4 ? 'I’m right here. Come on.'
+    : st === 'carry' && s.chip !== 'out' && e > CLUE_AT + .3 && e < CLUE_END ? 'The chip…'
+    : st === 'carry' && s.chip !== 'out' && e >= CLUE_END ? 'The gate’s locked onto his chip.'
+    : st === 'carry' && s.chip === 'out' && pulled > .6 && pulled < 3.4 ? 'It let go.'
+    : st === 'carry' && s.chip === 'out' && pulled >= 3.4 && s.cart !== 'slot' ? 'It needs somewhere to go. Where his healthcare chip went.'
+    : st === 'bloom' && e > 2 && e < 6 ? 'There you are.'
+    : st === 'bloom' && e > 8.6 ? 'Come on. We’re going home.'
+    : st === 'home' && e > 1.4 && e < EMERGE ? 'Almost. Almost.'
+    : null;
+
+  // ---- What each panel reads.
+  const anyLive = ringLive(s.angles).some(x => x >= 1);
+  const gateRows = (control: Row, gate: Row = ['Gate', 'Locked', 'red']): Row[] => [['Power', 'Online', 'ok'], ['Field', 'Ready', 'cyan'], gate, control];
+  const drag = (text: string) => <span className="p6-withhand"><DragHand />{text}</span>;
+  const style = { '--dread': live.dread.toFixed(2) } as CSSProperties;
+
+  return <main className={`p6 p6-set-${set} p6-stage-${st} ${insert ? 'p6-insert' : ''}`} style={style} aria-label="Phase 6: Baymax wakes again">
+    <SoundToggle />
+    <div className="p6-world" ref={world}>
+      <Canvas dpr={[1, 1.4]} camera={{ fov: 62, near: .02, far: 900, position: [2, 2, 2] }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
+        <World audio={audio} hints={hints} fx={fx} run={run} onReady={onReady} />
       </Canvas>
     </div>
+    <svg className="p6-filters" aria-hidden="true" width="0" height="0">
+      <filter id="p6-warp" x="-10%" y="-10%" width="120%" height="120%">
+        <feTurbulence type="fractalNoise" baseFrequency="0.018 0.03" numOctaves="2" seed="4"><animate attributeName="baseFrequency" dur="1.2s" values="0.018 0.03;0.026 0.02;0.018 0.03" repeatCount="indefinite" /></feTurbulence>
+        <feDisplacementMap ref={warp} in="SourceGraphic" scale="0" xChannelSelector="R" yChannelSelector="G" />
+      </filter>
+    </svg>
     <div className="p6-grade" aria-hidden="true" />
-    <div className="p6-bars" aria-hidden="true" />
-    <header className="p6-brand"><span>THE LAST GATE</span><small>PHASE 06 · {insert ? 'REGULATOR' : s.stage === 'escape' ? 'SERVICE STREET' : PLACE[set]}</small></header>
+    <div className="p6-dread" aria-hidden="true" />
+    <div className="p6-hurt" ref={hurt} aria-hidden="true" />
+
+    <header className="p6-top">
+      <div className="p6-brand"><span>The Last Gate</span><small>{st === 'escape' ? 'Service street' : PLACE[set]}</small></div>
+    </header>
 
     {/* Drag targets, placed over the 3D each frame. */}
     <div ref={grab} className="p6-hint p6-hint-grab" aria-hidden="true"><i /></div>
     <div ref={drop} className="p6-hint p6-hint-drop" aria-hidden="true"><i /></div>
 
-    {ready && <>
-      {/* 1 · Wake */}
-      {(s.stage === 'wake' && e > 2.4 || s.stage === 'switchOn1') && <Card id="wake" className="p6-left">
-        <p className="p6-kicker"><span className="p6-dot red" />RELAY STATION</p>
-        <h1>Baymax is moving.</h1>
-        <p className="p6-body">The combat chip is still running him.</p>
+    {ready && homeUi && <div className="p6-side" role="status">
+      {/* 1 · Wake: the regulator, on standby. */}
+      {(st === 'wake' && e > 2.4 || st === 'switchOn1') && <Panel id="wake" label="Power regulator" tone="red"
+        rows={[['Status', s.regulator ? 'Active' : 'Standby', s.regulator ? 'orange' : ''], ['Output limit', '35%'], ['Baymax', 'Combat chip', 'red']]}>
         <RegulatorToggle action="on" busy={insert} onPress={toggle('switchOn1')} />
-      </Card>}
+      </Panel>}
 
-      {/* 2 · Regulator on */}
-      {s.stage === 'limited' && <Card id={e > 9.6 ? 'buys-time' : 'limited'} className="p6-left">
-        <p className="p6-kicker"><span className="p6-dot" />REGULATOR ON</p>
-        {e > 9.6 ? <><h1>It only buys time.</h1><p className="p6-body">He’s still coming. Just slower.</p></> : <><h1>Held to 35%.</h1><p className="p6-body">Watch what that does to him.</p></>}
+      {/* 2 · Held to 35%: the cap as readings, then the way out. */}
+      {st === 'limited' && e <= 9.6 && <Panel id="limited" label="Power regulator"
+        rows={[['Status', 'Active', 'orange'], ['Thrusters', 'Restricted'], ['Motor output', 'Restricted'], ['Combat power', 'Restricted']]}>
         <OutputMeter value={35} />
-        {e > 9.6 && <button className="p6-btn" onClick={toggle('escape')}>GET TO THE PORTAL SITE</button>}
-      </Card>}
-      {s.stage === 'limited' && e > 1.6 && e < 4.4 && <FadeIn className="p6-note" key="thrust"><b>THRUST</b>not enough to fly</FadeIn>}
-      {s.stage === 'limited' && e > 8 && e < 10.5 && <FadeIn className="p6-note p6-note-b" key="arm"><b>ARM</b>output capped</FadeIn>}
+      </Panel>}
+      {st === 'limited' && e > 9.6 && <Panel id="buys-time" label="Power regulator"
+        rows={[['Baymax', 'Slowed · still coming', 'red'], ['Trace', 'Old gate site'], ['RX/06 capture', 'Saved', 'orange']]}>
+        <button className="p6-btn" onClick={toggle('escape')}>Run for the gate <i>→</i></button>
+      </Panel>}
 
-      {/* 3 · Escape */}
-      {s.stage === 'escape' && <>
-        <div className="p6-objective" role="status"><span>OBJECTIVE</span><b>Get to the portal site.</b><small>{metres} m</small></div>
-        {!moved && <FadeIn className="p6-hint-line" delay={.6}>Hold <kbd>W</kbd> or the mouse to run</FadeIn>}
-        <p className="sr-only">Hold W, Space or the mouse button to run along the street, or scroll to step. Move the pointer to look around.</p>
-      </>}
+      {/* 3 · The run. */}
+      {st === 'escape' && <Panel id="run" label="Old gate site" rows={[['Distance', `${metres} m`, 'orange'], ['Baymax', 'Following', 'red']]} />}
 
-      {/* 4 · The gate site */}
-      {s.stage === 'gate' && <Card id="gate" className="p6-left p6-task">
-        <p className="p6-kicker"><span className="p6-dot" />THE OLD FRAME</p>
-        <h1>Bring the ring back.</h1>
-        <p className="p6-body">Turn each segment so its in contact meets the out contact around it.</p>
+      {/* 4 · The gate: power it. It tries, and folds shut. */}
+      {st === 'gate' && <Panel id="gate" label="The Last Gate" tone="cyan" title="Restore portal power"
+        rows={[['Power', anyLive ? 'Partial' : 'Offline', anyLive ? 'orange' : ''], ['Field', 'Unstable'], ['Gate', 'Closed']]}>
         <RingTask audio={audio} />
-      </Card>}
-      {s.stage === 'powered' && <Card id="powered" className="p6-left">
-        <p className="p6-kicker"><span className="p6-dot dusk" />FRAME</p>
-        <h1>Frame powered.</h1>
-        <p className="p6-body">One piece missing.</p>
-      </Card>}
+      </Panel>}
+      {st === 'powered' && <Panel id={e < 2.4 ? 'powered' : 'locked'} label="The Last Gate" tone="cyan"
+        rows={e < 2.4 ? gateRows(['Control input', '…', 'dim'], ['Gate', 'Opening', 'cyan']) : gateRows(['Missing input', 'Unknown', 'red'])} />}
 
-      {/* 5 · The choice */}
-      {(s.stage === 'choice' || s.stage === 'switchOff') && e > .5 && !insert && <FadeIn className="p6-line" as="p" key="line"><small>HIRO</small>I’m not leaving him here.</FadeIn>}
-      {(s.stage === 'choice' && e > 2.6 || s.stage === 'switchOff') && <Card id="choice" className="p6-left p6-compact">
+      {/* 5 · The choice. */}
+      {(st === 'choice' && e > 1.6 || st === 'switchOff') && <Panel id="choice" label="Power regulator" tone="red"
+        rows={[['Status', s.regulator ? 'Active' : 'Off', s.regulator ? 'orange' : 'red'], ['Output limit', s.regulator ? '35%' : 'None']]}>
         <RegulatorToggle action="off" busy={insert} onPress={toggle('switchOff')} />
-      </Card>}
+      </Panel>}
 
-      {/* 6 · The drop */}
-      {(s.stage === 'faceoff' && e > .8 || s.stage === 'switchOn2') && <Card id="faceoff" className="p6-left p6-compact">
-        <p className="p6-kicker warn"><span className="p6-dot red" />FULL POWER</p>
-        <RegulatorToggle action="on" busy={insert} onPress={toggle('switchOn2')} />
-      </Card>}
+      {/* 6 · He comes. A range reading, not a countdown. */}
+      {(st === 'flyin' || st === 'faceoff' || st === 'switchOn2') && <Panel id="range" label="Power regulator" tone="red"
+        rows={[['Status', s.regulator ? 'Active' : 'Off', s.regulator ? 'orange' : 'red'], ['Thrusters', s.regulator ? 'Cut' : 'Full', 'red'], ['Range', st === 'flyin' ? 'Out of range' : 'In range', st === 'flyin' ? 'dim' : 'orange']]}>
+        <RegulatorToggle action="on" busy={insert} disabled={st === 'flyin'} note={st === 'flyin' ? 'Out of range' : undefined} onPress={toggle('switchOn2')} />
+      </Panel>}
 
-      {/* 7 · Open the portal */}
-      {s.stage === 'carry' && <Card id="carry" className="p6-left">
-        <p className="p6-kicker"><span className="p6-dot dusk" />THE MISSING PIECE</p>
-        <h1>The socket needs that chip.</h1>
-        <p className="p6-body p6-withhand"><DragHand />Drag it from his chest to the frame.</p>
-      </Card>}
+      {/* 7 · The chip and the reader beat together. Pull it; then give the gate somewhere to go. */}
+      {st === 'carry' && s.chip !== 'out' && e > 2 && <Panel id={e > CLUE_END ? 'chip' : 'signal'} label="The Last Gate" tone="cyan"
+        title={e > CLUE_END ? 'Pull the combat chip' : undefined}
+        rows={gateRows(e > CLUE_END ? ['Control input', 'Locked · his chip', 'red'] : ['Control input', 'Signal detected', 'red'])}
+        action={e > CLUE_END ? drag('Drag it up out of his chest.') : undefined} />}
+      {st === 'carry' && s.chip === 'out' && pulled > 1 && <Panel id={pulled > 3.6 ? 'cart' : 'clear'} label="The Last Gate" tone="cyan"
+        title={pulled > 3.6 ? 'Play the capture' : undefined}
+        rows={pulled > 3.6 ? [['Control input', 'Clear', 'cyan'], ['Destination', 'None'], ['RX/06', 'Healthcare chip’s last signal', 'orange']] : gateRows(['Control input', 'Clear', 'cyan'])}
+        action={pulled > 3.6 ? drag('Drag the cartridge into the reader.') : undefined} />}
+      {st === 'bloom' && e > 1.2 && e < 7.4 && <Panel id="bloom" label="The Last Gate" tone="cyan"
+        rows={[['Control input', 'RX/06', 'cyan'], ['Gate', 'Open', 'cyan'], ['Field', 'Stable', 'ok']]} />}
 
-      {/* 8 · Home */}
-      {s.stage === 'home' && e > 2.4 && <Card id="home" className="p6-left">
-        <p className="p6-kicker"><span className="p6-dot care" />THE OTHER SIDE</p>
-        <h1>His healthcare chip.</h1>
-        <p className="p6-body p6-withhand"><DragHand />Drag it into his chest.</p>
-      </Card>}
-      {s.stage === 'seated' && <Card id="seated" className="p6-left">
-        <p className="p6-kicker"><span className="p6-dot care" />SEATED</p>
-        <h1>Close him up.</h1>
-        <button className="p6-btn" onClick={toggle('boot')}>CLOSE THE BAY</button>
-      </Card>}
-      {s.stage === 'end' && <div className="p6-end" role="dialog" aria-labelledby="p6-end-title">
-        <Card id="end" className="p6-endcard">
-          <p className="p6-kicker">THE LAST GATE</p>
-          <h2 id="p6-end-title">He’s back.</h2>
-          <p className="p6-body">Same city. Same Baymax.</p>
-        </Card>
-      </div>}
-    </>}
-    <div className={`p6-veil ${s.stage === 'end' && e > 6 ? 'black' : ''}`} key={`veil-${set}`} aria-hidden="true" />
-    {s.stage === 'end' && e > 8 && <FadeIn className="p6-replay"><button className="p6-btn ghost" onClick={replay}>PLAY AGAIN</button></FadeIn>}
+      {/* 8 · Home. */}
+      {st === 'home' && e > EMERGE + 2.4 && <Panel id="home" label="Baymax" title="His healthcare chip"
+        rows={[['Healthcare chip', 'Found', 'ok'], ['Combat chip', 'Removed', 'dim']]} action={drag('Drag it into his chest.')} />}
+      {st === 'seated' && <Panel id="seated" label="Baymax" rows={[['Healthcare chip', 'Seated', 'ok'], ['Chest bay', 'Open']]}>
+        <button className="p6-btn" onClick={toggle('boot')}>Close the bay <i>→</i></button>
+      </Panel>}
+      {st === 'boot' && e > 2.2 && e < 15 && <Panel id="boot" label="Baymax"
+        rows={[['Healthcare', 'Online', 'ok'], ['Combat', 'Removed', 'dim'], ['System', 'Stable', 'ok']]} />}
+    </div>}
+
+    {ready && st === 'escape' && !moved && <FadeIn className="p6-hint-line" delay={.6}>Hold <kbd>W</kbd> or the mouse to run · move the mouse to look</FadeIn>}
+    {ready && st === 'escape' && <p className="sr-only">Hold W, Space or the mouse button to run along the street, or scroll to step. Move the pointer to look around.</p>}
+    {ready && line && <HiroLine text={line} />}
+    {ready && st !== 'escape' && st !== 'end' && homeUi && <p className="p6-controls"><span>Mouse</span> look around{s.stage === 'carry' || s.stage === 'home' ? <> <i /> <span>Drag</span> the lit piece</> : null}</p>}
+
+    {st === 'end' && <EndCard onReplay={replay} />}
+    <div className="p6-veil" key={`veil-${set}`} aria-hidden="true" />
     {!ready && <div className="p6-loading" role="status">BAYMAX IS MOVING…</div>}
     {reducedMotion && <span className="sr-only">Reduced motion is on: camera shake and long fades are off.</span>}
   </main>;
