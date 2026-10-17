@@ -31,14 +31,15 @@ Each phase lives on its own branch, and each branch builds on the one before it,
 | `phase3` | Phase 3: the Baymax engineering board (inspection, three physical repairs) | Phases 1–3 |
 | `phase4` | Phase 4: the walk to Bay 6, then inside the bay: follow the live cable to a hidden case and find the power regulator | Phases 1–4 |
 | `phase5` | Phase 5: the limiter test on Baymax and the telemetry trace of the healthcare chip | Phases 1–5 |
+| `phase6` | Phase 6: Baymax wakes again, the run to the old gate, the drop, the crossing and the healthcare chip | Phases 1–6 |
 
 Fixes to a phase go on that phase's branch; rebase the later branches onto it afterwards. Later phases plug in through small registries (`src/recovery/journey.ts`, `src/engineering/exit.ts`, `src/phase4/exit.ts`), so earlier phases never import later ones.
 
 ## Chapter flow
 
-Phase 1 → the Phase 2 landing → the Phase 3 engineering board → Phase 4's walk to Bay 6 and the search inside it, where a job card and the live street cable lead to a case under the stairs holding the power regulator. The find's **FIT THE LIMITER TO BAYMAX** starts Phase 5: back at the harbour bay the limiter is fitted and tested (Baymax comes back up, still hostile, held to 35%), then Hiro moves deeper into the city to a telemetry relay. Five console repairs (power within the battery's limit, the signal patch, notching out interference, aiming the dish, ordering the signal fixes) recover the healthcare chip's last transmission: outbound, across the portal boundary, no local signal.
+Phase 1 → the Phase 2 landing → the Phase 3 engineering board → Phase 4's walk to Bay 6 and the search inside it, where a job card and the live street cable lead to a case under the stairs holding the power regulator. The find's **FIT THE LIMITER TO BAYMAX** starts Phase 5: back at the harbour bay the limiter is fitted and tested (Baymax comes back up, still hostile, held to 35%), then Hiro moves deeper into the city to a telemetry relay. Five console repairs (power within the battery's limit, the signal patch, notching out interference, aiming the dish, ordering the signal fixes) recover the healthcare chip's last transmission: outbound, across the portal boundary, no local signal. Its **GO AFTER THE SIGNAL** starts Phase 6: the combat chip brings Baymax back up outside the relay; the regulator (a guarded switch on Hiro's wrist) holds him to 35%, which only buys time. Hiro runs for the old portal site, turns the frame's three ring segments until power reaches it, and finds its centre socket empty. He switches the regulator off so Baymax comes to him at full power, switches it back on mid-air, and Baymax falls; his chest opens on the combat chip, the piece the socket needs. With the gate open Hiro hauls him through, and on the quiet side he slots the healthcare chip back in and Baymax boots as himself.
 
-Development supports `?recovery=1`, `?recovery=journey`, `?phase4=walk`, `?phase4=bay` (walking in), `?phase4=box` (at the uncovered case), `?phase4=found` (regulator in hand), `?phase5=1` and `?phase5=facility`.
+Development supports `?recovery=1`, `?recovery=journey`, `?phase4=walk`, `?phase4=bay` (walking in), `?phase4=box` (at the uncovered case), `?phase4=found` (regulator in hand), `?phase5=1`, `?phase5=facility`, and `?phase6=wake`, `escape`, `gate`, `drop`, `portal` and `home`. In Phase 6, Ctrl+M skips to the next beat.
 
 ## Architecture
 
