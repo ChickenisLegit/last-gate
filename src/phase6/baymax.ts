@@ -1,4 +1,5 @@
 import * as T from 'three';
+import { fitArmour } from '../characters/BaymaxArmour';
 import { assets } from '../systems/AssetManager';
 import { mountChestBay } from '../characters/ChestBay';
 
@@ -15,6 +16,8 @@ export type Pose = {
   head: [number, number, number];
   eyes: T.Color; eyeGlow: number; thrust: number; sputter: number;
   open: number; chipGlow: number; chipInBay: boolean; careSeated: boolean;
+  /** 0..1 how much of the combat armour he's wearing (the combat chip's; it comes off at the boot). */
+  armour: number;
   /**
    * 0..1 through the staged get-up from lying on his back: sit up (pushing on the ground behind),
    * settle, lean over his feet with his hands planted, push up, wobble to a stand. Overrides
@@ -28,7 +31,7 @@ export type Pose = {
 export const restPose = (): Pose => ({
   sit: 1, lie: 0, lean: 0, guard: 0, punch: 0, hold: 0, stride: 0, gait: 0, dangle: 0, yaw: 0,
   head: [0, 0, 0], eyes: new T.Color('#0b0f11'), eyeGlow: 0, thrust: 0, sputter: 0,
-  open: 0, chipGlow: 0, chipInBay: true, careSeated: false, getUp: 0, tension: 0, sluggish: 0,
+  open: 0, chipGlow: 0, chipInBay: true, careSeated: false, getUp: 0, tension: 0, sluggish: 0, armour: 1,
 });
 
 const FLAME_VS = 'varying vec2 vUv;varying float vFace;void main(){vUv=uv;vec4 mv=modelViewMatrix*vec4(position,1.);vFace=abs(dot(normalize(normalMatrix*normal),normalize(-mv.xyz)));gl_Position=projectionMatrix*mv;}';
@@ -62,6 +65,7 @@ export async function createBaymax() {
     hips.push(hip); ankles.push(ankle); shoulders.push(shoulder);
   }
   const bay = mountChestBay(model);
+  const armour = fitArmour(model);
 
   let head: T.Object3D | null = null;
   model.traverse(o => { if (o.name === 'dormant-head') head = o; });
@@ -129,6 +133,7 @@ export async function createBaymax() {
     /** His current (smoothed) facing. */
     facing: () => cur.yaw,
     update(t: number) {
+      armour.set(pose.armour);
       const p = pose;
       const gap = last < 0 ? 1 : t - last; last = t;
       const dt = Math.min(.05, Math.max(0, gap)); lastDt = dt;
@@ -246,7 +251,7 @@ export async function createBaymax() {
       combatChip.visible = p.chipInBay && p.open > .4;
     },
     dispose() {
-      bay.dispose(); flameGeo.dispose(); flameMat.dispose(); eyeMat.dispose();
+      armour.dispose(); bay.dispose(); flameGeo.dispose(); flameMat.dispose(); eyeMat.dispose();
       root.removeFromParent();
     },
   };

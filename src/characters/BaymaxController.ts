@@ -3,6 +3,10 @@ import { BAYMAX_POSITION } from '../config/experience';
 import type { Phase } from '../state/SceneStateManager';
 import type { SequenceDirector } from '../systems/SequenceDirector';
 import { createChestAccess } from './ChestAccess.js';
+import { fitArmour, type Armour } from './BaymaxArmour';
+
+/** After the combat chip takes over: plated. It assembles during 'corrupting' (tracker P1-01). */
+const ARMOURED:Phase[]=['threat','ignition','chase','fracture','pulled','handoff'];
 
 const ease=(t:number)=>MathUtils.smoothstep(t,0,1);
 const span=(t:number,a:number,b:number)=>MathUtils.smoothstep(t,a,b);
@@ -39,6 +43,7 @@ export class BaymaxController {
   private tmp=new Vector3();private tmp2=new Vector3();private q=new Quaternion();private q2=new Quaternion();
   private eyeColor=new Color();private lastBeatTime=0;
   private hole={uHoleCenter:{value:new Vector3()},uHoleNormal:{value:new Vector3(0,0,1)},uHoleRadius:{value:.196},uHoleOpen:{value:0}};
+  private armour?: Armour;
   constructor(public readonly shell: Group) {
     shell.position.set(...BAYMAX_POSITION);
     shell.rotation.order='YXZ';shell.rotation.y=-.18;
@@ -47,7 +52,7 @@ export class BaymaxController {
     const ctx=canvas.getContext('2d')!;ctx.fillStyle='#bbbbbb';ctx.fillRect(0,0,128,128);
     for(let y=0;y<128;y+=4)for(let x=0;x<128;x+=4){const v=178+Math.sin(x*.31+y*.2)*5;ctx.fillStyle=`rgb(${v},${v},${v})`;ctx.fillRect(x,y,4,4);}
     const roughness=new CanvasTexture(canvas);roughness.wrapS=roughness.wrapT=RepeatWrapping;roughness.repeat.set(3,3);
-    this.skin=new MeshPhysicalMaterial({color:'#eee8dc',roughness:.79,roughnessMap:roughness,metalness:0,sheen:.38,sheenColor:new Color('#ead8c3'),sheenRoughness:.9,clearcoat:.02,envMapIntensity:.45});
+    this.skin=new MeshPhysicalMaterial({name:'inflatable',color:'#eee8dc',roughness:.79,roughnessMap:roughness,metalness:0,sheen:.38,sheenColor:new Color('#ead8c3'),sheenRoughness:.9,clearcoat:.02,envMapIntensity:.45});
     this.armor=new MeshPhysicalMaterial({name:'armor',color:'#8c1531',roughness:.3,metalness:.48,clearcoat:.28,clearcoatRoughness:.36,envMapIntensity:.65,emissive:'#ff1d12',emissiveIntensity:0});
     const meshes:Mesh[]=[];
     shell.traverse(object=>{
@@ -136,6 +141,8 @@ export class BaymaxController {
     if(phase!==this.phase){this.phase=phase;this.phaseTime=0;}
     this.phaseTime+=dt*seq.slowmo;
     const t=this.phaseTime,T=this.target;
+    this.armour??=fitArmour(this.shell);
+    this.armour.set(phase==='corrupting'?(reduced?1:MathUtils.smoothstep(t,.8,3.4)):ARMOURED.includes(phase)?1:0);
     this.restPose(T);
     if(phase==='awakening'||phase==='approaching'||phase==='loading'){T.aim.set(0,0,0);this.snap();}
     // ---------------------------------------------------------------- shell + boot
@@ -322,5 +329,5 @@ export class BaymaxController {
     T.pos.z-=drag;T.pos.y+=span(t,3.1,4.2)*2.2;T.pitch=-.25*span(t,1.3,3.1)-.5*span(t,3.1,4);T.roll=Math.sin(t*2.1)*.06*span(t,1.3,3.1);
     T.arm=.4*span(t,1.4,2.2);T.aim.set(camera.x,camera.y+2,camera.z);
   }
-  dispose(){this.shell.removeFromParent();}
+  dispose(){this.armour?.dispose();this.shell.removeFromParent();}
 }

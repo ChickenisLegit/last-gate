@@ -1,4 +1,5 @@
 import { Box3, CanvasTexture, Group, Mesh, MeshBasicMaterial, PlaneGeometry, PointLight, Vector3 } from 'three';
+import { fitArmour } from '../characters/BaymaxArmour';
 import { assets } from '../systems/AssetManager';
 import { mountChestBay } from '../characters/ChestBay';
 import { createDistrict } from './district';
@@ -36,6 +37,8 @@ export async function createHarbourWorld(): Promise<JourneyWorld> {
   model.updateMatrixWorld(true);
   model.position.y += -1.02 - new Box3().setFromObject(model).min.y - .1; model.updateMatrixWorld(true);
   const bay = mountChestBay(model);
+  // He's been on the combat chip since the opening: armoured (tracker PW-03).
+  const armour = fitArmour(model); armour.set(1);
   const red = new PointLight('#ff3626', .35, 3.5, 2); red.position.set(.42, 2.2, .9); model.add(red);
   const c = document.createElement('canvas'); c.width = c.height = 128;
   const ctx = c.getContext('2d')!, gradient = ctx.createRadialGradient(64, 64, 4, 64, 64, 64);
@@ -45,7 +48,7 @@ export async function createHarbourWorld(): Promise<JourneyWorld> {
   const shadow = new Mesh(new PlaneGeometry(4.6, 5.6), material);
   shadow.rotation.set(-Math.PI / 2, 0, -.5); shadow.position.set(a.x, -1.008, a.z); district.group.add(shadow);
   const disposeDistrict = district.dispose;
-  district.dispose = () => { texture.dispose(); material.dispose(); shadow.geometry.dispose(); disposeDistrict(); };
+  district.dispose = () => { armour.dispose(); texture.dispose(); material.dispose(); shadow.geometry.dispose(); disposeDistrict(); };
   return { baymax: model, bay, district };
 }
 

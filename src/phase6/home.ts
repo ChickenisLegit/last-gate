@@ -168,7 +168,7 @@ export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime
   const { stage, e, t, dt } = s;
   home.update(t, dt, { gate: 0, careBlink: s.care === 'seated' ? 0 : 1 });
   baymax.root.position.copy(HOME_BAYMAX);
-  Object.assign(P, { yaw: Math.PI, lie: 1, sit: 0, guard: 0, open: 4.6, chipInBay: false, eyeGlow: 0, careSeated: s.care === 'seated' });
+  Object.assign(P, { armour: 1, yaw: Math.PI, lie: 1, sit: 0, guard: 0, open: 4.6, chipInBay: false, eyeGlow: 0, careSeated: s.care === 'seated' });
   P.eyes.copy(RED_OFF);
   hiro.root.position.copy(HIRO_KNEEL); Object.assign(H, { yaw: -Math.PI / 2, kneel: 1, look: -.15, lookUp: -.25, reach: 0, walk: 0, stride: 0, bump: 0 });
   camPos.set(6.4, 3.5, 5.2); look.set(-.7, .8, 2.9);
@@ -197,6 +197,8 @@ export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime
   // 0–1.6 the bay closes. 1.9 eyes on, chime.
   P.open = 4.6 * (1 - sm(be, .2, 1.6));
   const eyesOn = sm(be, 1.9, 2.9);
+  // Healthcare online: the combat armour comes off him, plate by plate, before he gets up.
+  P.armour = 1 - sm(be, 2.1, 4.4);
   P.eyes.copy(RED_OFF).lerp(CARE_WHITE, eyesOn); P.eyeGlow = eyesOn * .25;
   if (stage === 'boot' && be > 1.95 && be - dt <= 1.95) cue.chime();
   // 2.0–3.4 his head lifts a little off the grass: he looks for who's there.

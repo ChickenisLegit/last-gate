@@ -13,7 +13,7 @@ export function createSkinMaterial() {
     const v = 178 + Math.sin(x * .31 + y * .2) * 5; ctx.fillStyle = `rgb(${v},${v},${v})`; ctx.fillRect(x, y, 4, 4);
   }
   const roughness = new CanvasTexture(canvas); roughness.wrapS = roughness.wrapT = RepeatWrapping; roughness.repeat.set(3, 3);
-  return new MeshPhysicalMaterial({ color: '#eee8dc', roughness: .79, roughnessMap: roughness, metalness: 0, sheen: .38, sheenColor: new Color('#ead8c3'), sheenRoughness: .9, clearcoat: .02, envMapIntensity: .45 });
+  return new MeshPhysicalMaterial({ name: 'inflatable',  color: '#eee8dc', roughness: .79, roughnessMap: roughness, metalness: 0, sheen: .38, sheenColor: new Color('#ead8c3'), sheenRoughness: .9, clearcoat: .02, envMapIntensity: .45 });
 }
 
 export function createArmorMaterial() {

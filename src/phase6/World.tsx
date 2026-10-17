@@ -235,7 +235,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       if (!isInsert(s.stage)) m.pressed = '';
     }
     // Defaults each frame; the stage below sets what it needs.
-    Object.assign(P, { getUp: 0, sit: 0, lie: 0, lean: .08, guard: 1, punch: 0, hold: 0, stride: 0, dangle: 0, thrust: 0, sputter: 0, open: 0, chipGlow: 0, chipInBay: s.chip === 'bay', careSeated: s.care === 'seated', eyeGlow: 1 });
+    Object.assign(P, { armour: 1, getUp: 0, sit: 0, lie: 0, lean: .08, guard: 1, punch: 0, hold: 0, stride: 0, dangle: 0, thrust: 0, sputter: 0, open: 0, chipGlow: 0, chipInBay: s.chip === 'bay', careSeated: s.care === 'seated', eyeGlow: 1 });
     P.tension = set === 'home' ? 0 : s.regulator ? .4 : 1;
     P.sluggish = s.regulator && set !== 'home' ? 1 : 0;
     P.eyes.copy(RED); P.head[0] = P.head[1] = P.head[2] = 0;
