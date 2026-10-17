@@ -36,6 +36,10 @@ type State = {
   chip: 'bay' | 'held' | 'out'; cart: 'hand' | 'held' | 'slot'; care: 'ground' | 'held' | 'seated';
   /** When the combat chip came out (Hiro then walks to the gate's reader). */
   pulledAt: number;
+  /** Hiro has taken the RX/06 capture out of the relay's recorder. */
+  took: boolean;
+  /** On the run, Baymax got to him: the run stops and offers a retry. */
+  caught: boolean;
 };
 const regulatorFor = (s: Stage) => (atLeast(s, 'limited') && !atLeast(s, 'flyin')) || atLeast(s, 'drop');
 
@@ -45,7 +49,7 @@ function stateFor(stage: Stage): State {
     angles: atLeast(stage, 'powered') ? [0, 140, 240] : [...START_ANGLES],
     chip: atLeast(stage, 'bloom') ? 'out' : 'bay',
     cart: atLeast(stage, 'bloom') ? 'slot' : 'hand',
-    pulledAt: 0,
+    pulledAt: 0, took: atLeast(stage, 'escape'), caught: false,
     care: atLeast(stage, 'seated') ? 'seated' : 'ground',
   };
 }

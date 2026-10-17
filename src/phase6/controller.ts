@@ -342,15 +342,16 @@ export function createFirstPersonHands(controller: LimiterController = createLim
           .to(c, { gauge: LIMIT, duration: 1.1, ease: 'power3.inOut' })
           .to(s, to('rest', .4, 'power2.inOut', { tilt: 0, nudge: 0 }), '<.12');
       } else {
-        // Thumb hooks the bat back, then sweeps the cover down; it falls the last bit on its spring.
+        // Thumb hooks the bat back, rises over the open cover and presses it shut from on top (never
+        // under its lip, where the closing cover would land on it), then goes back to the edge.
         tl.to(s, to('togOn', .28, 'power2.out', { tilt: .05 }))
           .to(s, to('tog', .09, 'power3.in', { tilt: .08 }))
           .to(c, { toggle: 0, duration: .07, ease: 'back.out(3)' }, '<.02')
           .call(() => { c.lamp = 0; onClick(); })
           .to(c, { gauge: 1, duration: .8, ease: 'power2.out' })
           .to(s, to('flick', .14, 'power2.out'), '<')
-          .to(s, to('under', .12, 'power2.in'))
-          .to(c, { guard: 0, duration: .2, ease: 'bounce.out' }, '<.04')
+          .to(s, to('lip', .14, 'power2.in', { tilt: .06 }))
+          .to(c, { guard: 0, duration: .2, ease: 'bounce.out' }, '<.06')
           .to(s, to('rest', .32, 'power2.inOut', { tilt: 0, nudge: 0 }));
       }
       tl.timeScale(rate);

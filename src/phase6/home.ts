@@ -15,7 +15,10 @@ import type { HiroPose } from '../characters/HiroModel';
  */
 export const HOME_GATE = new T.Vector3(0, 3.4, 7);
 export const HOME_BAYMAX = new T.Vector3(-.6, 0, 2.4);
-export const CARE_CHIP_AT = new T.Vector3(1.4, .05, 1.7);
+/** The healthcare chip came through ahead of them and landed in a harbour litter bin, poking out of the top. */
+export const CARE_BIN_AT = new T.Vector3(1.4, 0, 1.7);
+export const CARE_CHIP_AT = new T.Vector3(1.4, .9, 1.7);
+const CARE_CHIP_TILT = new T.Euler(-.35, 0, .5);
 
 const SKY_FS = `varying vec3 vDir;void main(){float h=normalize(vDir).y;
 vec3 top=vec3(.2,.17,.36);vec3 mid=vec3(.357,.294,.541);vec3 low=vec3(.98,.62,.45);vec3 glow=vec3(1.,.8,.6);
@@ -98,7 +101,12 @@ export function createHome() {
   const gateLight = new T.PointLight('#9a86e0', 0, 18, 1.6); gateLight.position.copy(HOME_GATE).add(new T.Vector3(0, 0, -1.5)); k.root.add(gateLight);
 
   const care = createCareChip(k);
-  care.chip.position.copy(CARE_CHIP_AT); care.chip.rotation.set(-Math.PI / 2, 0, .6); care.chip.scale.setScalar(1);
+  // The bin: a slatted harbour litter bin with a lid ring; the chip sticks up out of the rubbish.
+  const binMat = k.ownMaterial(new T.MeshStandardMaterial({ color: '#2f4a44', roughness: .6, metalness: .4 }));
+  k.mesh(k.ownGeometry(new T.CylinderGeometry(.3, .26, .82, 16, 1, true)), binMat, { p: [CARE_BIN_AT.x, .41, CARE_BIN_AT.z] });
+  k.mesh(k.ownGeometry(new T.TorusGeometry(.3, .025, 8, 24)), binMat, { p: [CARE_BIN_AT.x, .83, CARE_BIN_AT.z], r: [Math.PI / 2, 0, 0] });
+  k.mesh(k.ownGeometry(new T.CircleGeometry(.29, 16)), k.ownMaterial(new T.MeshStandardMaterial({ color: '#3b3226', roughness: 1 })), { p: [CARE_BIN_AT.x, .78, CARE_BIN_AT.z], r: [-Math.PI / 2, 0, 0] });
+  care.chip.position.copy(CARE_CHIP_AT); care.chip.rotation.copy(CARE_CHIP_TILT); care.chip.scale.setScalar(1);
   k.root.add(care.chip);
   const careLight = new T.PointLight('#7dffb0', 0, 2.2, 2); careLight.position.copy(CARE_CHIP_AT).add(new T.Vector3(0, .25, 0)); k.root.add(careLight);
 
@@ -137,7 +145,7 @@ export const HIRO_BUMP = new T.Vector3(HOME_BAYMAX.x + 1.65, 0, HOME_BAYMAX.z - 
 
 export type HomeCast = {
   baymax: { root: T.Object3D; pose: BaymaxPose; dock: T.Object3D; handWorld(out?: T.Vector3): T.Vector3; headWorld(out?: T.Vector3): T.Vector3 };
-  hiro: { root: T.Object3D; pose: HiroPose };
+  hiro: { root: T.Object3D; pose: HiroPose; handWorld(out?: T.Vector3): T.Vector3 };
 };
 export type HomeShot = { stage: string; e: number; t: number; dt: number; care: 'ground' | 'held' | 'seated'; dragPos: T.Vector3; returning: number; camera: T.Camera };
 
@@ -154,6 +162,7 @@ export type HomeShot = { stage: string; e: number; t: number; dt: number; care: 
  *
  * Returns the camera target and lens; `cue` fires the sounds the moment they happen.
  */
+const bumpFix = new T.Vector3();
 export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime(): void; step(level: number): void; done(): void }, camPos: T.Vector3, look: T.Vector3) {
   const { baymax, hiro } = cast, P = baymax.pose, H = hiro.pose;
   const { stage, e, t, dt } = s;
@@ -170,7 +179,7 @@ export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime
   if (s.care !== 'seated') {
     if (s.care === 'held') { care.position.copy(s.dragPos); care.lookAt(s.camera.position); care.scale.setScalar(1.6); }
     else if (s.returning > 0) { care.position.copy(s.dragPos); }
-    else { care.position.copy(CARE_CHIP_AT); care.rotation.set(-Math.PI / 2, 0, .6); care.scale.setScalar(1); }
+    else { care.position.copy(CARE_CHIP_AT); care.rotation.copy(CARE_CHIP_TILT); care.scale.setScalar(1); }
     home.careLight.position.copy(care.position).add(v(0, .25, 0));
     if (stage === 'home') {
       // Coming through: the camera settles as Hiro drops to his knee beside him.
@@ -201,7 +210,7 @@ export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime
   const lookDown = sm(be, 10.6, 12);
   P.head[0] += .22 * lookDown; P.head[1] -= .38 * lookDown; P.head[2] = -.22 * lookDown * (1 - sm(be, 13.5, 14.5) * .5);
   const bump = sm(be, 12.6, 13.8) * (1 - sm(be, 15.2, 16.4) * .7);
-  P.hold = bump * .8;
+  P.hold = bump * .68;
 
   // Hiro: kneeling with a hand on his shell; at the chime he sits back; 3.0–4.2 he gets up and
   // 3.6–5.2 walks back out of reach as Baymax starts to move; watches him rise; steps in for
@@ -209,6 +218,14 @@ export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime
   const getUpH = sm(be, 3, 4.2), back = sm(be, 3.6, 5.2), stepIn = sm(be, 12, 13.2);
   H.kneel = 1 - getUpH; H.reach = .4 * (1 - sm(be, 1.2, 2.2));
   const at = HIRO_KNEEL.clone().lerp(HIRO_STAND, back).lerp(HIRO_BUMP, stepIn);
+  // The bump: Hiro's fist is steered onto Baymax's (measured last frame), so the two actually meet.
+  const bumpK = sm(be, 12.9, 13.7) * (1 - sm(be, 15.2, 16.4));
+  if (bumpK > .05 || bumpFix.lengthSq() > 0) {
+    const gap = baymax.handWorld().sub(hiro.handWorld()); gap.y = 0;
+    bumpFix.addScaledVector(gap, Math.min(1, dt * 6) * Math.min(1, bumpK * 2)).clampLength(0, .8);
+    if (be < 12) bumpFix.set(0, 0, 0);
+  }
+  at.add(bumpFix);
   hiro.root.position.copy(at);
   // Walking: legs move only while he is actually travelling.
   const moving = (back > 0 && back < 1) || (stepIn > 0 && stepIn < 1);
@@ -217,7 +234,7 @@ export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime
   const target = stepIn > 0 ? baymax.handWorld() : baymax.root.position.clone().add(v(0, 0, -.4));
   H.yaw = Math.atan2(target.x - at.x, target.z - at.z) - (back > 0 && back < 1 ? .5 * Math.sin(Math.PI * back) : 0);
   H.lookUp = T.MathUtils.lerp(-.2, .15, sm(be, 1.9, 2.6)) + .7 * sm(be, 5, 8) - .2 * stepIn;
-  H.bump = sm(be, 12.9, 13.7) * (1 - sm(be, 15.2, 16.4));
+  H.bump = bumpK * 1.3;
   if (stage === 'boot' && (Math.floor(H.walk / Math.PI) !== Math.floor((H.walk - dt * 6.5) / Math.PI)) && moving) cue.step(.15);
 
   // Camera: in front, low, his face and Hiro beside him as he comes up; then wider for the bump.

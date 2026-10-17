@@ -11,6 +11,8 @@ import { createFacility } from '../phase5/facility';
 export const BAYMAX_YARD = new T.Vector3(.6, 0, -11.5);
 /** How far toward the relay he gets under the limit before the punch: still outside the back wall. */
 export const BAYMAX_REACH_Z = -10.3;
+/** The relay's recorder: a rack beside the consoles, the RX/06 capture in its slot on top. */
+export const RECORDER = new T.Vector3(2.55, 0, -4.35);
 export const RELAY_STATE = { powered: true, leads: 3, snr: 12, az: 212, el: 38, strength: 100, traced: true, breakers: [true, true, false, false] };
 
 export function createRelay() {
@@ -31,6 +33,10 @@ export function createRelay() {
   // A yard lamp (lit by the relay's own lights; no extra light of its own).
   k.mesh(k.ownGeometry(new T.SphereGeometry(.14, 12, 10)), k.basic('#ffc062', 1.6), { p: [5.4, 4.2, -8.9] });
   k.box({ p: [5.4, 2.1, -8.9], s: [.12, 4.2, .12] }, k.metal);
+  // The recorder rack, with a slot lip on top where the capture cartridge sits.
+  k.box({ p: [RECORDER.x, .5, RECORDER.z], s: [.46, 1, .38] }, k.dark);
+  k.box({ p: [RECORDER.x, 1.015, RECORDER.z], s: [.5, .03, .42] }, k.metal);
+  k.box({ p: [RECORDER.x, .78, RECORDER.z + .195], s: [.3, .05, .01] }, k.basic('#ffb066', 1.2));
   const root = new T.Group(); root.add(facility.root, k.root);
   return {
     root,

@@ -115,7 +115,9 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
 
   // ---- Hiro's line for the moment.
   const line = st === 'wake' && e > 5.4 ? 'Baymax? Hey, buddy. It’s me.'
-    : st === 'limited' && e > 9.8 ? 'The trace went to the old gate. That’s where he is.'
+    : st === 'limited' && e > 9.8 && !s.took ? 'The capture. That comes with me.'
+    : st === 'limited' && e > 9.8 ? 'The trace went to the old gate. That’s where it ends.'
+    : st === 'escape' && s.caught ? 'No, no—'
     : st === 'escape' && live.dread > .75 ? 'Don’t look back. Don’t look back.'
     : st === 'escape' && live.p < .2 ? 'Go, go, go.'
     : st === 'powered' && e > .7 && e < 2.4 ? 'Come on…'
@@ -130,6 +132,7 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
     : st === 'bloom' && e > 2 && e < 6 ? 'There you are.'
     : st === 'bloom' && e > 8.6 ? 'Come on. We’re going home.'
     : st === 'home' && e > 1.4 && e < EMERGE ? 'Almost. Almost.'
+    : st === 'home' && e > EMERGE + 2.4 && s.care === 'ground' ? 'It crossed all that way… to land in a bin.'
     : null;
 
   // ---- What each panel reads.
@@ -166,7 +169,7 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
     {ready && homeUi && <div className="p6-side" role="status">
       {/* 1 · Wake: the regulator, on standby. */}
       {(st === 'wake' && e > 2.4 || st === 'switchOn1') && <Panel id="wake" label="Power regulator" tone="red"
-        rows={[['Status', s.regulator ? 'Active' : 'Standby', s.regulator ? 'orange' : ''], ['Output limit', '35%'], ['Baymax', 'Combat chip', 'red']]}>
+        rows={[['Status', s.regulator ? 'Active' : 'Standby', s.regulator ? 'orange' : ''], ['Baymax output', s.regulator ? '35%' : '100%', s.regulator ? 'orange' : 'red'], ['Limit when active', '35%']]}>
         <RegulatorToggle action="on" busy={insert} onPress={toggle('switchOn1')} />
       </Panel>}
 
@@ -175,13 +178,20 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
         rows={[['Status', 'Active', 'orange'], ['Thrusters', 'Restricted'], ['Motor output', 'Restricted'], ['Combat power', 'Restricted']]}>
         <OutputMeter value={35} />
       </Panel>}
-      {st === 'limited' && e > 9.6 && <Panel id="buys-time" label="Power regulator"
-        rows={[['Baymax', 'Slowed · still coming', 'red'], ['Trace', 'Old gate site'], ['RX/06 capture', 'Saved', 'orange']]}>
+      {st === 'limited' && e > 9.6 && !s.took && <Panel id="take" label="Relay recorder" title="Take the capture"
+        rows={[['RX/06', 'Healthcare chip’s last signal', 'orange'], ['Baymax', 'Slowed · still coming', 'red']]}
+        action={<span className="p6-withhand"><DragHand />Click the cartridge in the recorder.</span>} />}
+      {st === 'limited' && e > 9.6 && s.took && <Panel id="buys-time" label="Power regulator"
+        rows={[['Baymax', 'Slowed · still coming', 'red'], ['Trace', 'Old gate site'], ['RX/06 capture', 'In pocket', 'orange']]}>
         <button className="p6-btn" onClick={toggle('escape')}>Run for the gate <i>→</i></button>
       </Panel>}
 
       {/* 3 · The run. */}
-      {st === 'escape' && <Panel id="run" label="Old gate site" rows={[['Distance', `${metres} m`, 'orange'], ['Baymax', 'Following', 'red']]} />}
+      {st === 'escape' && !s.caught && <Panel id="run" label="Old gate site" rows={[['Distance', `${metres} m`, 'orange'], ['Baymax', 'Following', 'red']]} />}
+      {st === 'escape' && s.caught && <Panel id="caught" label="Baymax" tone="red" title="He caught you."
+        rows={[['Regulator', 'Active · 35%'], ['Distance left', `${metres} m`]]}>
+        <button className="p6-btn" onClick={toggle('escape')}>Try the run again <i>→</i></button>
+      </Panel>}
 
       {/* 4 · The gate: power it. It tries, and folds shut. */}
       {st === 'gate' && <Panel id="gate" label="The Last Gate" tone="cyan" title="Restore portal power"
@@ -217,7 +227,7 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
 
       {/* 8 · Home. */}
       {st === 'home' && e > EMERGE + 2.4 && <Panel id="home" label="Baymax" title="His healthcare chip"
-        rows={[['Healthcare chip', 'Found', 'ok'], ['Combat chip', 'Removed', 'dim']]} action={drag('Drag it into his chest.')} />}
+        rows={[['Healthcare chip', 'In a litter bin', 'ok'], ['Combat chip', 'Removed', 'dim']]} action={drag('Drag it out of the bin and into his chest.')} />}
       {st === 'seated' && <Panel id="seated" label="Baymax" rows={[['Healthcare chip', 'Seated', 'ok'], ['Chest bay', 'Open']]}>
         <button className="p6-btn" onClick={toggle('boot')}>Close the bay <i>→</i></button>
       </Panel>}
