@@ -10,7 +10,7 @@
 .bay-grade{position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 90% at 50% 48%,transparent 52%,rgba(4,10,18,.62) 100%),linear-gradient(180deg,rgba(4,10,18,.45),transparent 18%)}
 .bay:after{content:'';position:absolute;inset:0;background:#05090d;opacity:0;pointer-events:none;transition:opacity .9s ease}
 .bay.bay-leaving:after{opacity:1}
-.bay-loading{position:absolute;inset:0;display:grid;place-content:center;margin:0;font:500 11px/1 var(--lg-mono);letter-spacing:.24em;text-transform:uppercase;color:#89a5b5}
+.bay-loading{position:absolute;inset:0;display:grid;place-content:center;margin:0;font:500 11px/1 var(--lg-mono);letter-spacing:.24em;text-transform:uppercase;color:#95a69c}
 
 .bay-top{position:absolute;top:24px;left:28px;right:28px;display:flex;justify-content:space-between;align-items:center}
 .bay-brand{display:flex;flex-direction:column;gap:2px;pointer-events:none}

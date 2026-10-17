@@ -211,7 +211,9 @@ export function ServiceBay({ start }: { start: BayStart }) {
   };
   const restart = () => enterServiceBay('enter');
   const exit = districtExit();
-  const leave = () => { if (!exit || leaving) return; setLeaving(true); window.setTimeout(exit.go, reducedMotion ? 50 : 900); };
+  // The next chapter covers the cut itself; warm it up as soon as the regulator is in hand.
+  const leave = () => { if (!exit || leaving) return; setLeaving(true); exit.go(); };
+  useEffect(() => { if (stage === 'taken') void exit?.prepare?.().catch(() => {}); }, [stage]);
 
   // Dev: Ctrl+M does the next thing.
   const advance = useRef(() => {});
@@ -278,7 +280,7 @@ export function ServiceBay({ start }: { start: BayStart }) {
   return <main className={`bay ${ready ? 'bay-ready' : ''} ${leaving ? 'bay-leaving' : ''}`} aria-label="Phase 4: inside Bay 6">
     <div className="bay-world">
       <Canvas shadows dpr={[1, 1.4]} camera={{ fov: 52, near: .05, far: 420, position: VIEWS.gate.pos }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
-        <World bay={bay} cam={cam} state={state} pins={pins} pinEls={pinEls} hiro={hiro} onPick={onPick} onReady={() => setReady(true)} />
+        <World bay={bay} cam={cam} state={state} pins={pins} pinEls={pinEls} hiro={hiro} onPick={onPick} onReady={() => { setReady(true); window.dispatchEvent(new Event('lastgate:scene-ready')); }} />
       </Canvas>
     </div>
     <div className="bay-grade" aria-hidden="true" />

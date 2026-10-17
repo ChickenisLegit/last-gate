@@ -1,7 +1,5 @@
 import * as T from 'three';
-import { createDistrict } from '../recovery/district';
-import { assets } from '../systems/AssetManager';
-import { mountChestBay } from '../characters/ChestBay';
+import { createHarbourWorld } from '../recovery/HarbourWorld';
 import { createLimiter } from '../phase4/limiter';
 
 /**
@@ -10,27 +8,24 @@ import { createLimiter } from '../phase4/limiter';
  * Bay 6 (Phase 4's createLimiter), cabled into his open bay. Its gauge and lamp show the load.
  */
 export async function createBay() {
-  const district = createDistrict();
-  const model = await assets.cloneBaymax();
-
-  // The landing's pose, exactly: legs unfolded, lying on his back on the apron.
-  const meshes: T.Mesh[] = []; model.traverse(n => { if (n instanceof T.Mesh) meshes.push(n); });
-  for (const side of [-1, 1]) {
-    const hip = new T.Group(); hip.position.set(side * .53, .55, .28); model.add(hip); model.updateMatrixWorld(true);
-    for (const mesh of meshes) {
-      const p = mesh.position, sx = side * p.x;
-      const thigh = Math.abs(sx - .57) < .06 && Math.abs(p.y - .48) < .06;
-      const foot = Math.abs(sx - .71) < .06 && (Math.abs(p.y - .26) < .06 || Math.abs(p.y - .04) < .06) && p.z > 1.2;
-      if (thigh || foot) hip.attach(mesh);
-    }
-    hip.rotation.x = 1.45;
-  }
-  model.rotation.order = 'YXZ'; model.rotation.set(-Math.PI / 2, -.5, -.08); model.updateMatrixWorld(true);
-  const bounds = new T.Box3().setFromObject(model), center = bounds.getCenter(new T.Vector3()), a = district.baymaxAnchor;
-  model.position.set(a.x - center.x, -1 - bounds.min.y, a.z - center.z); model.updateMatrixWorld(true);
-  const bay = mountChestBay(model);
+  const { district, baymax: model, bay } = await createHarbourWorld();
   district.group.add(model);
+  district.group.traverse(object => {
+    if (!('isPointLight' in object)) return;
+    for (let parent = object.parent; parent; parent = parent.parent) if (parent === bay.root) return;
+    object.visible = false;
+  });
   const body = new T.Box3().setFromObject(model).getCenter(new T.Vector3());
+  const arm = new T.Group(); arm.name = 'baymax-output-test-arm'; arm.position.set(1.02, 2.26, .02); model.add(arm); model.updateMatrixWorld(true);
+  const armMeshes: T.Mesh[] = []; model.traverse(o => { if (o instanceof T.Mesh) armMeshes.push(o); });
+  for (const mesh of armMeshes) {
+    const p = mesh.position;
+    const upper = Math.abs(p.x - 1.12) < .06 && Math.abs(p.y - 1.7) < .06;
+    const fore = Math.abs(p.x - 1.23) < .06 && Math.abs(p.y - .82) < .06;
+    const hand = Math.abs(p.x - 1.25) < .06 && Math.abs(p.y - .35) < .06;
+    const finger = p.x > 1 && p.x < 1.5 && Math.abs(p.y - .29) < .03 && p.z > .7;
+    if (upper || fore || hand || finger) arm.attach(mesh);
+  }
 
   // His eyes and head: the only things that change when he comes back up.
   const eyes: T.MeshBasicMaterial[] = []; let head: T.Object3D | null = null;
@@ -55,7 +50,12 @@ export async function createBay() {
   const dock = bay.dockWorld().clone();
   const cableCurve = new T.CatmullRomCurve3([fitted.clone().add(new T.Vector3(0, .14, 0)), fitted.clone().addScaledVector(side, -.55).setY(ground + .05), dock.clone().addScaledVector(side, .5).setY(dock.y + .25), dock]);
   const cable = new T.Mesh(new T.TubeGeometry(cableCurve, 40, .028, 8), new T.MeshStandardMaterial({ color: '#1b1d1f', roughness: .7 }));
+  cable.name = 'limiter-feed';
   cable.visible = false; district.group.add(cable);
+  const plug = new T.Mesh(new T.CylinderGeometry(.055, .055, .16, 16), new T.MeshStandardMaterial({ color: '#9a9f94', metalness: .75, roughness: .3 }));
+  plug.name = 'limiter-connector';
+  district.group.add(plug); plug.visible = false;
+  const tangent = new T.Vector3(), up = new T.Vector3(0, 1, 0), redEye = new T.Color('#ff2414');
 
   let shake = 0; const baseY = model.position.y;
   return {
@@ -64,24 +64,35 @@ export async function createBay() {
     update(t: number, dt: number, s: { fitted: number; power: number; held: boolean }) {
       district.update(t, dt, false);
       limiter.position.lerpVectors(staged, fitted, T.MathUtils.smootherstep(s.fitted, 0, 1));
-      limiter.position.y = ground + Math.sin(Math.PI * s.fitted) * .35;
+      limiter.position.y = ground + Math.sin(Math.PI * s.fitted) * .12;
       limiter.rotation.y = Math.atan2(axis.x, axis.z) + T.MathUtils.lerp(.5, 0, s.fitted);
-      cable.visible = s.fitted > .99;
+      const connected = T.MathUtils.smoothstep(s.fitted, .55, 1);
+      cable.visible = connected > 0; plug.visible = connected > 0;
+      cable.geometry.setDrawRange(0, Math.floor(cable.geometry.index!.count * connected / 3) * 3);
+      cableCurve.getPoint(connected, plug.position); cableCurve.getTangent(connected, tangent); plug.quaternion.setFromUnitVectors(up, tangent);
       limiter.led.color.set(s.power > .05 ? '#ffb15a' : s.fitted > .99 ? '#7dffa6' : '#2a3a33');
       // The needle climbs with the load and stops short of the red: that's the limit holding.
       limiter.setGauge(s.fitted > .99 ? .1 + Math.min(s.power, 1) * .32 + Math.sin(t * 9) * .006 * s.power : .05);
       // Powered against the limit: eyes go red, the head turns toward Hiro, the body strains and settles.
       const p = s.power;
-      eyes.forEach(m => m.color.set('#0b0f11').lerp(new T.Color('#ff2414'), p).multiplyScalar(1 + p * .6));
+      eyes.forEach(m => m.color.set('#0b0f11').lerp(redEye, p).multiplyScalar(1 + p * .6));
       red.intensity = p * (1.6 + .5 * Math.sin(t * 2.3));
       if (head) (head as T.Object3D).rotation.set(headBase.x - .18 * p, headBase.y + .42 * p, headBase.z * (1 - p));
+      // The shoulder tries to reach Hiro, then settles against the limited physical feed.
+      arm.rotation.z = T.MathUtils.damp(arm.rotation.z, .42 * p, 2.4, dt);
+      arm.rotation.x = T.MathUtils.damp(arm.rotation.x, -.16 * p, 2.4, dt);
       const strain = s.held ? 0 : Math.max(0, Math.sin(Math.min(1, p * 1.4) * Math.PI));
       shake = T.MathUtils.damp(shake, strain, 6, dt);
       model.position.y = baseY + Math.sin(t * 17) * .006 * shake + strain * .05;
       model.rotation.z = -.08 + Math.sin(t * 11) * .012 * shake;
       bay.update({ t, open: 4.6, seated: 1, red: .9, seamGlow: .15 + p * .35 });
     },
-    dispose() { limiter.dispose(); bay.dispose(); district.dispose(); },
+    dispose() {
+      limiter.dispose();
+      for (const root of [cable, plug]) root.geometry.dispose();
+      for (const mesh of [cable, plug]) (mesh.material as T.Material).dispose();
+      eyes.forEach(m => m.dispose()); bay.dispose(); district.dispose();
+    },
   };
 }
 export type Bay = Awaited<ReturnType<typeof createBay>>;

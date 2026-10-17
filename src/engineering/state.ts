@@ -15,6 +15,7 @@ type Board = {
   mode: ViewMode;
   /** Viewer zoom multiplier on the orbit distance. */
   zoom: number;
+  assessment: boolean;
   rerouted: boolean;
   plugAngle: number;
   plugSeated: boolean;
@@ -25,12 +26,13 @@ type Board = {
 };
 
 export const initialBoard = (): Board => ({
-  selected: null, mode: 'exterior', zoom: 1,
+  selected: null, mode: 'exterior', zoom: 1, assessment: false,
   rerouted: false, plugAngle: PLUG_START, plugSeated: false,
   actuatorAngle: ACTUATOR_JAM, actuatorReset: false, sensorsTested: false, bayOpen: false,
 });
 
 export const useBoard = create<Board>(initialBoard);
+if (import.meta.env.DEV) (window as Window & { __lastGateBoard?: typeof useBoard }).__lastGateBoard = useBoard;
 
 export const repairsDone = (b: Board) => [b.rerouted, b.plugSeated, b.actuatorReset].filter(Boolean).length;
 export const assessmentComplete = (b: Board) => repairsDone(b) === 3 && b.sensorsTested && b.bayOpen;

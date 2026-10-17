@@ -1,10 +1,13 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { ACESFilmicToneMapping, Color, FogExp2, Group, Object3D, PerspectiveCamera, PMREMGenerator, SRGBColorSpace, Vector3 } from 'three';
+import { ACESFilmicToneMapping, Color, FogExp2, Group, PerspectiveCamera, PMREMGenerator, SRGBColorSpace, Vector3 } from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CinematicPost } from '../effects/CinematicPost';
 import { createPortalDimension } from '../environment/PortalDimension.js';
 import { createRuptureSet } from '../environment/RuptureSet.js';
+import { createSanFransokyo } from '../environment/HarbourCity';
+import { createPortalGate, portalWorldMask } from '../environment/RiftGate';
+import { useCanvasBudget } from '../performance/CanvasBudget';
 import { assets } from '../systems/AssetManager';
 import { CameraDirector, type ShotContext } from '../systems/CameraDirector';
 import { SequenceDirector, type SequenceEvent } from '../systems/SequenceDirector';
@@ -31,6 +34,9 @@ function Failure(){return <div className="failure"><p>The connection was lost.</
 const ZOOM_HINT_PHASES:Phase[]=['chip-focus','chip-held','chest-focus','panel-opening','socket-ready'];
 const MARKER_PHASES:Phase[]=['discovery','chip-focus','chest-focus'];
 const STREET_BG=new Color('#101c31'),CORRIDOR_BG=new Color('#061420'),STREET_FOG=new Color('#253e59'),CORRIDOR_FOG=new Color('#123349');
+const SF_BG=new Color('#0d1b30'),SF_FOG=new Color('#1b3450');
+const INTRO_PORTAL:Phase[]=['portal-sighted','call-baymax','to-portal','through-portal','sf-arrival','sf-turnback','back-decision','back-through'];
+const PORTAL_CLOSE:Partial<Record<Phase,number>>={'portal-sighted':.1,'call-baymax':.16,'to-portal':.24,'through-portal':.3,'sf-arrival':.42,'sf-turnback':.58,'back-decision':.74,'back-through':.95};
 
 type SceneProps={director:CameraDirector;seq:SequenceDirector;marker:React.RefObject<HTMLButtonElement|null>;readout:React.RefObject<HTMLDivElement|null>;audio:AudioDirector};
 function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
@@ -38,13 +44,20 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
   const advance=useThree(s=>s.advance);
   const environment=useMemo(()=>createPortalDimension(),[]);
   const rupture=useMemo(()=>createRuptureSet(environment),[environment]);
+  const sf=useMemo(()=>createSanFransokyo(),[]);
+  const gate=useMemo(()=>createPortalGate(24),[]);
   const chip=useMemo(()=>new ChipController(),[]);
   const post=useMemo(()=>new CinematicPost(gl,scene,camera as PerspectiveCamera),[gl,scene,camera]);
   // Development only: lets tooling pump frames when the browser throttles requestAnimationFrame.
   useEffect(()=>{if((import.meta as unknown as {env?:{DEV?:boolean}}).env?.DEV){(window as unknown as {__lattiseFrame:(t?:number)=>void}).__lattiseFrame=(t?:number)=>advance(t??performance.now());(window as unknown as {__lattiseDebug:unknown}).__lattiseDebug={post,scene,gl,camera,environment,rupture,seq};}},[advance,post,scene,gl,camera,environment,rupture,seq]);
   const baymax=useRef<BaymaxController|null>(null);
   const [shell,setShell]=useState<Group|null>(null);
+  useCanvasBudget(!!shell,3_800_000);
+  const worldMasks=useMemo(()=>({city:portalWorldMask(sf.group),dimension:portalWorldMask(environment.group),rupture:portalWorldMask(rupture.root),chip:portalWorldMask(chip.group)}),[sf,environment,rupture,chip]);
+  const shellMask=useMemo(()=>shell?portalWorldMask(shell):null,[shell]);
+  useEffect(()=>()=>{Object.values(worldMasks).forEach(mask=>mask.dispose());shellMask?.dispose();},[worldMasks,shellMask]);
   const elapsed=useRef(0),replay=useRef(0),magnetCue=useRef(false);
+  const phaseT=useRef(0),prevPhaseRef=useRef<string>('');
   const ctx=useMemo<ShotContext>(()=>({chest:new Vector3(3,1.97,-11.3),normal:new Vector3(0,0,1),chip:new Vector3(),baymax:new Vector3(2.7,0,-12),head:new Vector3(2.72,2.98,-11.6)}),[]);
   const projection=useMemo(()=>new Vector3(),[]);
   useEffect(()=>{
@@ -60,16 +73,60 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
   useEffect(()=>{
     const pmrem=new PMREMGenerator(gl),room=new RoomEnvironment(),env=pmrem.fromScene(room,.04).texture;
     scene.environment=env;scene.environmentIntensity=.28;room.dispose();pmrem.dispose();
-    return()=>{scene.environment=null;env.dispose();post.dispose();environment.dispose();};
+    return()=>{scene.environment=null;env.dispose();post.dispose();environment.dispose();sf.dispose();gate.dispose();};
   },[gl,scene,post]);
   useEffect(()=>{
     if(!shell)return;
     // Compile every program the sequence will ever need while the boot screen still covers it,
     // so no blast, tear or corridor stalls the frame the first time it appears.
-    const hidden:Object3D[]=[];scene.traverse(o=>{if(!o.visible){hidden.push(o);o.visible=true;}});
-    gl.compile(scene,camera);hidden.forEach(o=>{o.visible=false;});
-    useSceneState.getState().ready();
-  },[shell,gl,scene,camera]);
+    let active=true;
+    // Compile the linear composer variants, rather than the default framebuffer variants.
+    const previousTarget=gl.getRenderTarget();gl.setRenderTarget(post.composer.readBuffer);
+    const compiled=gl.compileAsync(scene,camera);gl.setRenderTarget(previousTarget);
+    void compiled.then(async()=>{
+      if(!active)return;
+      const lens=camera as PerspectiveCamera,position=lens.position.clone(),rotation=lens.quaternion.clone(),fov=lens.fov;
+      const cityVisible=sf.group.visible,gateVisible=gate.group.visible,dimensionVisible=environment.group.visible,close=gate.closeAmount;
+      const opening=post.fx.opening,aperture=post.fx.aperture,exposure=gl.toneMappingExposure;
+      const bg=scene.background as Color|null,fog=scene.fog as FogExp2|null;
+      const background=bg?.clone(),fogColor=fog?.color.clone(),fogDensity=fog?.density;
+      const phase=useSceneState.getState().phase,intro=INTRO_PORTAL.includes(phase),inCity=intro&&position.z>24;
+      const masks=(city:'inside'|'outside'|'none',dimension:'inside'|'outside'|'none')=>{
+        worldMasks.city.set(city);worldMasks.dimension.set(dimension);worldMasks.rupture.set(dimension);worldMasks.chip.set(dimension);shellMask?.set(dimension);
+      };
+      const portalPose=()=>{
+        masks('inside','outside');bg?.copy(STREET_BG);if(fog){fog.color.copy(STREET_FOG);fog.density=.015;}
+        lens.position.set(-.6,2.3,10.6);lens.lookAt(0,4.2,24);lens.fov=50;lens.updateProjectionMatrix();lens.updateMatrixWorld();
+        post.fx.opening=true;post.fx.aperture=-1;post.render(0,1,0,14);
+      };
+      try{
+        sf.group.visible=true;gate.group.visible=true;environment.group.visible=true;
+        gate.setClose(PORTAL_CLOSE['portal-sighted']??.1);gate.update(elapsed.current,0);sf.update(elapsed.current);
+        // Warm the actual stencil-bound portal before playback, rather than an unmasked city.
+        portalPose();
+        // Real draws upload hero buffers/textures and prepare shadow, normal and depth passes.
+        lens.position.set(2.34,2.16,-8.7);lens.lookAt(2.8,2.5,-11.65);lens.fov=41;lens.updateProjectionMatrix();lens.updateMatrixWorld();
+        post.fx.opening=false;post.fx.aperture=.0001;post.render(0,1,.6,4);
+        masks('outside','inside');bg?.copy(SF_BG);if(fog){fog.color.copy(SF_FOG);fog.density=.004;}
+        lens.position.set(0,2.8,29);lens.lookAt(0,15,110);lens.fov=54;lens.updateProjectionMatrix();lens.updateMatrixWorld();
+        post.fx.opening=true;post.fx.aperture=-1;post.render(0,1,0,80);
+        // Leave the opening image in the canvas while the covered scene state is restored.
+        portalPose();
+      }finally{
+        lens.position.copy(position);lens.quaternion.copy(rotation);lens.fov=fov;lens.updateProjectionMatrix();lens.updateMatrixWorld();
+        sf.group.visible=cityVisible;gate.group.visible=gateVisible;environment.group.visible=dimensionVisible;
+        gate.setClose(close);gate.update(elapsed.current,0);
+        masks(intro?(inCity?'outside':'inside'):'none',intro?(inCity?'inside':'outside'):'none');
+        if(bg&&background)bg.copy(background);if(fog&&fogColor){fog.color.copy(fogColor);fog.density=fogDensity!;}
+        post.fx.opening=opening;post.fx.aperture=aperture;gl.toneMappingExposure=exposure;
+      }
+      // Keep the boot cover until queued warm-up draws have actually finished on the GPU.
+      const context=gl.getContext() as WebGL2RenderingContext,fence=context.fenceSync(context.SYNC_GPU_COMMANDS_COMPLETE,0);
+      if(fence){context.flush();await new Promise<void>(resolve=>{const start=performance.now();const poll=()=>{const status=context.clientWaitSync(fence,0,0);if(status===context.TIMEOUT_EXPIRED&&performance.now()-start<10000){setTimeout(poll,16);return;}context.deleteSync(fence);resolve();};poll();});}
+      if(active)useSceneState.getState().ready();
+    }).catch(()=>{if(active)useSceneState.setState({error:'Could not prepare the scene. Reload to try again.'});});
+    return()=>{active=false;};
+  },[shell,shellMask,gl,scene,camera,post,sf,gate,environment,worldMasks]);
   useEffect(()=>seq.on((event:SequenceEvent)=>{
     rupture.onEvent(event,seq,camera as PerspectiveCamera);
     const pan=(p:Vector3)=>{projection.copy(p).project(camera);return Math.max(-1,Math.min(1,projection.x*.8));};
@@ -82,6 +139,8 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
   }),[seq,rupture,audio,camera,projection]);
   useFrame((_,delta)=>{
     const dt=Math.min(delta,.25);elapsed.current+=dt;const t=elapsed.current;
+    if(useSceneState.getState().phase!==prevPhaseRef.current){prevPhaseRef.current=useSceneState.getState().phase;phaseT.current=0;}
+    phaseT.current+=dt;
     const state=useSceneState.getState(),phase=state.phase;
     if(state.replay!==replay.current){replay.current=state.replay;rupture.reset();}
     seq.update(dt);
@@ -89,7 +148,8 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     if(B){B.chestFrame(ctx.chest,ctx.normal);ctx.baymax.copy(B.shell.position);ctx.head.copy(B.shell.position).add(projection.set(.05,2.98,.25).applyEuler(B.shell.rotation));}
     ctx.chip.copy(chip.group.children[0].position);
     director.update(camera as PerspectiveCamera,dt,size.width,size.height,seq,ctx);
-    environment.update(t,dt,reducedMotion,director.visualProgress,phase,seq,['chase','fracture','pulled'].includes(phase)?camera.position:null);
+    const introPortal=INTRO_PORTAL.includes(phase),inSF=introPortal&&camera.position.z>24;
+    if(!inSF)environment.update(t,dt,reducedMotion,director.visualProgress,phase,seq,['chase','fracture','pulled'].includes(phase)?camera.position:null);
     B?.update(t,dt,reducedMotion,phase,seq,camera.position);
     chip.update(t,dt,reducedMotion,phase,seq,camera as PerspectiveCamera,B);
     rupture.update(t,dt,seq,phase,camera as PerspectiveCamera);
@@ -97,11 +157,16 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     if(phase!=='socket-ready')magnetCue.current=false;
     audio.update(director.visualProgress,phase,seq.phaseTime,{red:seq.red,alignment:seq.alignment,corridor:seq.corridor,collapse:seq.collapse,thrust:['ignition','chase','fracture'].includes(phase)?(phase==='ignition'?Math.min(1,Math.max(0,(seq.phaseTime-1.9)*2)):1):0});
     // Through the seam the city falls away; only the corridor remains.
+    // The escape attempt: the gate and the normal world appear while Hiro tries to leave, and the
+    // gate slowly irises shut. Both are hidden again once he commits to Baymax (the approach).
+    gate.group.visible=introPortal;sf.group.visible=introPortal;
+    gate.update(t,dt,introPortal?(PORTAL_CLOSE[phase]??0):0);if(introPortal)sf.update(t);
+    worldMasks.city.set(introPortal?(inSF?'outside':'inside'):'none');const dimensionMask=introPortal?(inSF?'inside':'outside'):'none';worldMasks.dimension.set(dimensionMask);worldMasks.rupture.set(dimensionMask);worldMasks.chip.set(dimensionMask);shellMask?.set(dimensionMask);
     const inside=phase==='handoff';
     environment.group.visible=!inside;
     const bg=scene.background as Color|null,fog=scene.fog as FogExp2|null;
-    if(bg)bg.copy(inside?CORRIDOR_BG:STREET_BG);
-    if(fog){fog.color.copy(inside?CORRIDOR_FOG:STREET_FOG);fog.density=inside?.012:.015+director.visualProgress*.006+seq.collapse*.01;}
+    if(bg)bg.copy(inside?CORRIDOR_BG:inSF?SF_BG:STREET_BG);
+    if(fog){fog.color.copy(inside?CORRIDOR_FOG:inSF?SF_FOG:STREET_FOG);fog.density=inside?.012:inSF?.004:.015+director.visualProgress*.006+seq.collapse*.01;}
     // UI anchors are projected from the world, never fixed to the screen.
     if(marker.current){
       const focus=phase==='chip-focus'?ctx.chip:phase==='chest-focus'?ctx.chest:projection.set(3.12,2.06,-11.28);
@@ -116,10 +181,13 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
       readout.current.style.top=`${Math.max(.18,(-projection.y*.5+.5)+.02)*size.height}px`;
     }
     const fx=post.fx;
+    fx.opening=introPortal||phase==='reentry'||phase==='loading';
     fx.action=['ignition','chase','fracture','pulled'].includes(phase);fx.warp=seq.warp;fx.center.copy(seq.warpCenter);fx.flash=seq.flash;fx.white=seq.whiteout;fx.red=seq.red*(phase==='handoff'?0:.8);fx.time=t;
     fx.cyan=phase==='fracture'?seq.corridor*.45:phase==='pulled'?.6:phase==='handoff'?.35:0;
     fx.chroma=seq.warp*.8+(phase==='pulled'?seq.collapse:0)+(phase==='threat'?.12:0);
     fx.aperture=['chip-focus','chip-reaching','chip-held'].includes(phase)?.00042:['chest-focus','panel-opening','socket-ready','inserting','silence'].includes(phase)?.0003:['booting','diagnostic','corrupting','threat'].includes(phase)?.00018:['discovery','inspected'].includes(phase)?.00016:0;
+    // Hurt crossing back: a hard red hit, chromatic tear, fading as he goes still before the blink.
+    if(phase==='reentry'){const rt=phaseT.current;fx.flash=Math.max(fx.flash,.28*Math.exp(-rt*6));fx.red=Math.max(fx.red,.68*Math.exp(-rt*1.8));fx.chroma=Math.max(fx.chroma,.14*Math.exp(-rt*2.3));}
     gl.domElement.dataset.phase=phase;
     gl.domElement.dataset.progress=director.visualProgress.toFixed(3);
     gl.domElement.dataset.chase=seq.chase.toFixed(3);
@@ -131,6 +199,8 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     <color attach="background" args={['#101c31']}/>
     <fogExp2 attach="fog" args={['#253e59',.015]}/>
     <primitive object={environment.group}/>
+    <primitive object={sf.group}/>
+    <primitive object={gate.group}/>
     <primitive object={rupture.root}/>
     <primitive object={chip.group}/>
     {shell&&<primitive object={shell} onClick={check} onPointerOver={()=>{if(useSceneState.getState().phase==='discovery')gl.domElement.style.cursor='crosshair';}} onPointerOut={()=>{gl.domElement.style.cursor='default';}}/>}
@@ -149,9 +219,15 @@ const PHASE_CUES:Partial<Record<Phase,[number,(audio:AudioDirector)=>void][]>>={
   ignition:[[1.9,a=>a.spool()]],
   fracture:[[0,a=>a.rupture()]],
   pulled:[[3.1,a=>a.whiteout()]],
+  reentry:[[0,a=>a.impact(1,true,0,1)],[.12,a=>a.impact(.6,false,-.2,1)]],
   handoff:[[1.2,a=>a.arrival()]]
 };
 const PHASE_LINES:Partial<Record<Phase,[number,string,('HIRO'|'BAYMAX')?][]>>={
+  'call-baymax':[[.3,'Baymax! Come on — we have to go!'],[2.4,'The portal’s closing!']],
+  'sf-arrival':[[1.3,'I made it… San Fransokyo.']],
+  'sf-turnback':[[.5,'Baymax? …Baymax!'],[2.9,'He’s not moving.']],
+  'back-decision':[[.4,'I’m not leaving you.']],
+  'back-through':[[.2,'Hold on—']],
   'chip-focus':[[1.4,'The combat chip is still in you.']],
   'socket-ready':[[.6,'Healthcare chip is gone… but I can get you running.']],
   booting:[[4.3,'Baymax—come on.']],
@@ -180,14 +256,17 @@ export function ExperienceDirector(){
   const phase=useSceneState(s=>s.phase),chapter=useSceneState(s=>s.chapter),replay=useSceneState(s=>s.replay);
   const subtitle=useSceneState(s=>s.subtitle),speaker=useSceneState(s=>s.speaker),sound=useSceneState(s=>s.sound),error=useSceneState(s=>s.error);
   const [audioError,setAudioError]=useState(false),[linkVisible,setLinkVisible]=useState(false),[audioHint,setAudioHint]=useState(true);
-  const aperture=useRef<SVGPathElement>(null),marker=useRef<HTMLButtonElement>(null),readout=useRef<HTMLDivElement>(null);
+  const aperture=useRef<HTMLDivElement>(null),marker=useRef<HTMLButtonElement>(null),readout=useRef<HTMLDivElement>(null);
   const [idleHint,setIdleHint]=useState(false),[runHint,setRunHint]=useState(false);
   const pressedAt=useRef(0),firstScroll=useRef(true),scrollGuard=useRef(0),idleTimer=useRef<ReturnType<typeof setTimeout>|null>(null),sprintTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
   const dpr=useQuality(s=>s.dpr);
   const camera=useMemo(()=>new CameraDirector(),[]),transitions=useMemo(()=>new TransitionDirector(),[]),audio=useMemo(()=>new AudioDirector(),[]),seq=useMemo(()=>new SequenceDirector(),[]);
 
   useEffect(()=>{
-    if(phase==='awakening'&&aperture.current){firstScroll.current=true;transitions.awaken(aperture.current);}
+    if(!aperture.current)return;
+    // The blink now plays on the hurt re-entry; the escape opens on open eyes.
+    if(phase==='awakening'){firstScroll.current=true;transitions.awaken(aperture.current);}
+    else if(phase==='portal-sighted')transitions.open(aperture.current);
   },[phase,replay,transitions]);
   useEffect(()=>{
     useSceneState.setState({chapter:'BOOT',phase:'loading',targetProgress:0,subtitle:'',error:null,sound:false});
@@ -290,14 +369,16 @@ export function ExperienceDirector(){
   const diagnosticVisible=['diagnostic','corrupting','threat','ignition'].includes(phase);
   return <main className={`experience phase-${phase}`} aria-label="LAST GATE: Hiro’s vision inside the portal dimension">
     <div className="world">
-      <RenderBoundary><Canvas camera={{fov:49,near:.05,far:280,position:[-1.4,.72,7]}} dpr={dpr} shadows gl={{antialias:false,stencil:false,powerPreference:'high-performance',toneMapping:ACESFilmicToneMapping,outputColorSpace:SRGBColorSpace}} onCreated={({gl})=>{gl.toneMappingExposure=1.12;}} fallback={<span aria-hidden="true"/>}>
+      <RenderBoundary><Canvas camera={{fov:50,near:.05,far:360,position:[-.6,2.3,10.6]}} dpr={dpr} shadows gl={{antialias:false,stencil:true,powerPreference:'high-performance',toneMapping:ACESFilmicToneMapping,outputColorSpace:SRGBColorSpace}} onCreated={({gl,camera})=>{gl.toneMappingExposure=1.12;camera.lookAt(0,4.2,24);}} fallback={<span aria-hidden="true"/>}>
         <AwakeScene director={camera} seq={seq} marker={marker} readout={readout} audio={audio}/>
         <RuntimeBridge/>
       </Canvas></RenderBoundary>
     </div>
     <div className="lens-vignette" aria-hidden="true"/><div className="film-grain" aria-hidden="true"/>
     <div className="cinema-edge top" aria-hidden="true"/><div className="cinema-edge bottom" aria-hidden="true"/>
-    <svg className="organic-blink" viewBox="0 0 1920 1080" preserveAspectRatio="none" aria-hidden="true"><defs><filter id="lid-feather"><feGaussianBlur stdDeviation="5"/></filter><mask id="eye-aperture"><rect width="1920" height="1080" fill="white"/><path ref={aperture} fill="black" filter="url(#lid-feather)"/></mask></defs><rect width="1920" height="1080" fill="#020506" mask="url(#eye-aperture)"/></svg>
+    <div className="organic-blink" ref={aperture} aria-hidden="true"><i className="blink-lid blink-top"/><i className="blink-lid blink-bottom"/></div>
+    <div className="arrival-flash" aria-hidden="true"/>
+    <div className={`knockout ${phase==='reentry'?'on':''}`} aria-hidden="true"/>
     {chapter==='BOOT'&&<div className="boot" role="status"><span className="signal-line"/><span>RECONNECTING…</span></div>}
     <button className="sound" onClick={toggleSound} aria-label={sound?'Mute atmospheric sound':'Enable atmospheric sound'} aria-pressed={sound}>
       <span className={`wave ${sound?'active':''}`} aria-hidden="true"><i/><i/><i/><i/></span>
@@ -328,10 +409,7 @@ export function ExperienceDirector(){
     {ZOOM_HINT_PHASES.includes(phase)&&<div className="zoom-hint" aria-hidden="true">SCROLL <span>//</span> ZOOM</div>}
     {phase==='inspected'&&linkVisible&&<button className="replay" onClick={replayRun}>REPLAY OPENING <span>R ↶</span></button>}
     {phase==='handoff'&&<div className="handoff" role="status">
-      <p>LAST GATE <span>//</span> PHASE I</p>
-      <p>We’re going home, Baymax.</p>
-      <small>LINK <b>HIRO HAMADA</b></small>
-      <button className="replay-inline" onClick={replayRun}>REPLAY FROM THE BEGINNING <span>R ↶</span></button>
+      <p>Baymax…</p>
     </div>}
     {error&&<div className="failure"><p>{error}</p><button onClick={()=>location.reload()}>RECONNECT ↗</button></div>}
     <ProductionLayer/>

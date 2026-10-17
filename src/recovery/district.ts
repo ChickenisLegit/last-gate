@@ -1,6 +1,7 @@
 import * as T from 'three';
 import { SceneKit, seeded, type Pose } from '../phase2/SceneKit';
-import { createPortalDimension } from '../environment/PortalDimension.js';
+import { createCityBackdrop } from '../presentation/Backdrop';
+import { concreteTexture } from '../presentation/Surfaces';
 
 /** A camera beat along the service lane: where the eye rests and what it looks toward. */
 export type Stop = { name: string; pos: T.Vector3; look: T.Vector3 };
@@ -19,13 +20,15 @@ export function createDistrict() {
   const random = seeded(4821);
 
   // --- Background: the displaced portal city, pushed far back and down for a skyline.
-  const city = createPortalDimension();
+  const city = createCityBackdrop();
   const cityGroup = city.group as T.Group;
   cityGroup.position.set(2, -1.5, -34);
   cityGroup.scale.setScalar(1.15);
   group.add(cityGroup);
 
   const k = new SceneKit('district-props');
+  k.concrete.color.set('#3f4b50'); k.ivory.color.set('#77827f');
+  k.edge.color.set('#243036'); k.metal.color.set('#687674'); k.dim.color.set('#294954');
   group.add(k.root);
 
   // Warmer practical materials layered onto the Phase 1 slate palette.
@@ -36,10 +39,12 @@ export function createDistrict() {
   const amber = k.basic('#ffc15a', 1.5);
   const rust = k.standard('#5a4336', .85, .25);
   const shutter = k.standard('#39474f', .5, .7);
+  const floorTexture = concreteTexture(); floorTexture.repeat.set(3, 7);
+  const floor = k.standard('#68736e', .94, .02); floor.map = floorTexture; floor.bumpMap = floorTexture; floor.bumpScale = .025;
 
   // === GROUND: the service lane, with slabs shifted by dimensional distortion. ===
   k.box({ p: [1, -1.4, -6], s: [13, .6, 30], r: [0, .04, 0] }, k.edge);
-  k.box({ p: [1, -1.06, -6], s: [12.6, .05, 29.6], r: [0, .04, 0] }, k.concrete);
+  k.box({ p: [1, -1.06, -6], s: [12.6, .05, 29.6], r: [0, .04, 0] }, floor);
   // Lifted / rotated road pieces near the fracture.
   k.box({ p: [-3.6, -.7, -14], s: [4.5, .2, 5], r: [.22, .1, .16] }, k.concrete);
   k.box({ p: [5.2, -.55, -16], s: [3.4, .18, 4], r: [-.18, -.2, -.12] }, k.concrete);
@@ -62,7 +67,7 @@ export function createDistrict() {
   // Bilingual signage (San Fransokyo), one surviving cyan, one dead warm.
   k.label('ロボ整備 / ROBOTICS SVC', { p: [-4.2, 3.1, 2], r: [0, .12 + Math.PI / 2, 0] }, 3.4, '#8fe9ff');
   k.label('港湾 24 / BAY 24', { p: [-4.9, 1.4, -4.4], r: [0, .12 + Math.PI / 2, 0] }, 2.6, '#ff9a63');
-  k.mesh(new T.PlaneGeometry(2.1, .5), sign, { p: [-4.18, 3.1, 2], r: [0, .12 + Math.PI / 2, 0] });
+  k.mesh(new T.PlaneGeometry(3.7, .6), k.dark, { p: [-4.24, 3.1, 2], r: [0, .12 + Math.PI / 2, 0] });
   // Vending / service units with their own glow.
   for (const [z, mat] of [[-1.3, sign], [-2.6, signWarm]] as const) {
     k.box({ p: [-3.9, -.35, z], s: [.9, 1.5, .8], r: [0, .1, 0] }, rust);
@@ -119,18 +124,15 @@ export function createDistrict() {
   k.haze({ p: [0, 1, 2], s: [16, 10, 1] }, '#24506f', .1);
 
   // === LIGHTING: one cool key, selective warm practicals, Baymax's red is added by the scene. ===
-  const hemi = new T.HemisphereLight('#9ec6e4', '#0a1420', 1.5); group.add(hemi);
-  const key = new T.DirectionalLight('#bcd9ec', 2.1); key.position.set(-8, 16, 6); key.castShadow = true;
-  key.shadow.mapSize.set(2048, 2048); key.shadow.camera.near = 1; key.shadow.camera.far = 60;
-  key.shadow.camera.left = -18; key.shadow.camera.right = 18; key.shadow.camera.top = 18; key.shadow.camera.bottom = -18;
+  const hemi = new T.HemisphereLight('#a8bdc2', '#111918', .65); group.add(hemi);
+  const key = new T.DirectionalLight('#e2dec9', 2.3); key.position.set(-8, 16, 6); key.castShadow = true;
+  key.shadow.mapSize.set(1024, 1024); key.shadow.camera.near = 1; key.shadow.camera.far = 45;
+  key.shadow.camera.left = -10; key.shadow.camera.right = 10; key.shadow.camera.top = 10; key.shadow.camera.bottom = -10;
   key.shadow.bias = -.0005; group.add(key);
-  const fill = new T.DirectionalLight('#35628c', .8); fill.position.set(12, 3, -20); group.add(fill);
   // Warm practicals: workshop interior, the amber lamp, a vending unit.
   const shopLight = new T.PointLight('#ffae55', 6, 10, 1.8); shopLight.position.set(-3.8, 1.4, 1); group.add(shopLight);
   const lampLight = new T.PointLight('#ffc062', 4, 9, 2); lampLight.position.set(6.2, 5.1, 5.2); group.add(lampLight);
-  const ventLight = new T.PointLight('#ff8a46', 2.4, 6, 2); ventLight.position.set(-3.5, -.2, -1.8); group.add(ventLight);
   // Cool bleed from the fracture.
-  const fractureLight = new T.PointLight('#73c8ff', 5, 40, 1.4); fractureLight.position.set(-2, 6, -26); group.add(fractureLight);
 
   group.position.set(0, 0, 0);
 
@@ -148,15 +150,12 @@ export function createDistrict() {
     /** The district's own props (not the far city): what the board may hide when it blocks the view. */
     props: k.root,
     update(time: number, dt: number, reduced: boolean) {
-      city.update(time, dt, reduced, 0, 'approaching');
       flicker = reduced ? 1 : .82 + .18 * Math.sin(time * 23 + Math.sin(time * 7)) * (Math.random() > .04 ? 1 : .3);
       shopLight.intensity = 6 * flicker;
-      ventLight.intensity = 2.4 * (.7 + .3 * Math.sin(time * 1.6));
       fractureMat.opacity = reduced ? .9 : .7 + .3 * Math.abs(Math.sin(time * .9));
-      fractureLight.intensity = 5 * (.8 + .2 * Math.sin(time * .9));
       fracture.rotation.z = .3 + Math.sin(time * .3) * .02;
     },
-    dispose() { city.dispose(); k.dispose(); group.removeFromParent(); },
+    dispose() { floorTexture.dispose(); city.dispose(); k.dispose(); group.removeFromParent(); },
   };
 }
 export type District = ReturnType<typeof createDistrict>;

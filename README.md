@@ -26,8 +26,8 @@ Each phase lives on its own branch, and each branch builds on the one before it,
 
 | Branch | Adds | Plays |
 |---|---|---|
-| `main` | Phase 1: awakening, the shell, the chip, RED_WAKE, the fracture corridor | Phase 1 |
-| `phase2` | Phase 2: a new district and the landing page (THE LAST GATE · START JOURNEY) | Phases 1–2 |
+| `phase1` | Phase 1: awakening, the shell, the chip, RED_WAKE, the fracture corridor | Phase 1 |
+| `phase2` | Phase 2: harbour arrival and a controlled approach to Baymax | Phases 1–2 |
 | `phase3` | Phase 3: the Baymax engineering board (inspection, three physical repairs) | Phases 1–3 |
 | `phase4` | Phase 4: the walk to Bay 6, then inside the bay: follow the live cable to a hidden case and find the power regulator | Phases 1–4 |
 | `phase5` | Phase 5: the limiter test on Baymax and the telemetry trace of the healthcare chip | Phases 1–5 |

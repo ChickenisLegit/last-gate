@@ -20,8 +20,9 @@ function statusOf(system: SystemId, b: ReturnType<typeof useBoard.getState>): St
 export function BoardOverlay() {
   const b = useBoard();
   const complete = assessmentComplete(b);
+  useEffect(() => { if (complete) void engineeringExit()?.prepare?.().catch(() => {}); }, [complete]);
   const [summary, setSummary] = useState(false);
-  useEffect(() => { if (!complete) return; const t = window.setTimeout(() => setSummary(true), 1400); return () => window.clearTimeout(t); }, [complete]);
+  useEffect(() => { if (!complete) return; const t = window.setTimeout(() => { useBoard.setState({ selected: null, mode: 'exterior', zoom: 1, assessment: true }); setSummary(true); }, 1400); return () => window.clearTimeout(t); }, [complete]);
   // Internal systems open in INTERNAL view so there is something to see; leaving a system drops ISOLATE.
   const select = (system: SystemId | null) => useBoard.setState(s => ({
     selected: system,
@@ -73,7 +74,7 @@ export function BoardOverlay() {
 
     {summary && <section className="board-summary" role="dialog" aria-labelledby="board-summary-title">
       <p className="board-kicker">ASSESSMENT COMPLETE</p>
-      <h2 id="board-summary-title">He can move again.<br /><em>He is still not Baymax.</em></h2>
+      <h2 id="board-summary-title">He can move again.<br /><em>The healthcare chip is missing.</em></h2>
       <dl>
         <div><dt>BODY</dt><dd className="tone-done">PARTIALLY RESTORED</dd></div>
         <div><dt>MOVEMENT</dt><dd className="tone-done">AVAILABLE</dd></div>
@@ -82,7 +83,7 @@ export function BoardOverlay() {
       </dl>
       <p className="board-question">If the healthcare program can't be restored, how does Hiro stay close to him safely?</p>
       <div className="board-summary-actions">
-        <button className="board-secondary" onClick={() => setSummary(false)}>BACK TO THE BOARD</button>
+        <button className="board-secondary" onClick={() => { useBoard.setState({ assessment: false }); setSummary(false); }}>BACK TO THE BOARD</button>
         {exit && <button className="board-primary" onClick={exit.go}>{exit.label} <i>→</i></button>}
       </div>
     </section>}
@@ -92,8 +93,8 @@ export function BoardOverlay() {
 function Overview() {
   return <>
     <p className="board-kicker">BAYMAX <span>UNRESPONSIVE</span></p>
-    <h2>What's left of him?</h2>
-    <p className="board-body">The blast that threw them here hit Baymax hardest. Inspect each system. Repair what can physically be repaired, and find out what can't.</p>
+    <h2>Find the fault.</h2>
+    <p className="board-body">His body took the impact. Start with the power feed, then check what still responds. Each reading comes from the system you inspect.</p>
     <ol className="board-steps">
       <li>Select a system from the list or on Baymax.</li>
       <li>Use <b>INTERNAL</b> to see through the shell, <b>ISOLATE</b> to see one system alone.</li>
@@ -218,7 +219,9 @@ function PlugTask() {
 function SensorTask() {
   const tested = useBoard(s => s.sensorsTested);
   const [running, setRunning] = useState(false);
-  const run = () => { setRunning(true); window.setTimeout(() => { setRunning(false); useBoard.setState({ sensorsTested: true }); }, 1500); };
+  const timer = useRef<number | null>(null);
+  useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
+  const run = () => { if (running) return; setRunning(true); timer.current = window.setTimeout(() => { setRunning(false); useBoard.setState({ sensorsTested: true }); }, 1500); };
   return <>
     <ul className="board-findings"><li>The head board is intact. It took the least damage of anything in him.</li></ul>
     <div className="board-task">

@@ -8,5 +8,5 @@ const COVER: CSSProperties = { position: 'fixed', inset: 0, display: 'grid', pla
 export function PhaseFiveHost({ children }: { children: ReactNode }) {
   const { active, step, run } = usePhaseFiveEntry();
   if (!active) return children;
-  return <Suspense fallback={<div role="status" style={COVER}>BACK TO THE BAY…</div>}><PhaseFive key={run} initial={step} /></Suspense>;
+  return <Suspense fallback={<div aria-hidden="true" style={COVER} />}><PhaseFive key={run} initial={step} /></Suspense>;
 }

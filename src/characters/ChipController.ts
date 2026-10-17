@@ -49,7 +49,7 @@ export class ChipController {
     this.faceQuat.copy(camQ);
     this.baymax=baymax;
     if(baymax){baymax.chestFrame(this.v2,this.dockNormal);this.dockPos.copy(baymax.dockWorld());}
-    const onGround=['loading','awakening','approaching','discovery','inspected','chip-focus'].includes(phase);
+    const onGround=['loading','awakening','portal-sighted','call-baymax','to-portal','through-portal','sf-arrival','sf-turnback','back-decision','back-through','reentry','approaching','discovery','inspected','chip-focus'].includes(phase);
     if(onGround){
       this.targetPos.copy(GROUND);this.targetQuat.copy(this.groundQuat);
       if(phase==='chip-focus'){
