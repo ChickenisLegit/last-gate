@@ -11,6 +11,8 @@ import { ZoomController } from '../systems/ZoomController';
 import { SceneQuality } from '../presentation/SceneQuality';
 import { CameraShot } from '../presentation/CameraShot';
 import { transitionChapter } from '../presentation/chapterTransition';
+import { sfx, useSfxBed, useUiSfx } from '../audio/sfx';
+import { SoundToggle } from '../audio/SoundToggle';
 import './phase-five.css';
 
 /**
@@ -47,6 +49,24 @@ const strengthOf = (az: number, el: number) => {
   const daz = ((az - TARGET_AZ + 540) % 360) - 180, del = el - TARGET_EL;
   return 100 * Math.exp(-((daz / 22) ** 2) - ((del / 11) ** 2));
 };
+
+/** Every state change that makes a sound: the fitting, the power-up and the relay console. */
+function phaseFiveSounds(s: State, p: State) {
+  if (s.stage !== p.stage) {
+    if (s.stage === 'fitting') { sfx.play('mech.lift'); sfx.play('step.concrete', { delay: .5 }); sfx.play('step.concrete', { delay: .95 }); sfx.play('mech.clunk', { delay: 1.25 }); sfx.play('mech.cable-plug', { delay: 1.9 }); }
+    if (s.stage === 'testing') { sfx.play('power.whine-up'); sfx.play('baymax.eyes', { delay: .5 }); sfx.play('power.strain', { delay: .3 }); sfx.play('servo.groan', { delay: 1.4 }); sfx.play('servo.groan', { delay: 3, pitch: 1.12 }); }
+    if (s.stage === 'held') { sfx.play('servo.groan', { gain: .7, pitch: .9 }); sfx.play('mech.clunk', { gain: .4, delay: .5 }); }
+    if (s.stage === 'transit') sfx.play('move.whoosh');
+  }
+  if (s.power > .55 && p.power <= .55) sfx.play('baymax.target');
+  s.breakers.forEach((on, i) => { if (on !== p.breakers[i]) sfx.play('relay.breaker', { pitch: on ? 1 + i * .04 : .85 }); });
+  if (s.powered && !p.powered) sfx.play('relay.main');
+  if (s.leads > p.leads) sfx.play('relay.patch');
+  if (s.az !== p.az || s.el !== p.el) sfx.play('dish.motor', { pitch: .85 + s.el / 160 });
+  if (s.fixes > p.fixes) sfx.play('trace.blip', { pitch: 1 + s.fixes * .12 });
+  if (s.traced && !p.traced) { sfx.play('trace.extrapolate'); sfx.play('sting.boundary', { delay: 2 }); }
+  if (s.task > p.task) sfx.play('ui.confirm');
+}
 
 // ------------------------------------------------------------------ 3D
 
@@ -170,9 +190,9 @@ function PowerTask({ done }: { done: () => void }) {
   const load = CIRCUITS.reduce((sum, c, i) => sum + (breakers[i] ? c.amps : 0), 0);
   const flip = (i: number) => useP5.setState(st => ({ breakers: st.breakers.map((b, j) => j === i ? !b : b) }));
   const close = () => {
-    if (load > BATTERY) { setNote(`Tripped again: ${load} A on a ${BATTERY} A battery.`); return; }
+    if (load > BATTERY) { sfx.play('relay.trip'); setNote(`Tripped again: ${load} A on a ${BATTERY} A battery.`); return; }
     const missing = CIRCUITS.filter((c, i) => c.need && !breakers[i]).map(c => c.label.toLowerCase());
-    if (missing.length) { setNote(`The main holds, but there's no feed to the ${missing.join(' or the ')}.`); return; }
+    if (missing.length) { sfx.play('ui.deny'); setNote(`The main holds, but there's no feed to the ${missing.join(' or the ')}.`); return; }
     useP5.setState({ powered: true }); setNote('Main closed. Consoles and receiver are live.'); done();
   };
   return <>
@@ -193,10 +213,10 @@ function PatchTask({ done }: { done: () => void }) {
   const [picked, setPicked] = useState<string | null>(null);
   const [note, setNote] = useState('The leads were torn out of the patch panel. Pick an output, then the input it feeds.');
   const connect = (inId: string) => {
-    if (!picked) { setNote('Pick an output first.'); return; }
+    if (!picked) { sfx.play('ui.deny'); setNote('Pick an output first.'); return; }
     const out = OUTS.find(o => o.id === picked)!, inp = INS.find(i => i.id === inId)!;
-    if (Object.values(pairs).includes(inId)) { setNote(`${inp.label} is already patched.`); return; }
-    if (out.type !== inp.type) { setNote(`${inp.label} takes ${inp.type}. ${out.label} carries ${out.type}.`); setPicked(null); return; }
+    if (Object.values(pairs).includes(inId)) { sfx.play('ui.deny'); setNote(`${inp.label} is already patched.`); return; }
+    if (out.type !== inp.type) { sfx.play('ui.deny'); setNote(`${inp.label} takes ${inp.type}. ${out.label} carries ${out.type}.`); setPicked(null); return; }
     const next = { ...pairs, [out.id]: inId }; setPairs(next); setPicked(null);
     useP5.setState({ leads: Object.keys(next).length });
     if (Object.keys(next).length === 3) { setNote('Dish → amplifier → filter → decoder. The chain is whole.'); done(); }
@@ -209,7 +229,7 @@ function PatchTask({ done }: { done: () => void }) {
         {OUTS.map((o, i) => pairs[o.id] && <line key={o.id} x1={86} y1={y(i)} x2={214} y2={y(INS.findIndex(n => n.id === pairs[o.id]))} />)}
       </svg>
       <div className="p5-patchgrid">
-        <div>{OUTS.map(o => <button key={o.id} aria-pressed={picked === o.id} disabled={!!pairs[o.id]} onClick={() => setPicked(o.id)}><b>{o.label}</b><span>{o.type}</span></button>)}</div>
+        <div>{OUTS.map(o => <button key={o.id} aria-pressed={picked === o.id} disabled={!!pairs[o.id]} data-sfx="relay.pick" onClick={() => setPicked(o.id)}><b>{o.label}</b><span>{o.type}</span></button>)}</div>
         <div>{INS.map(i => <button key={i.id} disabled={Object.values(pairs).includes(i.id)} onClick={() => connect(i.id)}><b>{i.label}</b><span>{i.type}</span></button>)}</div>
       </div>
     </div>
@@ -245,10 +265,10 @@ function SpectrumTask({ done }: { done: () => void }) {
     </svg>
     {notches.map((n, i) => <label key={i} className="p5-slider">NOTCH {i + 1} <output>{n.toFixed(1)}</output>
       <input type="range" min={0} max={100} step={.5} value={n} aria-label={`Notch ${i + 1} frequency`}
-        onChange={e => setNotches(i === 0 ? [Number(e.target.value), notches[1]] : [notches[0], Number(e.target.value)])} />
+        onChange={e => { sfx.play('signal.sweep', { pitch: Number(e.target.value) / 100 }); setNotches(i === 0 ? [Number(e.target.value), notches[1]] : [notches[0], Number(e.target.value)]); }} />
     </label>)}
     <div className={`p5-meter ${ok ? 'good' : ''}`}><span>SIGNAL / NOISE</span><b>{snr.toFixed(1)} dB</b><i style={{ width: `${Math.max(0, Math.min(100, (snr + 10) / 25 * 100))}%` }} /></div>
-    <button className="p5-primary" disabled={!ok} onClick={done}>{ok ? 'LOCK FILTERS' : 'NEED 9 dB TO DECODE'}</button>
+    <button className="p5-primary" disabled={!ok} data-sfx="signal.lock" onClick={done}>{ok ? 'LOCK FILTERS' : 'NEED 9 dB TO DECODE'}</button>
     <p className="p5-note" role="status">{snr < -15 ? 'That notch is on the signal. It went with the hum.' : ok ? 'The carrier stands clear of the noise.' : 'Put each notch on a hum peak.'}</p>
   </>;
 }
@@ -266,7 +286,7 @@ function DishTask({ done }: { done: () => void }) {
     <label className="p5-slider">ELEVATION <output>{el}°</output><input type="range" min={0} max={80} value={el} aria-label="Dish elevation" onChange={e => useP5.setState({ el: Number(e.target.value) })} /></label>
     <div className="p5-fine"><button aria-label="Decrease elevation by one degree" onClick={() => adjust('el', -1)}>− 1°</button><span>{Math.abs(el - TARGET_EL) < 2 ? 'ELEVATION CENTRED' : el < TARGET_EL ? '↑ RAISE THE DISH' : '↓ LOWER THE DISH'}</span><button aria-label="Increase elevation by one degree" onClick={() => adjust('el', 1)}>+ 1°</button></div>
     <div className={`p5-meter ${ok ? 'good' : ''}`}><span>RETURN</span><b>{strength.toFixed(0)}%</b><i style={{ width: `${strength}%` }} /></div>
-    <button className="p5-primary" disabled={!ok} onClick={done}>{ok ? 'LOCK RECEIVER' : 'PEAK THE RETURN (90%+)'}</button>
+    <button className="p5-primary" disabled={!ok} data-sfx="dish.lock" onClick={done}>{ok ? 'LOCK RECEIVER' : 'PEAK THE RETURN (90%+)'}</button>
     <p className="p5-note" role="status">{ok ? 'Return peaked. Lock this bearing to read the recording.' : strength > 40 ? 'Signal acquired. Fine-tune both axes.' : 'Follow the bearing guidance to acquire the signal.'}</p>
     <button className="p5-reset" onClick={() => useP5.setState({ az: 140, el: 15 })}>RESET CALIBRATION</button>
   </>;
@@ -284,7 +304,7 @@ function TraceTask({ done }: { done: () => void }) {
   const pick = (id: string) => {
     if (order.includes(id) || traced) return;
     const expected = FIXES[order.length];
-    if (id !== expected.id) { setNote(`${FIXES.find(f => f.id === id)!.label} isn’t next. Work from the oldest fix.`); return; }
+    if (id !== expected.id) { sfx.play('ui.deny'); setNote(`${FIXES.find(f => f.id === id)!.label} isn’t next. Work from the oldest fix.`); return; }
     const next = [...order, id]; setOrder(next); useP5.setState({ fixes: next.length });
     setNote(next.length === 4 ? 'Four fixes, one heading. Extrapolate it.' : `${expected.label} placed.`);
   };
@@ -305,6 +325,10 @@ function TraceTask({ done }: { done: () => void }) {
 export function PhaseFive({ initial: from }: { initial: PhaseFiveStep }) {
   useState(() => { useP5.setState(initial(from)); return 0; });
   const s = useP5();
+  useEffect(() => useP5.subscribe(phaseFiveSounds), []);
+  const atBayNow = ['fit', 'fitting', 'test', 'testing', 'held'].includes(s.stage);
+  useSfxBed('harbour', atBayNow || s.stage === 'transit'); useSfxBed('combat-hum', atBayNow && s.power > .2, .9);
+  useSfxBed('relay', !atBayNow && s.stage !== 'transit'); useSfxBed('relay-power', s.powered && !atBayNow); useUiSfx();
   const advancing = useRef(false), advanceTimer = useRef<number | null>(null);
   useEffect(() => () => { if (advanceTimer.current) clearTimeout(advanceTimer.current); }, []);
   // Warm up whatever comes next once the trace is found.
@@ -335,6 +359,7 @@ export function PhaseFive({ initial: from }: { initial: PhaseFiveStep }) {
       </Canvas>
     </div>
     <div className="p5-grade" aria-hidden="true" />
+    <SoundToggle />
     <header className="p5-brand"><span>THE LAST GATE</span><small>PHASE 05 · {atBay ? 'HARBOUR BAY' : 'TELEMETRY RELAY'}</small></header>
 
     {atBay && <aside className="p5-panel" aria-live="polite">

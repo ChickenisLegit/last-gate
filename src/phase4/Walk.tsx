@@ -7,6 +7,8 @@ import { SceneQuality } from '../presentation/SceneQuality';
 import { transitionChapter } from '../presentation/chapterTransition';
 import { reducedMotion } from '../config/experience';
 import { enterServiceBay } from './entry';
+import { sfx, useSfxBed, useUiSfx } from '../audio/sfx';
+import { SoundToggle } from '../audio/SoundToggle';
 import { batchStaticGeometry, createBaySixArchitecture, createServiceStreetDetail } from './environmentDetail';
 import './walk.css';
 
@@ -128,7 +130,7 @@ function WalkWorld({ state, onProgress }: { state: React.MutableRefObject<WalkSt
     return city;
   }, []);
   const look = useMemo(() => new T.Vector3(), []), ahead = useMemo(() => new T.Vector3(), []), gate = useMemo(() => new T.Vector3(0, 2, GATE_Z), []);
-  const steps = useRef(0), reported = useRef(-1), initialized = useRef(false);
+  const steps = useRef(0), reported = useRef(-1), initialized = useRef(false), stride = useRef(0), ducked = useRef(false);
   const head = useMemo(() => new T.Vector2(), []), pos = useMemo(() => new T.Vector3(), []);
 
   useEffect(() => {
@@ -147,6 +149,9 @@ function WalkWorld({ state, onProgress }: { state: React.MutableRefObject<WalkSt
     PATH.getPointAt(s.p, pos);
     const bob = reducedMotion ? 0 : Math.sin(steps.current * 2) * .02 * Math.min(1, Math.abs(s.speed) / 2.5);
     const duck = Math.exp(-Math.pow((pos.z - PIPE_Z) / 1.6, 2)) * .5;
+    // Footfalls on the bob, louder with pace; the pipe groans overhead as he ducks under it.
+    if (Math.floor(steps.current / (Math.PI / 2)) !== stride.current) { stride.current = Math.floor(steps.current / (Math.PI / 2)); if (Math.abs(s.speed) > .4) sfx.play('step.grit', { gain: Math.min(1, .45 + Math.abs(s.speed) / 4) }); }
+    if (duck > .3 !== ducked.current) { ducked.current = duck > .3; if (ducked.current) sfx.play('move.duck', { at: [0, 2.05, PIPE_Z] }); }
     camera.position.set(pos.x + (reducedMotion ? 0 : Math.sin(steps.current) * .012), pos.y + bob - duck, pos.z);
     // Look down the route; near the end, the gate takes over. The pointer turns the head.
     PATH.getPointAt(Math.min(1, s.p + .05), ahead);
@@ -156,6 +161,7 @@ function WalkWorld({ state, onProgress }: { state: React.MutableRefObject<WalkSt
     camera.lookAt(look);
     head.lerp(s.pointer, 1 - Math.exp(-dt * 5));
     camera.rotateY(-head.x * .38); camera.rotateX(-head.y * .17);
+    camera.updateMatrixWorld(); sfx.listener(camera); sfx.placeBed('cable-live', [pos.x + 3.2, .1, pos.z], 2.4);
     const rounded = Math.round(s.p * 100);
     if (rounded !== reported.current) { reported.current = rounded; onProgress(s.p); }
   });
@@ -179,6 +185,7 @@ export function Walk() {
   const [leaving, setLeaving] = useState(false);
   const said = useRef(new Set<number>());
   const arrived = progress > .985;
+  useSfxBed('street'); useSfxBed('cable-live', true, .7); useUiSfx();
   // Development only: lets tooling place Hiro along the route (window.__lastGateWalk.p = 0..1).
   useEffect(() => { if (import.meta.env.DEV) (window as Window & { __lastGateWalk?: WalkState }).__lastGateWalk = state.current; }, []);
 
@@ -188,7 +195,7 @@ export function Walk() {
   useEffect(() => { if (!line) return; const t = window.setTimeout(() => setLine(null), 3600); return () => window.clearTimeout(t); }, [line]);
 
   const enter = useCallback(() => {
-    if (leaving) return; setLeaving(true);
+    if (leaving) return; setLeaving(true); sfx.play('mech.latch'); sfx.play('mech.lid-creak', { gain: .6, delay: .2 });
     void import('./ServiceBay');
     // Build the bay under the chapter cover, so it's ready when the cover lifts.
     transitionChapter(() => { void import('./bayScene').then(m => { m.prepareServiceBay(); enterServiceBay(); }); });
@@ -227,6 +234,7 @@ export function Walk() {
     {line && <p className="walk-line" key={line} role="status"><small>HIRO</small>{line}</p>}
     {!moved && !arrived && <p className="walk-hint">HOLD <b>W</b> · SPACE · OR THE MOUSE TO WALK <i>·</i> SCROLL TO STEP</p>}
     {arrived && <button className="walk-enter" onClick={enter}>Enter Bay 6 <i>→</i></button>}
+    <SoundToggle />
     <p className="sr-only">Hold W, Space or the mouse button to walk along the street, or scroll to step. Move the pointer to look around. At the gate, press Enter or E, or select Enter Bay 6.</p>
   </main>;
 }

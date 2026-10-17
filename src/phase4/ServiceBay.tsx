@@ -8,7 +8,9 @@ import { TaskRail, type RailTask } from '../ui/TaskRail';
 import { BayPlan, RegulatorSheet, plan, type PlanMark } from './BayPanels';
 import { districtExit } from './exit';
 import { enterServiceBay, type BayStart } from './entry';
-import { CABLE_WALK, EYE, VIEWS, takeServiceBay, type BayState, type ServiceBay as Bay, type View } from './bayScene';
+import { sfx, nearestOnPath, useSfxBed, useUiSfx } from '../audio/sfx';
+import { SoundToggle } from '../audio/SoundToggle';
+import { CABLE_PATH, CABLE_WALK, EYE, VIEWS, takeServiceBay, type BayState, type ServiceBay as Bay, type View } from './bayScene';
 import type { V3 } from './bayKit';
 import './bay.css';
 import './bay-theme.css';
@@ -54,6 +56,7 @@ function World({ bay, cam, state, pins, pinEls, hiro, onPick, onReady }: {
   const move = useRef<{ curve: T.CatmullRomCurve3; from: T.Vector3; to: T.Vector3; t: number; duration: number; lookAlong?: Request['lookAlong']; done?: () => void } | null>(null);
   const look = useMemo(() => new T.Vector3(...VIEWS.gate.look), []), lookOut = useMemo(() => new T.Vector3(), []), v = useMemo(() => new T.Vector3(), []), dir = useMemo(() => new T.Vector3(), []);
   const pointer = useRef(new T.Vector2()), steps = useRef(0), frames = useRef(0), bobPos = useMemo(() => new T.Vector3(), []);
+  const stride = useRef(0), cableAt = useMemo((): [number, number, number] => [0, 0, 0], []);
   const [live, setLive] = useState(false);
 
   useEffect(() => {
@@ -96,12 +99,14 @@ function World({ bay, cam, state, pins, pinEls, hiro, onPick, onReady }: {
       if (m.t >= 1) { move.current = null; m.done?.(); }
     }
     steps.current += walking * dt * 7.2;
+    if (Math.floor(steps.current / Math.PI) !== stride.current) { stride.current = Math.floor(steps.current / Math.PI); if (walking > .15) sfx.play('step.concrete', { gain: .5 + walking * .5 }); }
     const bob = reducedMotion ? 0 : Math.sin(steps.current) * .028 * walking;
     camera.position.set(bobPos.x + (reducedMotion ? 0 : Math.cos(steps.current * .5) * .018 * walking), bobPos.y + bob, bobPos.z);
     camera.lookAt(look);
     // A little head turn toward the pointer; never enough to lose what's being looked at.
     pointer.current.lerp(c.pointer, 1 - Math.exp(-dt * 3));
     camera.rotateY(-pointer.current.x * .09); camera.rotateX(-pointer.current.y * .05);
+    camera.updateMatrixWorld(); sfx.listener(camera); sfx.placeBed('cable-live', nearestOnPath(CABLE_PATH, camera.position.x, camera.position.y, camera.position.z, cableAt), 1.6);
     bay.update(t, dt, state.current, camera);
     // Screen pins follow their anchors.
     for (const pin of pins.current) {
@@ -126,7 +131,7 @@ function World({ bay, cam, state, pins, pinEls, hiro, onPick, onReady }: {
     const part = o?.userData.part ?? (e.object === bay.limiter || bay.limiter.getObjectById(e.object.id) ? 'regulator' : null);
     if (part) { e.stopPropagation(); onPick(part); }
   };
-  const hover = (on: boolean) => () => { document.body.style.cursor = on ? 'pointer' : ''; };
+  const hover = (on: boolean) => () => { document.body.style.cursor = on ? 'pointer' : ''; if (on) sfx.play('ui.hover'); };
   useEffect(() => () => { document.body.style.cursor = ''; }, []);
 
   return <>
@@ -162,6 +167,7 @@ export function ServiceBay({ start }: { start: BayStart }) {
   const later = (fn: () => void, ms: number) => { timers.current.push(window.setTimeout(fn, reducedMotion ? Math.min(ms, 60) : ms)); };
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
+  useSfxBed('bay'); useSfxBed('cable-live', true, stage === 'taken' ? .2 : 1); useUiSfx();
   const say = (text: string) => setLine({ text, key: performance.now() });
   useEffect(() => { if (!line) return; const id = window.setTimeout(() => setLine(null), 4200); return () => window.clearTimeout(id); }, [line]);
   const walkTo = (req: Request) => { setBusy(true); cam.current.request = { ...req, done: () => { setBusy(false); req.done?.(); } }; };
@@ -170,6 +176,7 @@ export function ServiceBay({ start }: { start: BayStart }) {
   useEffect(() => {
     if (!ready) return;
     if (start !== 'enter') { if (start === 'found') say('It won’t fix him. But it’ll hold him.'); return; }
+    sfx.play('mech.clunk', { gain: .35, at: [4.7, 1, .4] });
     later(() => say('Lights are on. So where is everyone?'), 900);
     later(() => walkTo({ via: [[4.4, EYE, -3.4]], to: VIEWS.hub, speed: 1.8, done: () => setStage('explore') }), 900);
   }, [ready]);
@@ -192,14 +199,14 @@ export function ServiceBay({ start }: { start: BayStart }) {
   };
   const moveCrates = () => {
     if (busy || stage !== 'crates') return;
-    setCleared(true); setBusy(true);
+    setCleared(true); setBusy(true); crateSounds();
     later(() => walkTo({ via: [], to: VIEWS.box, speed: 1.4, done: () => { setStage('box'); say('It’s warm.'); } }), 1500);
   };
-  const undoLatch = (i: 0 | 1) => { if (stage !== 'box' || busy || latches[i]) return; setLatches(l => (i === 0 ? [true, l[1]] : [l[0], true])); };
-  const liftLid = () => { if (stage !== 'box' || busy || lid || !latches[0] || !latches[1]) return; setLid(true); later(() => say('PR-6. Oh, you’re perfect.'), 900); };
+  const undoLatch = (i: 0 | 1) => { if (stage !== 'box' || busy || latches[i]) return; sfx.play('mech.latch', { at: bay.anchors[i ? 'latch1' : 'latch0'], pitch: i ? .94 : 1 }); setLatches(l => (i === 0 ? [true, l[1]] : [l[0], true])); };
+  const liftLid = () => { if (stage !== 'box' || busy || lid || !latches[0] || !latches[1]) return; setLid(true); sfx.play('mech.lid-creak', { at: bay.anchors.lid }); sfx.play('sting.found', { delay: 1.1 }); later(() => say('PR-6. Oh, you’re perfect.'), 900); };
   const take = () => {
     if (stage !== 'box' || !lid || busy) return;
-    setStage('taken');
+    setStage('taken'); sfx.play('mech.lift', { at: bay.anchors.regulator }); sfx.play('power.down', { gain: .6, delay: .45 });
     walkTo({ via: [], to: HOLD, speed: 1.2, done: () => say('It won’t fix him. But it’ll hold him.') });
   };
   const onPick = (part: string) => {
@@ -210,9 +217,15 @@ export function ServiceBay({ start }: { start: BayStart }) {
     else if (part === 'lid' || (part === 'regulator' && !lid)) { if (!latches[0]) undoLatch(0); else if (!latches[1]) undoLatch(1); else liftLid(); }
   };
   const restart = () => enterServiceBay('enter');
+  // The crates come off in the order the scene animates them: two slide, one tips off the top, the tarp goes last.
+  const crateSounds = () => {
+    const at: [number, number, number] = [-8.3, .5, -27.3];
+    sfx.play('mech.crate-scrape', { at }); sfx.play('mech.crate-scrape', { at, delay: .3, pitch: .9 }); sfx.play('mech.crate-thud', { at, delay: .62 });
+    sfx.play('mech.crate-scrape', { at, delay: .5, pitch: 1.1 }); sfx.play('mech.crate-thud', { at: [-6.9, .3, -29.1], delay: .95, pitch: .85 }); sfx.play('mech.tarp', { at, delay: .8 });
+  };
   const exit = districtExit();
   // The next chapter covers the cut itself; warm it up as soon as the regulator is in hand.
-  const leave = () => { if (!exit || leaving) return; setLeaving(true); exit.go(); };
+  const leave = () => { if (!exit || leaving) return; setLeaving(true); sfx.play('move.whoosh'); exit.go(); };
   useEffect(() => { if (stage === 'taken') void exit?.prepare?.().catch(() => {}); }, [stage]);
 
   // Dev: Ctrl+M does the next thing.
@@ -314,6 +327,7 @@ export function ServiceBay({ start }: { start: BayStart }) {
       </div>
     </aside>}
     {stage !== 'taken' && stage !== 'enter' && <p className="bay-controls"><span>Mouse</span> look around <i /> <span>Click</span> a marker to walk there</p>}
+    <SoundToggle />
     {line && <p className="bay-line" key={line.key} role="status"><b aria-hidden="true">H</b><span><small>Hiro</small>{line.text}</span></p>}
     <p className="sr-only">Use the task list on the left, or select the markers in the bay, to look around, follow the cable, move the crates, open the case and take the regulator.</p>
   </main>;

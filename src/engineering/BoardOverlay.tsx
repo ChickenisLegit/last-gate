@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { engineeringExit } from './exit';
 import { ACTUATOR_JAM, assessmentComplete, hotspotElements, repairsDone, SYSTEMS, useBoard, type SystemId, type ViewMode } from './state';
+import { sfx, useSfxBed } from '../audio/sfx';
 import './board.css';
 
 type Status = { label: string; tone: 'ok' | 'warn' | 'fault' | 'red' | 'done' };
@@ -22,13 +23,14 @@ export function BoardOverlay() {
   const complete = assessmentComplete(b);
   useEffect(() => { if (complete) void engineeringExit()?.prepare?.().catch(() => {}); }, [complete]);
   const [summary, setSummary] = useState(false);
-  useEffect(() => { if (!complete) return; const t = window.setTimeout(() => { useBoard.setState({ selected: null, mode: 'exterior', zoom: 1, assessment: true }); setSummary(true); }, 1400); return () => window.clearTimeout(t); }, [complete]);
+  useSfxBed('board');
+  useEffect(() => { if (!complete) return; const t = window.setTimeout(() => { sfx.play('sting.complete'); useBoard.setState({ selected: null, mode: 'exterior', zoom: 1, assessment: true }); setSummary(true); }, 1400); return () => window.clearTimeout(t); }, [complete]);
   // Internal systems open in INTERNAL view so there is something to see; leaving a system drops ISOLATE.
-  const select = (system: SystemId | null) => useBoard.setState(s => ({
+  const select = (system: SystemId | null) => { sfx.play('move.whoosh', { gain: .6 }); useBoard.setState(s => ({
     selected: system,
     mode: system && system !== 'chip' && s.mode === 'exterior' ? 'internal' : !system && s.mode === 'isolate' ? 'internal' : s.mode,
-  }));
-  const setMode = (mode: ViewMode) => useBoard.setState({ mode });
+  })); };
+  const setMode = (mode: ViewMode) => { sfx.play(mode === 'exterior' ? 'ui.back' : 'ui.open'); useBoard.setState({ mode }); };
   const exit = engineeringExit();
 
   return <div className={`board ${summary ? 'board-summary-open' : ''}`}>
@@ -126,13 +128,14 @@ function PowerTask() {
   const pick = (id: NodeId) => {
     if (rerouted) return;
     const last = path[path.length - 1], e = edge(last, id);
-    if (!e || path.includes(id)) { setNote(`${NODES[id].label} isn't wired to ${NODES[last].label}.`); return; }
-    if (e.severed) { setNote(`${NODES[last].label} → ${NODES[id].label} is the severed run. It can't carry anything.`); return; }
+    if (!e || path.includes(id)) { sfx.play('ui.deny'); setNote(`${NODES[id].label} isn't wired to ${NODES[last].label}.`); return; }
+    if (e.severed) { sfx.play('elec.arc'); setNote(`${NODES[last].label} → ${NODES[id].label} is the severed run. It can't carry anything.`); return; }
     const next = [...path, id];
-    if (id !== 'shoulder') { setPath(next); setNote(`${NODES[id].label} selected. Rated ${e.amps} A.`); return; }
+    if (id !== 'shoulder') { sfx.play('elec.crackle'); setPath(next); setNote(`${NODES[id].label} selected. Rated ${e.amps} A.`); return; }
     const weakest = Math.min(...next.slice(1).map((n, i) => edge(next[i], n)!.amps));
-    if (weakest < NEED) { setPath(['cell']); setNote(`That route is rated ${weakest} A. The actuator draws ${NEED} A. Choose another.`); return; }
+    if (weakest < NEED) { sfx.play('power.down'); setPath(['cell']); setNote(`That route is rated ${weakest} A. The actuator draws ${NEED} A. Choose another.`); return; }
     setPath(next); setNote(`Feed rerouted through ${next.slice(1, -1).map(n => NODES[n].label).join(' → ')}. ${weakest} A available.`);
+    sfx.play('elec.zap'); sfx.play('power.whine-up', { delay: .2 });
     useBoard.setState({ rerouted: true });
   };
   const onPath = (a: NodeId, b: NodeId) => path.some((n, i) => i > 0 && ((path[i - 1] === a && n === b) || (path[i - 1] === b && n === a)));
@@ -175,10 +178,10 @@ function ActuatorTask() {
         <div className="actuator-dial" style={{ ['--angle' as string]: `${actuatorAngle}deg` }}><i className="needle" /><i className="index" /><b>{actuatorAngle > 0 ? '+' : ''}{actuatorAngle.toFixed(0)}°</b></div>
         <label className="board-slider">JOG ACTUATOR
           <input type="range" min={-10} max={45} step={1} value={actuatorAngle} disabled={actuatorReset} aria-label="Actuator angle"
-            onChange={e => useBoard.setState({ actuatorAngle: Number(e.target.value) })} />
+            onChange={e => { sfx.play('mech.ratchet', { pitch: 1 + Number(e.target.value) / 120 }); useBoard.setState({ actuatorAngle: Number(e.target.value) }); }} />
         </label>
         <p className="board-note" role="status">{actuatorReset ? 'Index set. The arm can be driven again.' : onIndex ? 'On the index mark. Set it.' : 'Jog the actuator back to its index mark (0°).'}</p>
-        <button className="board-primary" disabled={!onIndex || actuatorReset} onClick={() => useBoard.setState({ actuatorReset: true, actuatorAngle: 0 })}>{actuatorReset ? 'INDEX SET ✓' : 'SET INDEX'}</button>
+        <button className="board-primary" disabled={!onIndex || actuatorReset} onClick={() => { sfx.play('mech.index-set'); sfx.play('servo.groan', { delay: .25 }); useBoard.setState({ actuatorReset: true, actuatorAngle: 0 }); }}>{actuatorReset ? 'INDEX SET ✓' : 'SET INDEX'}</button>
       </>}
     </div>
   </>;
@@ -190,13 +193,14 @@ function PlugTask() {
   const aligned = plugAngle % 360 === 0;
   const [hold, setHold] = useState(0);
   const timer = useRef<number | null>(null);
-  const turn = (deg: number) => useBoard.setState({ plugAngle: ((plugAngle + deg) % 360 + 360) % 360 });
+  const turn = (deg: number) => { sfx.play('mech.plug-turn'); useBoard.setState({ plugAngle: ((plugAngle + deg) % 360 + 360) % 360 }); };
   const start = () => {
     if (plugSeated || timer.current) return;
     const began = performance.now();
+    sfx.play('mech.plug-push');
     timer.current = window.setInterval(() => {
       const k = Math.min(1, (performance.now() - began) / 800); setHold(k);
-      if (k >= 1) { if (aligned) useBoard.setState({ plugSeated: true }); stop(); }
+      if (k >= 1) { if (aligned) { sfx.play('mech.plug-seat'); sfx.play('power.whine-up', { gain: .5, delay: .3 }); useBoard.setState({ plugSeated: true }); } else sfx.play('ui.deny'); stop(); }
     }, 30);
   };
   const stop = () => { if (timer.current) window.clearInterval(timer.current); timer.current = null; setHold(0); };
@@ -228,7 +232,7 @@ function SensorTask() {
   const [running, setRunning] = useState(false);
   const timer = useRef<number | null>(null);
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current); }, []);
-  const run = () => { if (running) return; setRunning(true); timer.current = window.setTimeout(() => { setRunning(false); useBoard.setState({ sensorsTested: true }); }, 1500); };
+  const run = () => { if (running) return; setRunning(true); sfx.play('sensor.scan'); timer.current = window.setTimeout(() => { setRunning(false); sfx.play('sensor.ping'); useBoard.setState({ sensorsTested: true }); }, 1500); };
   return <>
     <ul className="board-findings"><li>The head board is intact. It took the least damage of anything in him.</li></ul>
     <div className="board-task">
@@ -250,7 +254,7 @@ function ChipTask() {
     <ul className="board-findings"><li>Behaviour lives in the chip bay. This is the part that decides who Baymax is.</li></ul>
     <div className="board-task">
       <p className="board-kicker">CHECK <span>PROGRAM CORE</span></p>
-      {!open ? <button className="board-primary" onClick={() => useBoard.setState({ bayOpen: true })}>OPEN THE CHIP BAY</button> : <>
+      {!open ? <button className="board-primary" onClick={() => { sfx.play('chip.hiss'); sfx.play('sting.empty', { delay: 1.7 }); useBoard.setState({ bayOpen: true }); }}>OPEN THE CHIP BAY</button> : <>
         <dl className="board-readings">
           <div><dt>COMBAT CHIP</dt><dd className="tone-red">SEATED · ACTIVE</dd></div>
           <div><dt>HEALTHCARE CHIP</dt><dd className="tone-red">ABSENT</dd></div>

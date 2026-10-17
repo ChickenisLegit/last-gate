@@ -6,6 +6,8 @@ import { takeHarbour } from './HarbourWorld';
 import type { RecoveryStage } from './state';
 import { reducedMotion } from '../config/experience';
 import { SceneQuality } from '../presentation/SceneQuality';
+import { sfx, useSfxBed, useUiSfx } from '../audio/sfx';
+import { SoundToggle } from '../audio/SoundToggle';
 import './recovery.css';
 
 const DEV_JOURNEY = import.meta.env.DEV && new URLSearchParams(location.search).get('recovery') === 'journey';
@@ -22,7 +24,7 @@ function Scene({ intent, onReady, onArrived, onError }: {
   const extension = journeyExtension();
   const eye = useMemo(() => new Vector3(), []), look = useRef(new Vector3(1.4, .3, -4.8));
   const desiredLook = useMemo(() => new Vector3(), []), head = useRef(new Vector2()), headTarget = useMemo(() => new Vector2(), []);
-  const notified = useRef(false);
+  const notified = useRef(false), stride = useRef(0);
   const prepare = useMemo(() => world && extension?.prepare ? () => extension.prepare!(world, gl, scene, camera) : undefined, [world, extension, gl, scene, camera]);
   useEffect(() => {
     let alive = true, mounted: JourneyWorld | null = null;
@@ -46,6 +48,8 @@ function Scene({ intent, onReady, onArrived, onError }: {
     i.progress = reducedMotion ? i.target : MathUtils.clamp(i.progress + i.velocity * dt, 0, 1);
     PATH.getPointAt(i.progress, eye);
     const moving = Math.abs(i.target - i.progress) > .002;
+    // A footfall every half bob cycle while Hiro walks the apron.
+    if (Math.floor(i.progress * 65 / Math.PI) !== stride.current) { stride.current = Math.floor(i.progress * 65 / Math.PI); if (moving) sfx.play('step.grit', { gain: .8 }); }
     if (!reducedMotion) {
       eye.y += Math.sin(i.progress * 65) * .018 * (moving ? 1 : 0) + Math.sin(t * .9) * .008;
       eye.x += Math.sin(i.progress * 32) * .01 * (moving ? 1 : 0);
@@ -57,7 +61,7 @@ function Scene({ intent, onReady, onArrived, onError }: {
     camera.rotateY(head.current.x); camera.rotateX(head.current.y);
     const cam = camera as PerspectiveCamera;
     cam.fov = MathUtils.damp(cam.fov, 50 - i.progress * 4, 3, dt); cam.updateProjectionMatrix();
-    if (i.progress > .985 && !notified.current) { notified.current = true; onArrived(); }
+    if (i.progress > .985 && !notified.current) { notified.current = true; onArrived(); sfx.play('servo.groan', { gain: .5, delay: .6 }); }
   });
   return <>
     <color attach="background" args={['#101a21']} /><fog attach="fog" args={['#192932', 22, 115]} />
@@ -72,6 +76,9 @@ export function Recovery({ active = true }: { active?: boolean }) {
   const intent = useRef<Intent>({ stage, target: DEV_JOURNEY ? 1 : 0, progress: DEV_JOURNEY ? 1 : 0, velocity: 0, forward: false, yaw: 0, pitch: 0, drag: false, lastX: 0, lastY: 0 });
   const extension = journeyExtension();
   intent.current.stage = stage;
+  useSfxBed('harbour', active, stage === 'journey' ? .45 : 1);
+  useSfxBed('combat-hum', active, stage === 'journey' ? .9 : stage === 'inspect' ? .8 : .45);
+  useUiSfx(active);
   const callbacks = useMemo(() => ({ ready: () => setReady(true), arrived: () => setStage(s => s === 'journey' ? s : 'inspect'), error: () => setError(true) }), []);
   useEffect(() => {
     if (!ready || !active) return;
@@ -100,7 +107,7 @@ export function Recovery({ active = true }: { active?: boolean }) {
     return () => { el.removeEventListener('pointerdown', down); el.removeEventListener('wheel', wheel); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('blur', up); window.removeEventListener('keydown', keydown); window.removeEventListener('keyup', keyup); up(); };
   }, [stage, active]);
 
-  const inspect = () => { intent.current.yaw = 0; intent.current.pitch = 0; setDialogue(false); setStage('journey'); };
+  const inspect = () => { sfx.play('move.whoosh'); intent.current.yaw = 0; intent.current.pitch = 0; setDialogue(false); setStage('journey'); };
   return <main className={`recovery stage-${stage} ${ready ? 'is-ready' : ''} ${stage === 'journey' ? 'journey-live' : ''}`} aria-label="The Last Gate" data-state="BAYMAX_RECOVERY">
     <div className="recovery-world"><Canvas shadows frameloop={active ? 'always' : 'demand'} camera={{ position: [.4, 1.65, 9], fov: 50, near: .1, far: 160 }} dpr={[1, 1.5]} gl={{ antialias: true, powerPreference: 'high-performance' }}>
       <Scene intent={intent} onReady={callbacks.ready} onArrived={callbacks.arrived} onError={callbacks.error} />
@@ -112,6 +119,7 @@ export function Recovery({ active = true }: { active?: boolean }) {
     {stage === 'inspect' && <div className="recovery-controls"><p>NO RESPONSE <span>·</span> PHYSICAL ACCESS AVAILABLE</p><button className="recovery-start" onClick={inspect}>INSPECT BAYMAX <span>↗</span></button></div>}
     {stage === 'journey' && extension && <extension.Overlay />}
     {stage !== 'journey' && <p className="recovery-signal">SIGNAL RECOVERED · SAN FRANSOKYO / HARBOUR</p>}
+    {active && ready && <SoundToggle />}
     {error && <div className="recovery-error" role="alert">Baymax could not be loaded. <button onClick={() => location.reload()}>Reload</button></div>}
   </main>;
 }
