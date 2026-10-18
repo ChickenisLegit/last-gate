@@ -1,74 +1,123 @@
-# Last Gate
+# The Last Gate
 
-The first desktop chapters of Path 1. The viewport is Hiro's vision: a blinking awakening, fractured San Fransokyo, a controlled approach to Baymax's silent shell, and a red chip beside his hand. Hiro picks it up, opens Baymax's chest bay and seats the chip. After a held silence Baymax wakes, seems himself for a moment, finds his healthcare directive missing, and locks onto Hiro as a threat. His attacks tear the portal city apart during a directed chase until a fracture corridor opens; Baymax is taken into it and Hiro is pulled through after him. Art direction targets 1920×1080. Viewports below 1280px show a desktop-required screen and do not mount WebGL.
+A desktop, browser-based Big Hero 6 fan story in six chapters, played through Hiro's eyes. Baymax
+is stuck on a combat chip on the far side of a broken portal; Hiro has to bring him back up, keep
+him from hurting anyone, find out where his healthcare chip went, and get them both home.
+
+Built with React, TypeScript, Vite, Three.js, React Three Fiber, Zustand and GSAP. Art direction
+targets 1920×1080; viewports narrower than 1280px get a desktop-required screen and never mount WebGL.
 
 ## Run
 
-Requires Node.js 20.19+ or 22.12+. Run `npm install`, then `npm run dev`, and open http://localhost:4173. `npm run build` checks TypeScript and generates the deployable static site in `dist/`. `npm run preview` serves that production build. `node server.mjs` also serves the built site without dependencies.
+Requires Node.js 20.19+ or 22.12+.
+
+```bash
+npm install
+npm run dev        # http://127.0.0.1:4173
+npm run build      # type-checks, then writes the static site to dist/
+npm run preview    # serves the production build
+node server.mjs    # serves dist/ with no dependencies
+```
+
+`npm run check` type-checks only. `npm run assets` re-exports the white Baymax shell to
+`public/models/baymax-shell.glb`.
+
+## The story
+
+1. **The portal.** Hiro comes to inside the portal dimension, runs for the still-open gate,
+   reaches San Fransokyo, turns back for Baymax and is hurt crossing back. He finds Baymax's silent
+   shell and a red chip beside it, opens the chest bay and seats the chip. Baymax wakes, runs a
+   diagnostic, finds no healthcare directive and locks onto Hiro. A chase through the tearing city
+   ends in a fracture that pulls them both through.
+2. **The fracture.** In the afterimage of the crossing, Hiro focuses on the one still line and
+   scans it, then follows the stored trace back to the city and lands at the harbour beside
+   Baymax, down and armoured.
+3. **The engineering board.** Baymax on a diagnostic board: inspect each system, see through the
+   shell or isolate it, and make three physical repairs. The chip bay is scanned, not opened.
+4. **Bay 6.** A walk along the live street cable to a service bay, then a search inside it: the
+   bench lamps, a job card, the hot line under the crates, and a warm case holding a power
+   regulator.
+5. **The limiter and the relay.** The regulator goes on Baymax's chest plate and is tested: he
+   comes back up, still hostile, held to 35%. Then a telemetry relay deeper in the city: five
+   console repairs recover the healthcare chip's last transmission, which went straight through
+   the portal.
+6. **Baymax wakes again.** The combat chip brings him up at the relay, and the regulator only buys
+   time. Hiro runs for the old portal site, brings its frame back, and lets Baymax come at full
+   power before cutting him to 35% mid-air. Baymax falls. The gate's reader is tuned to his combat
+   chip, so Hiro pulls it, plays the relay's capture of the healthcare chip's signal into the
+   reader, and hauls Baymax through by his boots. On the other side the healthcare chip is in a
+   harbour litter bin. Hiro fetches it, seats it, and Baymax boots as himself.
 
 ## Controls
 
-- Awakening starts automatically. Escape or **Skip awakening** skips the blink sequence.
-- Move the pointer to look around; how far Hiro can turn depends on the moment. On the approach, A / D or the left and right arrows step sideways.
-- Scroll, hold Space / W / Arrow Up, or use the subtle move closer control to approach Baymax.
-- Click Baymax, select the response marker, or press E to check for a response.
-- Press and hold (mouse, or E / Space / Enter) on the chip to pick it up, and on the chest seam to release the access bay.
-- Move the pointer to guide the chip toward the keyed socket; it aligns magnetically and seats itself. Click once it is close, or hold E to let the socket draw it in. While handling the chip, scroll or press + / − to zoom.
-- During the attack Hiro keeps running on his own. Hold the mouse, Space, W or Arrow Up, or scroll, to sprint.
-- Enable original synthesized ambience through the upper-right sound control. Audio starts only after a user gesture.
-- Press R, or select **Replay** on the chapter card, to restart.
+- **Look:** move the pointer. **Move:** scroll, hold W / Space / Arrow Up, or the mouse button.
+  On some approaches A / D step sideways.
+- **Interact:** click the highlighted thing, or press E. Steps that need commitment are
+  **click and hold** (mouse, or E / Space / Enter); the ring fills as you hold.
+- **Chips:** guide the chip to the socket with the pointer (it draws itself in when close), or
+  hold E to let it seat itself. While handling a chip, scroll or + / − zooms.
+- **Sound:** the control in the corner. Audio starts only after a user gesture.
+- **Replay:** R, or **Replay** on a chapter card.
 
-The sequence respects reduced motion. Keyboard operation, live captions, and asset/WebGL failure messages are included. A small MOVE // SCROLL hint appears only after inactivity. The first wheel input produces a small teaching step.
+Reduced motion is respected throughout. Keyboard operation, captions, and asset or WebGL failure
+messages are included.
 
-## Branches
+## Development
 
-Each phase lives on its own branch, and each branch builds on the one before it, so a phase's code is only ever added by its own branch:
+Development builds accept these shortcuts:
 
-| Branch | Adds | Plays |
-|---|---|---|
-| `phase1` | Phase 1: awakening, the shell, the chip, RED_WAKE, the fracture corridor | Phase 1 |
-| `phase2` | Phase 2: harbour arrival and a controlled approach to Baymax | Phases 1–2 |
-| `phase3` | Phase 3: the Baymax engineering board (inspection, three physical repairs) | Phases 1–3 |
-| `phase4` | Phase 4: the walk to Bay 6, then inside the bay: follow the live cable to a hidden case and find the power regulator | Phases 1–4 |
-| `phase5` | Phase 5: the limiter test on Baymax and the telemetry trace of the healthcare chip | Phases 1–5 |
-| `phase6` | Phase 6: Baymax wakes again, the run to the old gate, the drop, the crossing and the healthcare chip | Phases 1–6 |
+| URL | Opens at |
+|---|---|
+| `/` | Chapter 1 from the start (Ctrl+M skips to the next beat) |
+| `?phase2=fracture`, `?phase2=afterimage` | Chapter 2 |
+| `?recovery=1`, `?recovery=journey` | The harbour landing, the engineering board |
+| `?phase4=walk`, `bay`, `box`, `found` | Chapter 4: the walk, the bay, the uncovered case, the regulator in hand |
+| `?phase5=1`, `?phase5=facility` | Chapter 5: the limiter, the relay |
+| `?phase6=wake`, `escape`, `gate`, `drop`, `portal`, `home` | Chapter 6 beats |
 
-Fixes to a phase go on that phase's branch; rebase the later branches onto it afterwards. Later phases plug in through small registries (`src/recovery/journey.ts`, `src/engineering/exit.ts`, `src/phase4/exit.ts`), so earlier phases never import later ones.
+Alt+Shift+F toggles a debug HUD; Alt+Shift+R restarts the current checkpoint.
 
-## Chapter flow
+### Tests
 
-Phase 1 → the Phase 2 landing → the Phase 3 engineering board → Phase 4's walk to Bay 6 and the search inside it, where a job card and the live street cable lead to a case under the stairs holding the power regulator. The find's **FIT THE LIMITER TO BAYMAX** starts Phase 5: back at the harbour bay the limiter is fitted and tested (Baymax comes back up, still hostile, held to 35%), then Hiro moves deeper into the city to a telemetry relay. Five console repairs (power within the battery's limit, the signal patch, notching out interference, aiming the dish, ordering the signal fixes) recover the healthcare chip's last transmission: outbound, across the portal boundary, no local signal. Its **GO AFTER THE SIGNAL** starts Phase 6: the combat chip brings Baymax back up outside the relay; the regulator (a guarded switch on Hiro's wrist) holds him to 35%, which only buys time. Hiro runs for the old portal site, turns the frame's three ring segments until power reaches it, and finds its centre socket empty. He switches the regulator off so Baymax comes to him at full power, switches it back on mid-air, and Baymax falls; his chest opens on the combat chip, the piece the socket needs. With the gate open Hiro hauls him through, and on the quiet side he slots the healthcare chip back in and Baymax boots as himself.
+The scripts drive a real Chrome against the dev server through Puppeteer (`puppeteer-core`, not a
+dependency; point `PUPPETEER` at its ESM entry). Results and screenshots go to `artifacts/`.
 
-Development supports `?recovery=1`, `?recovery=journey`, `?phase4=walk`, `?phase4=bay` (walking in), `?phase4=box` (at the uncovered case), `?phase4=found` (regulator in hand), `?phase5=1`, `?phase5=facility`, and `?phase6=wake`, `escape`, `gate`, `drop`, `portal` and `home`. In Phase 6, Ctrl+M skips to the next beat.
+```bash
+PUPPETEER=<path to puppeteer-core esm entry> BASE=http://localhost:4173 node scripts/recovery-interactions.mjs
+PUPPETEER=<path to puppeteer-core esm entry> BASE=http://localhost:4173 node scripts/recovery-smoke.mjs
+```
 
-## Architecture
+`recovery-interactions` plays Chapter 6's interactions with the mouse and keyboard (regulator, run,
+gate rings, chip pull, cartridge, the haul, the bin and the healthcare chip). `recovery-smoke` walks
+every Chapter 6 stage and records errors.
 
-React, TypeScript, Vite, Three.js, React Three Fiber, Zustand, and GSAP. One Canvas and one experience controller coordinate BOOT → AWAKE → THE_SHELL → RED_WAKE → THE_FRACTURE. The phase graph lives in `SceneStateManager`; authored beat lengths, hold time and diagnostic lines live in `config/shell.ts`.
+## Source map
 
-- **SequenceDirector** is the shared per-frame state: hold progress, chase progress along an authored spline, the attack schedule (charge, discharge, impact, tear), camera impulses, and grade signals. Systems subscribe to its events; nothing is triggered from React.
-- **CameraDirector** exclusively owns the camera. Every phase after the approach is an authored shot that cross-blends from wherever the previous shot left the camera; shake, shoves and FOV punches come only from sequence impulses.
-- **BaymaxController** articulates the shell (shoulder-hinged arms, head tracking, inflation, thruster) and carries corruption through eyes, armour emissive, chest seam and posture rather than twitching.
-- **ChestAccess** builds the medical bay: an iris of three leaves, a real cavity opened with a depth mask, and a keyed dock whose outline repeats the chip's. **RedChip** and **ChipController** own the chip from asphalt to socket, including magnetic guidance.
-- **RuptureSet** pools every bolt, impact, scar, tear, debris chunk and collapsing slab, and builds the fracture corridor. **WorldWarp** patches every environment material once with shared uniforms for impact ripples, road fold, architectural shear and the corridor's pull, so nothing recompiles mid-sequence.
-- **AudioDirector** is fully synthesized: phase-mixed layers (air, breath, internal hum, corrupted hum, thrusters, corridor) and authored one-shots for each tactile and violent beat.
-- TransitionDirector owns the eye-opening timeline. AssetManager loads the shell GLB once. The environment uses instanced windows, repeated details and drifting debris; particles render in a single point cloud.
+- `src/experience`, `src/state`, `src/systems`, `src/transitions`: Chapter 1. `ExperienceDirector`
+  runs the frame, `SceneStateManager` holds the beat graph, `CameraDirector` owns the camera, and
+  `config/shell.ts` holds beat lengths and diagnostic lines.
+- `src/characters`: Baymax (white shell, `ChestAccess` bay, `ChestBay` mount), the rigged
+  armoured suit (`ArmouredBaymax`), the chips, Hiro and the regulator controller.
+- `src/environment`, `src/effects`: the portal dimension, the rift gate, the rupture set, the
+  harbour city and the post-processing stack.
+- `src/phase2`, `src/recovery`, `src/engineering`, `src/phase4`, `src/phase5`, `src/phase6`: one
+  folder per chapter. Later chapters plug in through small exit/entry registries, so earlier
+  chapters never import later ones.
+- `src/audio`: fully synthesized sound, with no recordings.
+- `src/presentation`, `src/ui`, `src/core`, `src/performance`: chapter transitions, shared UI,
+  quality scaling, and the shader warm-up done behind each loading cover.
 
-The shared source is grouped into `src/experience`, `src/state`, `src/systems`, `src/characters`, `src/environment`, `src/transitions`, `src/audio`, `src/ui` and `src/config`, with transition and performance infrastructure in `src/core` and `src/performance`. Each later phase adds its own folders on its own branch: `src/phase2` and `src/recovery` (phase2), `src/scenes/final` (phase3), and `src/phase4` (phase4).
+`docs/` holds design briefs and handoff notes from development.
 
-## Cinematic polish
+## Assets and credits
 
-The three-blink awakening uses one asymmetric SVG aperture with feathered edges. The camera combines an authored curved approach, damped mouse/head lag, restrained breathing and a settling gait. Actual depth of field racks from foreground to Baymax during awakening, then returns to normal before isolating him again at close range.
+The white Baymax, the cities, the bays, the portal shaders and all audio are original procedural
+assets. No film model, soundtrack or voice recording is included. Interface fonts load from Google
+Fonts with local fallbacks.
 
-The post stack includes GTAO, high-threshold bloom, edge-only chromatic instability during awakening, linear-space SMAA and ACES output. The grade pass adds an impact-centred shockwave refraction, flash, a red edge intrusion during corruption, a cyan flood from the fracture, and the whiteout. Sprites and transparent layers are excluded from the AO and depth-of-field buffers. Every program the sequence needs is compiled behind the boot screen, and all lights exist from the first frame, so no effect stalls when it first appears. HIGH starts at 1.25× internal density with 4096px key shadows; it adapts to MEDIUM after sustained measured slow frames. No 60 FPS claim is made without hardware benchmarking.
+The armoured Baymax (`public/models/baymax-armoured.glb`) is converted from
+["Armored Baymax (from Disney's Big Hero 6)"](http://www.blendswap.com/blends/view/76636) by
+DoodleNotes1, licensed [CC BY 3.0](http://creativecommons.org/licenses/by/3.0) and marked
+non-commercial fan art; see `public/models/baymax-armoured.CREDITS.txt` for the changes made.
 
-The 1.75 art pass replaces green-grey with neutral/slate architecture and cyan atmospheric depth. PortalArt adds localized cyan/violet fractures with matching light spill, two feathered atmospheric shafts, three bilingual city signs, one surviving window and an amber traffic signal. Warm ivory skin and deep crimson metallic armor separate Baymax from the cool city. Dry aggregate asphalt, limited moisture patches and worn yellow markings create material contrast. The camera endpoint is backed off slightly to keep the chip and shell together; movement, blink timing, dialogue and chapter flow are unchanged.
-
-The environment has close cable/glass/dust, the street and Baymax, displaced mid-distance structures, and distant fog masses. Deliberate anomalies include rotated upper floors, a vertical road, a duplicated bridge, detached windows, and a sliced building. Local haze and selected debris move slowly. Road and concrete have separate material responses; Baymax uses warm inflatable sheen, dark metallic armor, contact occlusion and imperceptible physical settling. The chip has a restrained emissive pulse and ground bounce. Ambience quiets during the approach while low pressure increases.
-
-## Assets and generation
-
-The stylized Baymax model, street geometry and textures, portal shader, and ambience are original procedural assets. `npm run assets` exports the reusable model to `public/models/baymax-shell.glb` (approximately 250 KB). This is an intentionally simplified approximation, ready to replace with a more detailed model. No external film model, soundtrack or voice recording is included. Interface fonts load from Google Fonts with local fallbacks. Dependency licenses remain with their installed packages.
-
-The armoured Baymax (`public/models/baymax-armoured.glb`) is converted from ["Armored Baymax (from Disney's Big Hero 6)"](http://www.blendswap.com/blends/view/76636) by DoodleNotes1, licensed [CC BY 3.0](http://creativecommons.org/licenses/by/3.0) and marked as non-commercial fan art; see `public/models/baymax-armoured.CREDITS.txt` for the changes made.
-
-This is a fan concept made for the supplied Big Hero 6 competition brief, without affiliation with Disney.
+This is a fan concept made for a Big Hero 6 competition brief, not affiliated with Disney.
