@@ -9,8 +9,9 @@ const PhaseTwo = lazy(()=>import('./PhaseTwoExperience').then(module=>({default:
 export function PhaseTwoHost({children}:{children:ReactNode}) {
   const recovering = useRecovery(s => s.active);
   const phase = useSceneState(s => s.phase), [prepared, setPrepared] = useState(false);
-  useEffect(() => { if (['approaching', 'discovery', 'chip-held', 'booting'].includes(phase)) setPrepared(true); }, [phase]);
-  // Compile once while Phase 1 is interactive. Demand mode does not render hidden frames.
+  useEffect(() => { if (['awakening', 'approaching', 'discovery', 'chip-held', 'booting'].includes(phase)) setPrepared(true); }, [phase]);
+  // Compile once early in Phase 1: from the awakening, while his eyes are still shut, so the compile
+  // pause lands on a dark screen instead of the walk up to Baymax (tracker R-01). Demand mode does not render hidden frames.
   // Keep this exact Canvas alive across the handoff; discard the outgoing scene instead.
   return <>
     {!recovering && <LegacyHost>{children}</LegacyHost>}

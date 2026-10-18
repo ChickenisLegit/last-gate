@@ -312,8 +312,10 @@ export function createFirstPersonHands(controller: LimiterController = createLim
       leftMount.rotation.set(T.MathUtils.lerp(-.9, .8, r) + s.tilt + Math.sin(ph) * .05 * w, T.MathUtils.lerp(.4, .15, r), .12 + Math.sin(ph) * .06 * w + s.nudge);
       // Right hand: out of shot ↔ forward and down, open.
       const q = sm.reach;
-      rightMount.position.set(T.MathUtils.lerp(.24, .085, q) - sway * .8, T.MathUtils.lerp(-.5, -.12, q) + bob + breathe, T.MathUtils.lerp(-.22, -.5, q) - pump);
-      rightMount.rotation.set(T.MathUtils.lerp(-.8, .05, q) - Math.sin(ph) * .05 * w, T.MathUtils.lerp(-.3, -.05, q), -Math.sin(ph) * .06 * w);
+      // Reaching, the forearm comes in from the lower right like a real arm, so the sleeve runs off the
+      // bottom corner of the frame instead of pointing back into the lens (tracker R-06).
+      rightMount.position.set(T.MathUtils.lerp(.24, .14, q) - sway * .8, T.MathUtils.lerp(-.5, -.19, q) + bob + breathe, T.MathUtils.lerp(-.22, -.46, q) - pump);
+      rightMount.rotation.set(T.MathUtils.lerp(-.8, .4, q) - Math.sin(ph) * .05 * w, T.MathUtils.lerp(-.3, .55, q), T.MathUtils.lerp(0, .35, q) - Math.sin(ph) * .06 * w);
       rightMount.visible = q > .01 || w > .3; leftMount.visible = r > .01 || w > .3;
       // Fingers: left wrapped round the controller; right relaxed, opening as it reaches.
       curl(left, hold.curl);

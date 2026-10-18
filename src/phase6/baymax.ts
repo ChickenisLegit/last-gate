@@ -83,8 +83,11 @@ export async function createBaymax() {
   const armoured = await createArmouredBaymax({ eye: eyeMat, hole: () => bay.holeOpen ? bay.root.getObjectByName('dock')!.getWorldPosition(holeAt) : null });
   mountArmour(armoured, model, { y: .55, z: .28 }, 2.42);
   // The limiter Hiro fitted in Phase 5 stays on his chest plate (tracker N-04); Hiro's remote drives its lamp.
-  const limiter = createLimiter(); limiter.scale.setScalar(.62 / armoured.root.scale.x); armoured.root.add(limiter);
-  armoured.drive({}); armoured.mountOnChest(limiter, -.3, .36);
+  // Smaller and centred on the plate, so it lies inside his outline from every angle, even lying on his back (tracker R-08).
+  const limiter = createLimiter(); limiter.scale.setScalar(.46 / armoured.root.scale.x); armoured.root.add(limiter);
+  armoured.drive({}); armoured.mountOnChest(limiter, -.3, .24);
+  // Phase 6 opens armoured: start fully on, so the warm-up draw compiles the opaque plates it will really use (tracker R-05).
+  armoured.set(1);
   // While armoured the chest bay sits in the suit's chest plating (tracker N-03); it goes back on the white chest at the boot.
   let unseatBay: (() => void) | null = null;
   const under = (o: T.Object3D, roots: T.Object3D[]) => { for (let q: T.Object3D | null = o; q; q = q.parent) if (roots.includes(q)) return true; return false; };
@@ -242,6 +245,8 @@ export async function createBaymax() {
       const swing = Math.sin(gait) * stride + Math.sin(shuffle) * shuffleAmp;
       const heavy = 1 + slug * .7;
 
+      // Suit knees: soft at rest, folding through the swing (the leg moving forward), hanging when airborne.
+      const knee = (s: number) => (1 - sit) * (1 - lie) * (.1 + stride * .85 * Math.max(0, -s * Math.cos(gait)) + cur.dangle * .35);
       // Legs: sitting ↔ standing, the stride, the dangle when airborne; kept vertical under a lean.
       const legLean = cur.lean * (1 - sit) * (1 - lie) * .85;
       hips.forEach((h, i) => {
@@ -287,14 +292,17 @@ export async function createBaymax() {
         headRest.setFromEuler(headBase).invert();
         armoured.drive({
           armL: qA.setFromEuler(shoulders[1].rotation), armR: qB.setFromEuler(shoulders[0].rotation),
-          legL: qC.setFromEuler(eul.set(hips[1].rotation.x - 1.42, 0, hips[1].rotation.z)), legR: qD.setFromEuler(eul.set(hips[0].rotation.x - 1.42, 0, hips[0].rotation.z)),
+          // The suit's thighs are far bigger than the white legs: a shorter swing, and the knee folds
+          // as each leg comes through, so the plates don't drive up into his belly (tracker R-04/R-05).
+          legL: qC.setFromEuler(eul.set((hips[1].rotation.x - 1.42) * .7, 0, hips[1].rotation.z)), legR: qD.setFromEuler(eul.set((hips[0].rotation.x - 1.42) * .7, 0, hips[0].rotation.z)),
+          kneeL: knee(-1), kneeR: knee(1),
           head: headNode ? qH.setFromEuler(headNode.rotation).multiply(headRest) : undefined,
           // Elbows: bent up in guard, straightening into a punch or reaching overhead.
           elbowL: .3 + cur.guard * .75 - cur.punch * .8 - p.overhead * .2 + cur.flail * .3,
           elbowR: .3 + cur.guard * .75 - cur.hold * .5 - p.overhead * .2 + cur.flail * .3,
         });
       }
-      if (pose.armour > .5 && !unseatBay) unseatBay = seatOn(bay.root, armoured.chestSpot(.2, .3), .05);
+      if (pose.armour > .5 && !unseatBay) unseatBay = armoured.seatOnPlate(bay.root, .2, .2, .235, 1.2);
       else if (pose.armour <= .5 && unseatBay) { unseatBay(); unseatBay = null; }
       let low = Infinity;
       if (pose.armour > .5) { for (const m of whiteTorso) { box.copy(m.geometry.boundingBox!).applyMatrix4(m.matrixWorld); low = Math.min(low, box.min.y); } low = Math.min(low, armoured.footLow()); }

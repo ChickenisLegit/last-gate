@@ -42,7 +42,7 @@ export async function createBay() {
   const red = new T.PointLight('#ff2a1c', 0, 6, 1.8); red.position.copy(body).add(new T.Vector3(-.6, 1.2, .4)); district.group.add(red);
 
   const limiter = createLimiter();
-  limiter.scale.setScalar(.62);
+  limiter.scale.setScalar(.46);
   const ground = -1.02;
   const staged = body.clone().addScaledVector(side, 2.6).addScaledVector(axis, -.4).setY(ground);
   limiter.position.copy(staged); limiter.rotation.y = .5; district.group.add(limiter);
@@ -51,7 +51,7 @@ export async function createBay() {
   const tmpP = new T.Vector3(), redEye = new T.Color('#ff2414'), tmpM = new T.Matrix4();
   const mountLocal = new T.Matrix4(), mountPos = new T.Vector3(), mountQ = new T.Quaternion(), mountS = new T.Vector3(), mountN = new T.Vector3();
   const stagedQ = new T.Quaternion().setFromEuler(new T.Euler(0, .5, 0));
-  const spot = armoured?.chestFrame(-.3, .36) ?? null;
+  const spot = armoured?.chestFrame(-.3, .24) ?? null;
   if (spot) {
     const n = spot.n;
     const mw = new T.Matrix4().makeBasis(spot.x, n, spot.z).setPosition(spot.point.clone().addScaledVector(n, -.02)).scale(limiter.scale.clone());

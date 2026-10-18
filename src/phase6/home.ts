@@ -147,7 +147,7 @@ export type HomeCast = {
   baymax: { root: T.Object3D; pose: BaymaxPose; dock: T.Object3D; handWorld(out?: T.Vector3): T.Vector3; headWorld(out?: T.Vector3): T.Vector3 };
   hiro: { root: T.Object3D; pose: HiroPose; handWorld(out?: T.Vector3): T.Vector3 };
 };
-export type HomeShot = { stage: string; e: number; t: number; dt: number; care: 'ground' | 'held' | 'seated'; dragPos: T.Vector3; returning: number; camera: T.Camera };
+export type HomeShot = { stage: string; e: number; t: number; dt: number; care: 'ground' | 'hand' | 'open' | 'seated'; dragPos: T.Vector3; returning: number; camera: T.Camera; bayOpen: number };
 
 /**
  * Everything the home set does each frame: the gate closing, the healthcare chip on the grass (or
@@ -168,7 +168,7 @@ export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime
   const { stage, e, t, dt } = s;
   home.update(t, dt, { gate: 0, careBlink: s.care === 'seated' ? 0 : 1 });
   baymax.root.position.copy(HOME_BAYMAX);
-  Object.assign(P, { armour: 1, yaw: Math.PI, lie: 1, sit: 0, guard: 0, open: 4.6, chipInBay: false, eyeGlow: 0, careSeated: s.care === 'seated' });
+  Object.assign(P, { armour: 1, yaw: Math.PI, lie: 1, sit: 0, guard: 0, open: s.bayOpen, chipInBay: false, eyeGlow: 0, careSeated: s.care === 'seated' });
   P.eyes.copy(RED_OFF);
   hiro.root.position.copy(HIRO_KNEEL); Object.assign(H, { yaw: -Math.PI / 2, kneel: 1, look: -.15, lookUp: -.25, reach: 0, walk: 0, stride: 0, bump: 0 });
   camPos.set(6.4, 3.5, 5.2); look.set(-.7, .8, 2.9);
@@ -177,14 +177,15 @@ export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime
   // The healthcare chip: on the grass, in the hand, sliding back, or seated in his dock.
   const care = home.care.chip;
   if (s.care !== 'seated') {
-    if (s.care === 'held') { care.position.copy(s.dragPos); care.lookAt(s.camera.position); care.scale.setScalar(1.6); }
-    else if (s.returning > 0) { care.position.copy(s.dragPos); }
+    // In Hiro's hand once taken; then following the pointer to the open socket.
+    if (s.care === 'hand') { hiro.handWorld(care.position); care.lookAt(s.camera.position); care.scale.setScalar(1.3); }
+    else if (s.care === 'open') { care.position.copy(s.dragPos); care.lookAt(s.camera.position); care.scale.setScalar(1.3); }
     else { care.position.copy(CARE_CHIP_AT); care.rotation.copy(CARE_CHIP_TILT); care.scale.setScalar(1); }
     home.careLight.position.copy(care.position).add(v(0, .25, 0));
     if (stage === 'home') {
       // Coming through: the camera settles as Hiro drops to his knee beside him.
       camPos.set(3, 3.8, 11.5).lerp(v(6.4, 3.5, 5.2), sm(e, 0, 3.5)); look.set(-.5, .8, 1.5).lerp(v(-.7, .8, 2.9), sm(e, 0, 3.5));
-      H.kneel = sm(e, .8, 2.4); H.reach = .35 * sm(e, 2, 3); H.lookUp = -.3;
+      H.kneel = sm(e, .8, 2.4); H.reach = s.care === 'ground' ? .35 * sm(e, 2, 3) : s.care === 'hand' ? .55 : .7; H.lookUp = -.3;
     }
     return { fov, shot };
   }

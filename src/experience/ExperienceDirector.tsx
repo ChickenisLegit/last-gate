@@ -12,6 +12,7 @@ import { assets } from '../systems/AssetManager';
 import { CameraDirector, ZOOM_PHASES, type ShotContext } from '../systems/CameraDirector';
 import { SequenceDirector, type SequenceEvent } from '../systems/SequenceDirector';
 import { BaymaxController } from '../characters/BaymaxController';
+import { pinLights } from '../systems/lightPins';
 import { ChipController } from '../characters/ChipController';
 import { AudioDirector } from '../audio/AudioDirector';
 import { TransitionDirector } from '../transitions/TransitionDirector';
@@ -61,6 +62,8 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
   const worldMasks=useMemo(()=>({city:portalWorldMask(sf.group),dimension:portalWorldMask(environment.group),rupture:portalWorldMask(rupture.root),chip:portalWorldMask(chip.group)}),[sf,environment,rupture,chip]);
   const shellMask=useMemo(()=>shell?portalWorldMask(shell):null,[shell]);
   useEffect(()=>()=>{Object.values(worldMasks).forEach(mask=>mask.dispose());shellMask?.dispose();},[worldMasks,shellMask]);
+  const pins=useRef<ReturnType<typeof pinLights>|null>(null);
+  useEffect(()=>()=>{pins.current?.dispose();pins.current=null;},[]);
   const elapsed=useRef(0),replay=useRef(0),magnetCue=useRef(false),sealCue=useRef(false);
   const phaseT=useRef(0),prevPhaseRef=useRef<string>('');
   const rock=useMemo(()=>{const m=new Mesh(new DodecahedronGeometry(.34,0),new MeshStandardMaterial({color:'#5f6b6c',roughness:.95,flatShading:true}));m.visible=false;m.scale.set(1,.8,1.15);return m;},[]);
@@ -92,8 +95,10 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     // The armoured suit is parsed and mounted first, so its programs compile with the rest; the
     // reentry rock is shown for the compile too (tracker Q-02).
     const compiled=(baymax.current?.prepareSuit()??Promise.resolve()).then(()=>{
+      // Every light stays counted from here on, so phase changes never recompile (tracker R-01).
+      pins.current??=pinLights(scene);pins.current.before();
       const previousTarget=gl.getRenderTarget();gl.setRenderTarget(post.composer.readBuffer);rock.visible=true;
-      const c=gl.compileAsync(scene,camera);rock.visible=false;gl.setRenderTarget(previousTarget);return c;
+      const c=gl.compileAsync(scene,camera);rock.visible=false;gl.setRenderTarget(previousTarget);pins.current.after();return c;
     });
     void compiled.then(async()=>{
       if(!active)return;
@@ -109,7 +114,7 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
       const portalPose=()=>{
         masks('inside','outside');bg?.copy(STREET_BG);if(fog){fog.color.copy(STREET_FOG);fog.density=.015;}
         lens.position.set(-.6,2.3,10.6);lens.lookAt(0,4.2,24);lens.fov=50;lens.updateProjectionMatrix();lens.updateMatrixWorld();
-        post.fx.opening=true;post.fx.aperture=-1;post.render(0,1,0,14);
+        post.fx.opening=true;post.fx.aperture=-1;pins.current?.before();post.render(0,1,0,14);pins.current?.after();
       };
       try{
         sf.group.visible=true;gate.group.visible=true;environment.group.visible=true;
@@ -118,10 +123,10 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
         portalPose();
         // Real draws upload hero buffers/textures and prepare shadow, normal and depth passes.
         lens.position.set(2.34,2.16,-8.7);lens.lookAt(2.8,2.5,-11.65);lens.fov=41;lens.updateProjectionMatrix();lens.updateMatrixWorld();
-        post.fx.opening=false;post.fx.aperture=.0001;post.render(0,1,.6,4);
+        post.fx.opening=false;post.fx.aperture=.0001;pins.current?.before();post.render(0,1,.6,4);pins.current?.after();
         masks('outside','inside');bg?.copy(SF_BG);if(fog){fog.color.copy(SF_FOG);fog.density=.004;}
         lens.position.set(0,2.8,29);lens.lookAt(0,15,110);lens.fov=54;lens.updateProjectionMatrix();lens.updateMatrixWorld();
-        post.fx.opening=true;post.fx.aperture=-1;post.render(0,1,0,80);
+        post.fx.opening=true;post.fx.aperture=-1;pins.current?.before();post.render(0,1,0,80);pins.current?.after();
         // Leave the opening image in the canvas while the covered scene state is restored.
         portalPose();
       }finally{
@@ -221,7 +226,7 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     gl.domElement.dataset.phase=phase;
     gl.domElement.dataset.progress=director.visualProgress.toFixed(3);
     gl.domElement.dataset.chase=seq.chase.toFixed(3);
-    post.render(dt,director.wake,director.visualProgress,director.focusDistance);
+    pins.current?.before();post.render(dt,director.wake,director.visualProgress,director.focusDistance);pins.current?.after();
     gl.domElement.dataset.drawCalls=String(gl.info.render.calls);
   },1);
   const check=(event:ThreeEvent<MouseEvent>)=>{event.stopPropagation();if(useSceneState.getState().phase==='discovery')useSceneState.getState().interact();};

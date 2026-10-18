@@ -62,7 +62,7 @@ export function BoardScene({ world }: { world: JourneyWorld }) {
   }, [camera, gl, assessment]);
 
   useEffect(() => () => {
-    internals.dispose(); shellMats.forEach(m => { m.opacity = 1; m.depthWrite = true; m.transparent = originalTransparency.get(m) ?? false; m.needsUpdate = true; });
+    internals.dispose(); world.bay.root.visible = true; shellMats.forEach(m => { m.opacity = 1; m.depthWrite = true; m.transparent = originalTransparency.get(m) ?? false; m.needsUpdate = true; });
     hidden.current.forEach(o => { o.visible = true; }); hidden.current.clear();
     if ('clearViewOffset' in camera) (camera as unknown as { clearViewOffset: () => void }).clearViewOffset();
   }, [internals, shellMats, originalTransparency, camera]);
@@ -155,6 +155,9 @@ export function BoardScene({ world }: { world: JourneyWorld }) {
       m.opacity = transparent ? opacity.current : 1; m.depthWrite = opacity.current > .98;
     }
     internals.update(time, dt, s);
+    // Seen through the shell the solid bay reads as a disc stuck in his body (tracker R-02): in the
+    // internal and isolate views it shows only while the chip bay itself is selected.
+    world.bay.root.visible = s.mode === 'exterior' || s.selected === 'chip';
 
     // The chest bay stays shut here (tracker Q-03): its seam only glows while Hiro reads the chips.
     bayOpen.current += ((s.bayOpen && !s.assessment ? 1 : 0) - bayOpen.current) * (reducedMotion ? 1 : Math.min(1, dt * 1.3));

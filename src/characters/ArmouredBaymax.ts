@@ -70,6 +70,8 @@ export type ArmourJoints = {
   head?: T.Quaternion;
   /** Elbow bend in radians (forearm forward from the upper arm); default a relaxed .3. */
   elbowL?: number; elbowR?: number;
+  /** Knee bend in radians (shin back from the thigh); default straight. */
+  kneeL?: number; kneeR?: number;
 };
 
 type Piece = { mesh: T.Mesh; mats: T.Material[]; orig: { transparent: boolean; opacity: number; depthWrite: boolean }[]; base: T.Vector3; delay: number; late: boolean };
@@ -104,6 +106,7 @@ export async function createArmouredBaymax(opts: { eye?: T.Material; hole?: () =
     return new T.Quaternion().setFromUnitVectors(from, new T.Vector3(side === 'L' ? .16 : -.16, -1, 0).normalize());
   };
   const legQ = { L: legDown('L'), R: legDown('R') };
+  const restS = { L: relQ(lLeg.L), R: relQ(lLeg.R) }, invL = new T.Quaternion(), invD = new T.Quaternion();
   // Each hand rides on the end of its forearm, as it sat at rest.
   const handOffset = { L: relM(lArm.L).invert().multiply(relM(hand.L)), R: relM(lArm.R).invert().multiply(relM(hand.R)) };
   // Feet: points at the bottom of each lower leg (and a little under it, the sole), for grounding.
@@ -162,6 +165,10 @@ export async function createArmouredBaymax(opts: { eye?: T.Material; hole?: () =
         bendQ.setFromAxisAngle(X, -((s === 'L' ? j.elbowL : j.elbowR) ?? .3));
         invU.copy(restQ.get(uArm[s])!).invert(); invH.copy(hangQ[s]).invert();
         lArm[s].quaternion.copy(invU).multiply(invH).multiply(bendQ).multiply(hangQ[s]).multiply(restF[s]);
+        // Knee: the shin swings back in the straightened leg's frame, the same way (tracker R-04).
+        bendQ.setFromAxisAngle(X, (s === 'L' ? j.kneeL : j.kneeR) ?? 0);
+        invL.copy(restQ.get(uLeg[s])!).invert(); invD.copy(legQ[s]).invert();
+        lLeg[s].quaternion.copy(invL).multiply(invD).multiply(bendQ).multiply(legQ[s]).multiply(restS[s]);
       }
       tmpQ.copy(j.head ?? id).multiply(restQ.get(head)!); set(head, tmpQ);
       // Hands onto the forearms.
@@ -198,7 +205,7 @@ export async function createArmouredBaymax(opts: { eye?: T.Material; hole?: () =
      * slope (the chord between two spots `span` apart), y points out of the plate, z completes it.
      * A long box set on this frame touches the plate at both ends instead of rocking on its middle.
      */
-    chestFrame(lateral: number, up: number, span = .14) {
+    chestFrame(lateral: number, up: number, span = .1) {
       const a = api.chestSpot(lateral, up - span), b = api.chestSpot(lateral, up + span), c = api.chestSpot(lateral, up);
       const x = b.point.clone().sub(a.point).normalize();
       const n = a.normal.clone().add(b.normal).add(c.normal).normalize(); n.addScaledVector(x, -n.dot(x)).normalize();
@@ -209,6 +216,27 @@ export async function createArmouredBaymax(opts: { eye?: T.Material; hole?: () =
       const f = api.chestFrame(lateral, up);
       const mw = new T.Matrix4().makeBasis(f.x, f.n, f.z).setPosition(f.point.addScaledVector(f.n, -.02)).scale(obj.getWorldScale(new T.Vector3()));
       chest.add(obj); obj.matrix.copy(new T.Matrix4().copy(chest.matrixWorld).invert().multiply(mw)); obj.matrix.decompose(obj.position, obj.quaternion, obj.scale);
+    },
+    /**
+     * Seat a round part (the chip bay) on the chest plating at (lateral, up) without it sinking into the
+     * curved plate (tracker R-02): it sits on the highest point under its rim, enlarged by `grow`, and a
+     * dark housing runs from its edge down into the plate all round. `rim` is its radius in its own units.
+     */
+    seatOnPlate(obj: T.Object3D, lateral: number, up: number, rim: number, grow = 1) {
+      const sc = root.getWorldScale(new T.Vector3()).x, s = obj.getWorldScale(new T.Vector3()).x * grow;
+      const f = api.chestFrame(lateral, up, .06), r = rim * s / sc;
+      let hi = -Infinity, lo = Infinity;
+      for (let i = 0; i < 8; i++) {
+        const a = i / 8 * Math.PI * 2, h = api.chestSpot(lateral + Math.cos(a) * r, up + Math.sin(a) * r).point.sub(f.point).dot(f.n);
+        hi = Math.max(hi, h); lo = Math.min(lo, h);
+      }
+      const lift = Math.max(0, hi) + .004 * sc, sink = Math.max(0, -lo) + .02 * sc;
+      const undo = seatOn(obj, { point: f.point.clone().addScaledVector(f.n, lift), normal: f.n, bone: f.bone });
+      obj.scale.multiplyScalar(grow);
+      const depth = (lift + sink) / s;
+      const housing = new T.Mesh(new T.CylinderGeometry(rim * 1.04, rim * 1.1, depth, 40, 1, true), new T.MeshStandardMaterial({ color: '#23262b', roughness: .55, metalness: .5, side: T.DoubleSide }));
+      housing.name = 'bay-housing'; housing.rotation.x = Math.PI / 2; housing.position.z = -depth / 2 + .004; obj.add(housing);
+      return () => { housing.removeFromParent(); housing.geometry.dispose(); (housing.material as T.Material).dispose(); undo(); };
     },
     /** His helmet in world space (the camera's eye target once he's armoured). */
     headWorld: (out = new T.Vector3()) => head.localToWorld(out.set(0, .12, .05)),

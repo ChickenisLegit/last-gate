@@ -99,6 +99,32 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
   // Coming through the far side: only the part of him already through is drawn.
   const crossing = useMemo(() => new T.Plane(new T.Vector3(0, 0, -1), 1e4), []);
 
+  // Tracker R-05: before the cover lifts, start compiling the prebuilt street's programs (with everything
+  // in it shown, his suit fully on, the street's lights counted). compileAsync links them in the background
+  // while the relay plays, so nothing is built or linked as the chase starts.
+  const warmStreet = (him: T.Object3D) => {
+    const st = preStreet.current, relayRoot = env.current?.relay?.root;
+    if (!st || !relayRoot) return;
+    relayRoot.visible = false; scene.add(st.root); homeScene.add(home.root);
+    // Everything hidden for now (debris, dust, sparks) is counted for the compile too.
+    const hidden: T.Object3D[] = [];
+    for (const sc of [st.root, homeScene, ...scene.children.filter(c => c !== relayRoot && c !== st.root)]) sc.traverse(o => { if (!o.visible) { o.visible = true; hidden.push(o); } });
+    const prev = gl.getRenderTarget();
+    try {
+      gl.setRenderTarget(null); void gl.compileAsync(scene, camera).catch(() => {});
+      gl.setRenderTarget(target); void gl.compileAsync(homeScene, homeCam).catch(() => {});
+      // His materials clip at the gate, which compileAsync can't key: draw him alone, one pixel, for real.
+      const others: T.Object3D[] = [], culled: T.Object3D[] = [];
+      scene.traverse(o => { if ((o as T.Mesh).isMesh && o.visible) { let mine = false; for (let x: T.Object3D | null = o; x; x = x.parent) if (x === him) { mine = true; break; } if (!mine) { o.visible = false; others.push(o); } else if (o.frustumCulled) { o.frustumCulled = false; culled.push(o); } } });
+      const scissor = gl.getScissorTest();
+      gl.setRenderTarget(null); gl.setScissorTest(true); gl.setScissor(0, 0, 1, 1); gl.render(scene, camera); gl.setScissorTest(scissor);
+      others.forEach(o => { o.visible = true; }); culled.forEach(o => { o.frustumCulled = true; });
+    } finally {
+      gl.setRenderTarget(prev); hidden.forEach(o => { o.visible = false; });
+      st.root.removeFromParent(); home.root.removeFromParent(); relayRoot.visible = true;
+    }
+  };
+
   // Shared actors, made once for the phase. The camera joins the scene so the hands can ride on it.
   useEffect(() => {
     let alive = true, made: Baymax | null = null;
@@ -106,7 +132,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       if (!alive) { b.dispose(); return; }
       made = b; mem.current.headH = b.headHeight;
       b.root.traverse(o => { if (o instanceof T.Mesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.clippingPlanes = [crossing]; }); });
-      scene.add(b.root); setBaymax(b); onReady();
+      scene.add(b.root); warmStreet(b.root); setBaymax(b); onReady();
     });
     gl.localClippingEnabled = true;
     scene.add(camera, hiro.root, chipProxy.chip, eyeLight, eyeLight.target, eyeGlow);
@@ -122,10 +148,17 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
 
   // Sets: build the one in use, drop the last one. The home group lives in its own scene (seen
   // through the gate) until the crossing, then joins the main scene.
+  // Tracker R-05: the street is built and its programs compiled while the relay loads (its lights
+  // change the light count, which would otherwise recompile every material as the chase starts).
+  const preStreet = useRef<Street | null>(null);
+  useEffect(() => () => { preStreet.current?.dispose(); preStreet.current = null; }, []);
   useEffect(() => {
     const e: NonNullable<typeof env.current> = { name: set };
-    if (set === 'relay') { e.relay = createRelay(); scene.add(e.relay.root); scene.background = new T.Color('#081320'); scene.fog = new T.Fog('#14293b', 14, 150); }
-    if (set === 'street') { e.street = createStreet(); scene.add(e.street.root); homeScene.add(home.root); scene.background = new T.Color('#0a1622'); scene.fog = new T.Fog('#1a3146', 18, 190); }
+    if (set === 'relay') {
+      e.relay = createRelay(); scene.add(e.relay.root); scene.background = new T.Color('#081320'); scene.fog = new T.Fog('#14293b', 14, 150);
+      if (!preStreet.current) preStreet.current = createStreet();
+    }
+    if (set === 'street') { e.street = preStreet.current ?? createStreet(); preStreet.current = null; scene.add(e.street.root); homeScene.add(home.root); scene.background = new T.Color('#0a1622'); scene.fog = new T.Fog('#1a3146', 18, 190); }
     if (set === 'home') { scene.add(home.root); scene.background = home.background; scene.fog = null; }
     env.current = e;
     return () => { e.relay?.dispose(); e.street?.dispose(); home.root.removeFromParent(); env.current = null; };
@@ -146,17 +179,16 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
   useEffect(() => {
     const el = gl.domElement, ray = new T.Raycaster(), ndc = new T.Vector2(), hit = new T.Vector3();
     const screen = (p: T.Vector3) => { const q = p.clone().project(cam); return new T.Vector2((q.x + 1) / 2 * el.clientWidth, (1 - q.y) / 2 * el.clientHeight); };
-    type What = 'take' | 'chip' | 'cart' | 'care';
+    type What = 'take' | 'chip' | 'cart';
     const what = (): What | null => {
       const s = useP6.getState(), e = now() - s.since;
       if (s.stage === 'limited' && !s.took && e > 9.6) return 'take';
       if (s.stage === 'carry' && s.chip === 'bay' && e > CLUE_END) return 'chip';
       if (s.stage === 'carry' && s.chip === 'out' && s.cart === 'hand' && now() - s.pulledAt > 4.2) return 'cart';
-      if (s.stage === 'home' && s.care === 'ground' && e > EMERGE + 2.4) return 'care';
       return null;
     };
-    const source = (w: What) => w === 'take' ? cart.root.getWorldPosition(new T.Vector3()) : w === 'chip' ? baymax?.dockWorld() : w === 'cart' ? cart.root.getWorldPosition(new T.Vector3()) : CARE_CHIP_AT.clone();
-    const dest = (w: What) => w === 'cart' ? env.current?.street?.readerWorld() : w === 'care' ? baymax?.dockWorld() : null;
+    const source = (w: What) => w === 'take' ? cart.root.getWorldPosition(new T.Vector3()) : w === 'chip' ? baymax?.dockWorld() : cart.root.getWorldPosition(new T.Vector3());
+    const dest = (w: What) => w === 'cart' ? env.current?.street?.readerWorld() : null;
     const local = (e: PointerEvent) => { const r = el.getBoundingClientRect(); return new T.Vector2(e.clientX - r.left, e.clientY - r.top); };
     let holding: What | null = null;
     const down = (e: PointerEvent) => {
@@ -171,7 +203,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       // (the chip comes up toward Hiro, so its plane sits just above the bay).
       const to = dest(w) ?? from.clone().lerp(camera.position, .35), mid = from.clone().lerp(to, .5), n = new T.Vector3(); cam.getWorldDirection(n);
       drag.current.plane.setFromNormalAndCoplanarPoint(n.negate(), mid);
-      useP6.setState(w === 'chip' ? { chip: 'held' } : w === 'cart' ? { cart: 'held' } : { care: 'held' });
+      useP6.setState(w === 'chip' ? { chip: 'held' } : { cart: 'held' });
       el.setPointerCapture(e.pointerId);
     };
     const move = (e: PointerEvent) => {
@@ -192,22 +224,42 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       }
       const to = dest(w);
       if (to && screen(to).distanceTo(local(e)) < 90) {
-        if (w === 'cart') { useP6.setState({ cart: 'slot' }); audio.seat(); go('bloom'); }
-        else { useP6.setState({ care: 'seated' }); audio.seat(); go('seated'); }
-      } else { drag.current.returning = 1; useP6.setState(w === 'cart' ? { cart: 'hand' } : { care: 'ground' }); }
+        useP6.setState({ cart: 'slot' }); audio.seat(); go('bloom');
+      } else { drag.current.returning = 1; useP6.setState({ cart: 'hand' }); }
     };
     const cancel = () => {
       if (!drag.current.active || !holding) return;
       const w = holding; holding = null;
       drag.current.active = false; drag.current.returning = 1; el.style.cursor = '';
-      useP6.setState(w === 'chip' ? { chip: 'bay' } : w === 'cart' ? { cart: 'hand' } : { care: 'ground' });
+      useP6.setState(w === 'chip' ? { chip: 'bay' } : { cart: 'hand' });
     };
     el.addEventListener('pointerdown', down); el.addEventListener('pointermove', move); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', cancel);
     return () => { el.removeEventListener('pointerdown', down); el.removeEventListener('pointermove', move); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', cancel); };
   }, [gl, cam, camera, baymax, audio, cart]);
 
+  // Tracker R-07: the healthcare chip goes in the way the combat chip did in Phase 1. Hold on the chip
+  // to take it, hold on his chest to open the bay, then guide the chip into the socket (or hold E).
+  const care = useRef({ target: null as 'chip' | 'chest' | null, at: 0, key: false, keyAt: 0, aim: null as T.Vector2 | null, guide: new T.Vector3(), open: 0, progress: 0 });
+  useEffect(() => {
+    const el = gl.domElement, c = care.current;
+    const at = (e: PointerEvent) => { const r = el.getBoundingClientRect(); return new T.Vector2(e.clientX - r.left, e.clientY - r.top); };
+    const screen = (p: T.Vector3) => { const q = p.clone().project(cam); return new T.Vector2((q.x + 1) / 2 * el.clientWidth, (1 - q.y) / 2 * el.clientHeight); };
+    const live = () => { const s = useP6.getState(); return s.stage === 'home' && now() - s.since > EMERGE + 2.4 ? s : null; };
+    const down = (e: PointerEvent) => {
+      const s = live(); if (!s || e.button !== 0 || !baymax) return; const p = at(e);
+      if (s.care === 'ground' && screen(home.care.chip.getWorldPosition(new T.Vector3())).distanceTo(p) < 90) { audio.unlock(); c.target = 'chip'; c.at = now(); }
+      else if (s.care === 'hand' && screen(baymax.dockWorld()).distanceTo(p) < 120) { audio.unlock(); c.target = 'chest'; c.at = now(); }
+    };
+    const up = () => { c.target = null; };
+    const move = (e: PointerEvent) => { c.aim = at(e); };
+    const kd = (e: KeyboardEvent) => { if (e.code === 'KeyE' && live() && !c.key) { audio.unlock(); c.key = true; c.keyAt = now(); } };
+    const ku = (e: KeyboardEvent) => { if (e.code === 'KeyE') c.key = false; };
+    el.addEventListener('pointerdown', down); el.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('keydown', kd); window.addEventListener('keyup', ku);
+    return () => { el.removeEventListener('pointerdown', down); el.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('keydown', kd); window.removeEventListener('keyup', ku); };
+  }, [gl, cam, baymax, home, audio]);
+
   // Memory that outlives a stage: where Baymax has got to on the street, step timing, shake, chase events.
-  const mem = useRef({ trail: .28, stepAt: 0, shake: 0, landed: false, lastStage: '' as Stage | '', bayAt: new T.Vector3(), lift: 0, glance: 0, headH: 3.1, swingAt: -9, swung: false, falls: 0, warped: false, thirdShot: '', pressed: '' as Stage | '', idle: 0, escSince: -1 });
+  const mem = useRef({ trail: .28, stepAt: 0, shake: 0, landed: false, lastStage: '' as Stage | '', bayAt: new T.Vector3(), lift: 0, glance: 0, headH: 3.1, swingAt: -9, swung: false, wakeFx: 0, falls: 0, warped: false, thirdShot: '', pressed: '' as Stage | '', idle: 0, escSince: -1 });
   const look = useMemo(() => new T.Vector3(), []);
   const feet = useMemo(() => new T.Vector3(), []);
   const camPos = useMemo(() => new T.Vector3(), []);
@@ -225,6 +277,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       if (s.stage === 'drop') m.landed = false;
       if (s.stage === 'gate') m.trail = Math.max(m.trail, .4);
       if (s.stage === 'bloom') m.warped = false;
+      if (s.stage === 'wake') m.wakeFx = 0;
       // The switch moments: his thumb on his own remote, the scene still in front of him.
       if (isInsert(s.stage) && m.pressed !== s.stage) {
         m.pressed = s.stage;
@@ -251,15 +304,29 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       baymax.root.position.copy(BAYMAX_YARD); P.yaw = 0;
       feet.copy(RELAY_SPOT); look.copy(head());
       if (s.stage === 'wake') {
-        // Dark, then a red flicker; he gets up and the stance locks in. Hiro takes a step back.
-        const flick = e < 1.2 ? 0 : e < 2.6 ? (Math.sin(e * 37) * Math.sin(e * 11.3) > .2 ? 1 : .15) * span(e, 1.2, 1.6) : 1;
-        P.eyes.copy(DARK).lerp(RED, flick); P.eyeGlow = flick;
-        P.sit = 1 - span(e, 2.6, 4.5); P.guard = backOut((e - 4.4) / .55); P.lean = .08 * P.guard;
-        P.head[0] = (1 - P.guard) * .25; P.head[1] = span(e, 1.6, 2.6) * .15;
+        // Tracker R-03: he comes in hunting. A red glow over the dish, then he drops out of the sky,
+        // jets roaring and eyes burning, slams down in the yard, and rises into the stance. Hiro steps back.
+        const fly = span(e, .2, 2.5), land = e >= 2.5;
+        const arc = ease(fly), from = v3(BAYMAX_YARD.x - 9, 17, BAYMAX_YARD.z - 26);
+        if (!land) {
+          baymax.root.position.lerpVectors(from, BAYMAX_YARD, arc).setY(T.MathUtils.lerp(17, 0, Math.pow(arc, 1.6)) + Math.sin(Math.PI * arc) * 2.2);
+          P.yaw = Math.atan2(BAYMAX_YARD.x - from.x, BAYMAX_YARD.z - from.z) * (1 - arc);
+          P.thrust = 1; jet = .9; P.dangle = .55 * (1 - span(e, 2, 2.45)); P.lean = .55 - span(e, 1.8, 2.45) * .4; P.guard = .25;
+          if (e > 1.5 && m.wakeFx < 1) { m.wakeFx = 1; audio.whoosh(); }
+        } else {
+          // The landing: a hard crouch that he pushes up out of; the stance locks at 4.4 as before.
+          const rise = span(e, 2.6, 4.3);
+          P.sit = .55 * (1 - rise) * span(e, 2.5, 2.62); P.lean = .3 * (1 - rise) + .08 * P.guard;
+          P.guard = Math.max(.25 * (1 - span(e, 2.6, 3)), backOut((e - 4.4) / .55));
+          if (m.wakeFx < 2) { m.wakeFx = 2; m.shake = Math.max(m.shake, reducedMotion ? 0 : .7); audio.impact(); }
+        }
+        P.eyes.copy(RED); P.eyeGlow = .6 + .4 * fly;
+        P.head[0] = (1 - P.guard) * .2; P.head[1] = span(e, 2.8, 3.6) * .15;
         feet.z = RELAY_SPOT.z + span(e, 4.45, 5.2) * .7;
-        look.lerp(v3(BAYMAX_YARD.x, 1.6, BAYMAX_YARD.z), 1 - span(e, 1, 3));
+        // Eyes up to the sky and the glow, then down with him to the yard.
+        look.copy(head()).lerp(v3(BAYMAX_YARD.x, 1.6, BAYMAX_YARD.z), span(e, 2.6, 3.4)); lookRate = 4;
         if (e > 4.42 && e < 4.5) { m.shake = Math.max(m.shake, .35); audio.step(.7); }
-        dread = .25 + span(e, 1.2, 4.5) * .35;
+        dread = .3 + span(e, .2, 2.6) * .35;
       } else if (s.stage === 'limited') {
         feet.z = RELAY_SPOT.z + .7;
         // Each full move falls short. Thrusters starve, the walk is heavy, the punch stops early.
@@ -556,13 +623,35 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       } else {
         first = false;
         hiro.root.visible = true;
-        if (drag.current.returning > 0 && s.care !== 'held') {
-          drag.current.returning = Math.max(0, drag.current.returning - dt * 3);
-          drag.current.pos.lerp(CARE_CHIP_AT, 1 - Math.exp(-dt * 10));
+        // The healthcare chip (tracker R-07). Holds: on the chip, then on his chest (E works for both).
+        const c = care.current, HOLD = .8;
+        const holding = c.target ?? (c.key && (s.care === 'ground' || s.care === 'hand') ? (s.care === 'ground' ? 'chip' : 'chest') : null);
+        c.progress = holding && s.stage === 'home' ? clamp01((now() - (c.target ? c.at : c.keyAt)) / HOLD) : 0;
+        if (holding && c.progress >= 1) {
+          c.target = null; c.key = false; c.progress = 0;
+          if (holding === 'chip' && s.care === 'ground') { useP6.setState({ care: 'hand' }); audio.snap(); }
+          else if (holding === 'chest' && s.care === 'hand') { useP6.setState({ care: 'open' }); audio.servo(); hiro.handWorld(c.guide); }
         }
+        // The bay opens as it did in Phase 1, and stays open until the boot closes it.
+        c.open = T.MathUtils.clamp(c.open + (s.care === 'open' || s.care === 'seated' ? dt * 2.6 : -dt * 4), 0, 4.6);
+        // Guiding: the chip follows the pointer on a plane through the socket; near it, it's drawn in and seats.
+        if (s.stage === 'home' && s.care === 'open' && c.open > 4) {
+          const dock = baymax.dockWorld(new T.Vector3()), want = c.guide.clone();
+          if (c.key) want.copy(dock);
+          else if (c.aim) {
+            const n = new T.Vector3(); cam.getWorldDirection(n); const plane = new T.Plane().setFromNormalAndCoplanarPoint(n.negate(), dock);
+            const ray = new T.Raycaster(); ray.setFromCamera(new T.Vector2(c.aim.x / size.width * 2 - 1, -(c.aim.y / size.height * 2 - 1)), cam);
+            ray.ray.intersectPlane(plane, want);
+          }
+          c.guide.lerp(want, 1 - Math.exp(-dt * (c.key ? 2.5 : 12)));
+          const d = c.guide.distanceTo(dock);
+          if (d < .35) c.guide.lerp(dock, 1 - Math.exp(-dt * 8));
+          if (d < .05) { useP6.setState({ care: 'seated' }); audio.seat(); go('seated'); }
+        }
+        drag.current.pos.copy(c.guide);
         const homeShot = directHome(home, { baymax, hiro }, {
           stage: s.stage, e: s.stage === 'home' ? Math.max(0, he) : e, t, dt,
-          care: s.care, dragPos: drag.current.pos, returning: drag.current.returning, camera,
+          care: s.care, dragPos: drag.current.pos, returning: drag.current.returning, camera, bayOpen: care.current.open,
         }, { chime: () => audio.chime(), step: level => audio.step(level), done: () => go('end') }, camPos, look);
         fov = homeShot.fov;
       }
@@ -641,7 +730,11 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
     const taking = s.stage === 'limited' && !s.took && e > 9.6;
     const pulling = s.stage === 'carry' && s.chip !== 'out', slotting = s.stage === 'carry' && s.chip === 'out' && now() - s.pulledAt > 4.2, homing = s.stage === 'home' && e > EMERGE + 2.2;
     hint(hints.grab.current, taking ? cart.root.getWorldPosition(new T.Vector3()) : pulling ? baymax.dockWorld() : slotting ? cart.root.getWorldPosition(new T.Vector3()) : homing ? home.care.chip.getWorldPosition(new T.Vector3()) : null, taking || (pulling && s.chip === 'bay' && e > CLUE_END) || (slotting && s.cart === 'hand') || (homing && s.care === 'ground'));
-    hint(hints.drop.current, slotting ? st?.readerWorld() : homing ? baymax.dockWorld() : null, (slotting && s.cart === 'held') || (homing && s.care === 'held'));
+    hint(hints.drop.current, slotting ? st?.readerWorld() : homing ? baymax.dockWorld() : null, (slotting && s.cart === 'held') || (homing && (s.care === 'hand' || s.care === 'open')));
+    // The hold steps show their progress in the ring and say what to do (as in Phase 1).
+    for (const el of [hints.grab.current, hints.drop.current]) el?.style.setProperty('--hold', homing ? care.current.progress.toFixed(3) : '0');
+    if (hints.grab.current) hints.grab.current.dataset.label = homing && s.care === 'ground' ? 'CLICK + HOLD' : '';
+    if (hints.drop.current) hints.drop.current.dataset.label = homing ? s.care === 'hand' ? 'CLICK + HOLD' : s.care === 'open' ? 'GUIDE IT IN · OR HOLD E' : '' : '';
     m.lastStage = s.stage;
   });
 

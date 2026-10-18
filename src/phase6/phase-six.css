@@ -168,3 +168,6 @@
   .p6 *{animation-duration:.01s!important;animation-iteration-count:1!important}
   .p6-toggle-lever i{transition-duration:.01s!important}
 }
+/* R-07: the hold steps fill their ring and say what to do, like the Phase 1 markers. */
+.p6-hint i{scale:calc(1 - var(--hold, 0) * .35);box-shadow:inset 0 0 0 calc(var(--hold, 0) * 26px) rgba(240,138,60,.5)}
+.p6-hint[data-label]:not([data-label=""])::after{content:attr(data-label);position:absolute;left:0;top:46px;transform:translateX(-50%);white-space:nowrap;font:600 10px/1 var(--mono);letter-spacing:.14em;color:#1F2326;background:#F08A3C;border-radius:5px;padding:4px 7px}

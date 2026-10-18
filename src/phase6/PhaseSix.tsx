@@ -166,7 +166,7 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
 
     {ready && homeUi && <div className="p6-side" role="status">
       {/* 1 · Wake: the regulator, on standby. */}
-      {(st === 'wake' && e > 2.4 || st === 'switchOn1') && <Panel id="wake" label="Power regulator" tone="red"
+      {(st === 'wake' && e > 3.2 || st === 'switchOn1') && <Panel id="wake" label="Power regulator" tone="red"
         rows={[['Status', s.regulator ? 'Active' : 'Standby', s.regulator ? 'orange' : ''], ['Baymax output', s.regulator ? '35%' : '100%', s.regulator ? 'orange' : 'red'], ['Limit when active', '35%']]}>
         <RegulatorToggle action="on" busy={insert} onPress={toggle('switchOn1')} />
       </Panel>}
@@ -225,7 +225,8 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
 
       {/* 8 · Home. */}
       {st === 'home' && e > EMERGE + 2.4 && <Panel id="home" label="Baymax" title="His healthcare chip"
-        rows={[['Healthcare chip', 'In a litter bin', 'ok'], ['Combat chip', 'Removed', 'dim']]} action={drag('Drag it out of the bin and into his chest.')} />}
+        rows={[['Healthcare chip', s.care === 'ground' ? 'In a litter bin' : 'In your hand', 'ok'], ['Chest bay', s.care === 'open' ? 'Open' : 'Closed', s.care === 'open' ? 'cyan' : 'dim'], ['Combat chip', 'Removed', 'dim']]}
+        action={drag(s.care === 'ground' ? 'Click and hold the chip to take it.' : s.care === 'hand' ? 'Click and hold his chest to open the bay.' : 'Guide the chip into the socket, or hold E.')} />}
       {st === 'seated' && <Panel id="seated" label="Baymax" rows={[['Healthcare chip', 'Seated', 'ok'], ['Chest bay', 'Open']]}>
         <button className="p6-btn" onClick={toggle('boot')}>Close the bay <i>→</i></button>
       </Panel>}

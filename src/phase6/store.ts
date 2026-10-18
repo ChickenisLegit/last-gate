@@ -33,7 +33,7 @@ export const START_ANGLES = [215, 40, 300];
 type State = {
   stage: Stage; since: number;
   regulator: boolean; angles: number[];
-  chip: 'bay' | 'held' | 'out'; cart: 'hand' | 'held' | 'slot'; care: 'ground' | 'held' | 'seated';
+  chip: 'bay' | 'held' | 'out'; cart: 'hand' | 'held' | 'slot'; care: 'ground' | 'hand' | 'open' | 'seated';
   /** When the combat chip came out (Hiro then walks to the gate's reader). */
   pulledAt: number;
   /** Hiro has taken the RX/06 capture out of the relay's recorder. */

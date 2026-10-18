@@ -34,7 +34,7 @@ const press = async label => {
   await page.evaluate(t => [...document.querySelectorAll('button')].find(x => !x.disabled && (x.getAttribute('aria-label') === t || x.textContent.includes(t))).click(), label);
 };
 try {
-  await page.goto(`${BASE}/?phase6=wake`, { waitUntil: 'networkidle0' });
+  await page.goto(`${BASE}/?phase6=wake`, { waitUntil: 'networkidle0', timeout: 90000 });
   await page.waitForFunction(() => window.__lastGateP6 && document.querySelector('.p6') && !document.querySelector('.p6-loading'), { timeout: 60000 }); await age(7);
   await press('Activate regulator'); await waitStage('limited'); checks.push('Wake: regulator switch animates and enters limited');
 
@@ -83,16 +83,22 @@ try {
   if ((await p6()).stage !== 'bloom') throw new Error(`cartridge did not seat: ${JSON.stringify(await p6())}`);
   checks.push('Cartridge: miss returns it, reader seats it and the gate opens (mouse)');
   await waitStage('home', 30000); checks.push('Hauled through the gate to home');
-  // The healthcare chip: same rule, into his chest.
+  // The healthcare chip, as in Phase 1: hold to take it, hold on his chest to open the bay, guide it in.
+  // The camera is still settling into the home shot after the crossing; let it land first.
+  await hintAt('.p6-hint-grab'); await pause(3000);
   at = await hintAt('.p6-hint-grab');
-  await dragMouse(at, { x: at.x + 250, y: at.y + 120 }); await pause(800);
-  if ((await p6()).care !== 'ground') throw new Error(`missed healthcare chip should return: ${JSON.stringify(await p6())}`);
+  await page.mouse.move(at.x, at.y); await page.mouse.down(); await pause(150); await page.mouse.up(); await pause(500);
+  if ((await p6()).care !== 'ground') throw new Error(`a short click should not take the chip: ${JSON.stringify(await p6())}`);
   at = await hintAt('.p6-hint-grab');
-  await page.mouse.move(at.x, at.y); await page.mouse.down(); await page.mouse.move(at.x + 10, at.y - 20); await pause(300);
+  await page.mouse.move(at.x, at.y); await page.mouse.down(); await pause(1200); await page.mouse.up(); await pause(300);
+  if ((await p6()).care !== 'hand') throw new Error(`holding should take the chip: ${JSON.stringify(await p6())}`);
   const chest = await hintAt('.p6-hint-drop');
-  for (let i = 1; i <= 20; i++) { await page.mouse.move(at.x + (chest.x - at.x) * i / 20, at.y + (chest.y - at.y) * i / 20); await pause(25); }
-  await page.mouse.up(); await pause(400);
-  await waitStage('seated', 5000); checks.push('Healthcare chip: miss returns it, chest seats it (mouse)');
+  await page.mouse.move(chest.x, chest.y); await page.mouse.down(); await pause(1200); await page.mouse.up();
+  await page.mouse.move(chest.x + 300, chest.y + 220); await pause(2200);
+  if ((await p6()).care !== 'open') throw new Error(`holding his chest should open the bay: ${JSON.stringify(await p6())}`);
+  const socket = await hintAt('.p6-hint-drop');
+  for (let i = 0; i <= 20; i++) { await page.mouse.move(socket.x + 260 - i * 13, socket.y + 140 - i * 7); await pause(40); }
+  await waitStage('seated', 6000); checks.push('Healthcare chip: a click does nothing, hold takes it, hold opens his chest, guided into the socket (mouse)');
   await pause(800); await press('Close the bay'); await waitStage('boot');
   await waitStage('end', 25000); await pause(5500);
   checks.push({ end: await page.evaluate(() => document.querySelector('.lg-ending')?.innerText) });
