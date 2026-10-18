@@ -109,15 +109,13 @@ every Chapter 6 stage and records errors.
 
 `docs/` holds design briefs and handoff notes from development.
 
-## Assets and credits
+## Credits
 
-The white Baymax, the cities, the bays, the portal shaders and all audio are original procedural
-assets. No film model, soundtrack or voice recording is included. Interface fonts load from Google
-Fonts with local fallbacks.
+Technical:
+Shivam Singh Sisodiya
+Rudraksh Dubey
+Ojasvi Goswami
 
-The armoured Baymax (`public/models/baymax-armoured.glb`) is converted from
-["Armored Baymax (from Disney's Big Hero 6)"](http://www.blendswap.com/blends/view/76636) by
-DoodleNotes1, licensed [CC BY 3.0](http://creativecommons.org/licenses/by/3.0) and marked
-non-commercial fan art; see `public/models/baymax-armoured.CREDITS.txt` for the changes made.
+Team Delhi Public School, Maruti Kunj
 
 This is a fan concept made for a Big Hero 6 competition brief, not affiliated with Disney.
