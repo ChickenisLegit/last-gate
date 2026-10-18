@@ -259,7 +259,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
   }, [gl, cam, baymax, home, audio]);
 
   // Memory that outlives a stage: where Baymax has got to on the street, step timing, shake, chase events.
-  const mem = useRef({ trail: .28, stepAt: 0, shake: 0, landed: false, lastStage: '' as Stage | '', bayAt: new T.Vector3(), lift: 0, glance: 0, headH: 3.1, swingAt: -9, swung: false, wakeFx: 0, falls: 0, warped: false, thirdShot: '', pressed: '' as Stage | '', idle: 0, escSince: -1 });
+  const mem = useRef({ trail: .28, stepAt: 0, shake: 0, landed: false, lastStage: '' as Stage | '', bayAt: new T.Vector3(), lift: 0, glance: 0, headH: 3.1, swingAt: -9, swung: false, wakeFx: 0, wakeSince: -1, falls: 0, warped: false, thirdShot: '', pressed: '' as Stage | '', idle: 0, escSince: -1 });
   const look = useMemo(() => new T.Vector3(), []);
   const feet = useMemo(() => new T.Vector3(), []);
   const camPos = useMemo(() => new T.Vector3(), []);
@@ -271,6 +271,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
     const P = baymax.pose, H = hiro.pose;
     const enter = m.lastStage !== s.stage;
     // Each start of the run (and each retry after he catches Hiro) begins it from the top.
+    if (s.stage === 'wake' && m.wakeSince !== s.since) { m.wakeSince = s.since; m.wakeFx = 0; }
     if (s.stage === 'escape' && m.escSince !== s.since) { m.escSince = s.since; r.p = 0; r.speed = 0; m.trail = -.05; m.falls = 0; m.swingAt = -9; r.misses = 0; m.idle = 0; }
     if (enter) {
       hands.controller.setOn(s.regulator);
@@ -304,29 +305,29 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       baymax.root.position.copy(BAYMAX_YARD); P.yaw = 0;
       feet.copy(RELAY_SPOT); look.copy(head());
       if (s.stage === 'wake') {
-        // Tracker R-03: he comes in hunting. A red glow over the dish, then he drops out of the sky,
+        // Tracker R-03/S-05: he comes in hunting (the clock restarts as the cover lifts, so this is seen). A red glow over the dish, then he drops out of the sky,
         // jets roaring and eyes burning, slams down in the yard, and rises into the stance. Hiro steps back.
-        const fly = span(e, .2, 2.5), land = e >= 2.5;
+        const fly = span(e, 1, 3.3), land = e >= 3.3;
         const arc = ease(fly), from = v3(BAYMAX_YARD.x - 9, 17, BAYMAX_YARD.z - 26);
         if (!land) {
           baymax.root.position.lerpVectors(from, BAYMAX_YARD, arc).setY(T.MathUtils.lerp(17, 0, Math.pow(arc, 1.6)) + Math.sin(Math.PI * arc) * 2.2);
           P.yaw = Math.atan2(BAYMAX_YARD.x - from.x, BAYMAX_YARD.z - from.z) * (1 - arc);
-          P.thrust = 1; jet = .9; P.dangle = .55 * (1 - span(e, 2, 2.45)); P.lean = .55 - span(e, 1.8, 2.45) * .4; P.guard = .25;
-          if (e > 1.5 && m.wakeFx < 1) { m.wakeFx = 1; audio.whoosh(); }
+          P.thrust = 1; jet = .9; P.dangle = .55 * (1 - span(e, 2.8, 3.25)); P.lean = .55 - span(e, 2.6, 3.25) * .4; P.guard = .25;
+          if (e > 2.3 && m.wakeFx < 1) { m.wakeFx = 1; audio.whoosh(); }
         } else {
           // The landing: a hard crouch that he pushes up out of; the stance locks at 4.4 as before.
-          const rise = span(e, 2.6, 4.3);
-          P.sit = .55 * (1 - rise) * span(e, 2.5, 2.62); P.lean = .3 * (1 - rise) + .08 * P.guard;
-          P.guard = Math.max(.25 * (1 - span(e, 2.6, 3)), backOut((e - 4.4) / .55));
+          const rise = span(e, 3.4, 5.1);
+          P.sit = .55 * (1 - rise) * span(e, 3.3, 3.42); P.lean = .3 * (1 - rise) + .08 * P.guard;
+          P.guard = Math.max(.25 * (1 - span(e, 3.4, 3.8)), backOut((e - 5.2) / .55));
           if (m.wakeFx < 2) { m.wakeFx = 2; m.shake = Math.max(m.shake, reducedMotion ? 0 : .7); audio.impact(); }
         }
         P.eyes.copy(RED); P.eyeGlow = .6 + .4 * fly;
-        P.head[0] = (1 - P.guard) * .2; P.head[1] = span(e, 2.8, 3.6) * .15;
-        feet.z = RELAY_SPOT.z + span(e, 4.45, 5.2) * .7;
+        P.head[0] = (1 - P.guard) * .2; P.head[1] = span(e, 3.6, 4.4) * .15;
+        feet.z = RELAY_SPOT.z + span(e, 5.25, 6) * .7;
         // Eyes up to the sky and the glow, then down with him to the yard.
-        look.copy(head()).lerp(v3(BAYMAX_YARD.x, 1.6, BAYMAX_YARD.z), span(e, 2.6, 3.4)); lookRate = 4;
-        if (e > 4.42 && e < 4.5) { m.shake = Math.max(m.shake, .35); audio.step(.7); }
-        dread = .3 + span(e, .2, 2.6) * .35;
+        look.copy(head()).lerp(v3(BAYMAX_YARD.x, 1.6, BAYMAX_YARD.z), span(e, 3.4, 4.2)); lookRate = 4;
+        if (e > 5.22 && e < 5.3) { m.shake = Math.max(m.shake, .35); audio.step(.7); }
+        dread = .3 + span(e, 1, 3.4) * .35;
       } else if (s.stage === 'limited') {
         feet.z = RELAY_SPOT.z + .7;
         // Each full move falls short. Thrusters starve, the walk is heavy, the punch stops early.
@@ -348,7 +349,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         if (e > 9.6 && !s.took) { look.set(RECORDER.x, 1.05, RECORDER.z); lookRate = 3; reach = .45; }
       } else { feet.z = RELAY_SPOT.z + .7; P.guard = 1; dread = .4; }
       P.head[1] += .12;
-      raise = s.stage === 'wake' ? .2 + span(e, 2.6, 4.2) * .2 : .4;
+      raise = s.stage === 'wake' ? .2 + span(e, 3.4, 5) * .2 : .4;
     }
 
     if (set === 'street') {

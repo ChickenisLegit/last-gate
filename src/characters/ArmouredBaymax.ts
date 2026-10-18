@@ -222,16 +222,20 @@ export async function createArmouredBaymax(opts: { eye?: T.Material; hole?: () =
      * curved plate (tracker R-02): it sits on the highest point under its rim, enlarged by `grow`, and a
      * dark housing runs from its edge down into the plate all round. `rim` is its radius in its own units.
      */
-    seatOnPlate(obj: T.Object3D, lateral: number, up: number, rim: number, grow = 1) {
+    seatOnPlate(obj: T.Object3D, lateral: number, up: number, rim: number, grow = 1, face = .7) {
       const sc = root.getWorldScale(new T.Vector3()).x, s = obj.getWorldScale(new T.Vector3()).x * grow;
       const f = api.chestFrame(lateral, up, .06), r = rim * s / sc;
+      // Face it mostly straight ahead, as on his chest in Phase 1, not along the plate's curve (tracker S-07).
+      const ahead = new T.Vector3(0, 0, 1).applyQuaternion(root.getWorldQuaternion(new T.Quaternion()));
+      const n = f.n.clone().lerp(ahead, face).normalize();
       let hi = -Infinity, lo = Infinity;
-      for (let i = 0; i < 8; i++) {
-        const a = i / 8 * Math.PI * 2, h = api.chestSpot(lateral + Math.cos(a) * r, up + Math.sin(a) * r).point.sub(f.point).dot(f.n);
-        hi = Math.max(hi, h); lo = Math.min(lo, h);
+      // Sample the plate across the whole face (three rings and the centre), so no ridge pokes through it.
+      for (const k of [0, .4, .75, 1.05]) for (let i = 0; i < (k ? 16 : 1); i++) {
+        const a = i / 16 * Math.PI * 2, h = api.chestSpot(lateral + Math.cos(a) * r * k, up + Math.sin(a) * r * k).point.sub(f.point).dot(n);
+        hi = Math.max(hi, h); if (k >= 1) lo = Math.min(lo, h);
       }
       const lift = Math.max(0, hi) + .004 * sc, sink = Math.max(0, -lo) + .02 * sc;
-      const undo = seatOn(obj, { point: f.point.clone().addScaledVector(f.n, lift), normal: f.n, bone: f.bone });
+      const undo = seatOn(obj, { point: f.point.clone().addScaledVector(n, lift), normal: n, bone: f.bone });
       obj.scale.multiplyScalar(grow);
       const depth = (lift + sink) / s;
       const housing = new T.Mesh(new T.CylinderGeometry(rim * 1.04, rim * 1.1, depth, 40, 1, true), new T.MeshStandardMaterial({ color: '#23262b', roughness: .55, metalness: .5, side: T.DoubleSide }));

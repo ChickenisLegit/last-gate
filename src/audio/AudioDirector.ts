@@ -145,6 +145,48 @@ export class AudioDirector {
       case 'lock-on':this.tone('sine',46,34,2.6,.11,.01);this.tone('sawtooth',98,92,1.4,.01,.02);this.tone('sine',2300,2300,.09,.008,.003);this.tone('sine',2300,2300,.09,.008,.003,.11);break;
     }
   }
+  /**
+   * Tracker S-03: his systems coming up, as sound. A relay and a supply whine climbing at power-on,
+   * then a flutter of self-test blips before the wake chime.
+   */
+  power(){
+    if(!this.ctx||!this.enabled)return;
+    this.click(0,.07,1800);this.tone('sine',52,38,.5,.04,.004);
+    this.tone('triangle',90,1400,1.2,.005,.5,.05);this.tone('sine',4200,7600,1.3,.0016,.9,.05);
+    this.burst('bandpass',300,3200,1,.008,{q:2,attack:.6});
+    [1568,2093,1760,2349,1976,2637,2093].forEach((f,i)=>this.tone('square',f,f,.035,.0018,.002,1.15+i*.075+(i>3?.08:0),(i%2?.25:-.25)));
+  }
+  /**
+   * Data chatter for as long as a diagnostic line resolves on screen, then its verdict: a bright
+   * double blip for OK, a sour two-tone for a fault, and a hard alarm for the combat system.
+   */
+  dataLine(kind:'ok'|'fault'|'red',duration:number){
+    if(!this.ctx||!this.enabled)return;
+    let seed=Math.round(duration*997)+(kind==='red'?3:kind==='fault'?2:1);
+    const rnd=()=>(seed=(seed*9301+49297)%233280)/233280;
+    for(let d=0;d<duration;d+=.034+rnd()*.03){
+      const f=kind==='red'?900+rnd()*900:1700+rnd()*1900;
+      this.tone(kind==='red'?'square':'sine',f,f*.93,.022,kind==='red'?.0012:.0022,.002,d,(rnd()-.5)*.5);
+    }
+    const end=duration+.04;
+    if(kind==='ok'){this.tone('sine',1320,1320,.08,.006,.004,end);this.tone('sine',1760,1760,.16,.006,.004,end+.09);}
+    else if(kind==='fault'){this.click(end,.03,1200);this.tone('triangle',392,370,.4,.011,.006,end);this.tone('triangle',415,392,.4,.008,.006,end);}
+    else{
+      // COMBAT SYSTEM ACTIVE: a three-pulse two-tone alarm with a growl under it.
+      for(let i=0;i<3;i++){this.tone('square',988,988,.1,.0042,.004,end+i*.18);this.tone('square',740,740,.1,.0038,.004,end+i*.18+.09);}
+      this.tone('sawtooth',62,55,.9,.012,.02,end);this.burst('bandpass',1800,900,.45,.012,{q:3,attack:.01,delay:end});
+    }
+  }
+  /** Tracker S-02: rubble from the crossing landing round Hiro, and chunks that whip past his head. */
+  rubble(pan=0,near=.6){
+    if(!this.ctx||!this.enabled)return;
+    this.tone('sine',78,40,.3,.05*near,.004,0,pan*.5);this.burst('lowpass',1100,200,.4,.05*near,{attack:.003,pan});
+    for(let i=0;i<4;i++)this.burst('bandpass',1400+Math.random()*2200,800,.05,.014*near,{q:4,delay:.05+Math.random()*.35,pan:pan+(Math.random()-.5)*.5});
+  }
+  whiz(pan=0){
+    if(!this.ctx||!this.enabled)return;
+    this.burst('bandpass',500,2600,.3,.035,{q:1.6,attack:.22,pan});this.burst('bandpass',2600,700,.25,.025,{q:1.6,attack:.01,delay:.3,pan:pan*1.4});
+  }
   /** Spool and charge build; discharge cracks; impacts carry boom, debris and, if torn, the tear. */
   charge(pan=0){this.tone('sawtooth',180,1600,1.1,.008,.6,0,pan);this.tone('sine',360,2200,1.1,.006,.6,0,pan);}
   spool(){this.tone('sawtooth',55,220,1.4,.014,.9);this.burst('bandpass',300,1600,1.6,.03,{q:.6,attack:1.2});}

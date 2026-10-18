@@ -5,12 +5,14 @@
 .bay{position:fixed;inset:0;overflow:hidden;background:#05090d;color:var(--lg-ink);font:500 14px/1.5 var(--lg-body)}
 .bay-world{position:absolute;inset:0;opacity:0;transition:opacity 1.2s ease}
 .bay-ready .bay-world{opacity:1}
-.bay:not(.bay-ready) .bay-top,.bay:not(.bay-ready) .bay-rail,.bay:not(.bay-ready) .bay-card{visibility:hidden;animation:none}
+/* Before the bay is ready the HUD sits, fully laid out, under the opaque loading cover: painting it there
+   (instead of on the reveal frame) keeps the fade-in smooth. Entry animations wait for the reveal. */
+.bay:not(.bay-ready) .bay-top,.bay:not(.bay-ready) .bay-rail,.bay:not(.bay-ready) .bay-card{animation:none}
 .bay-world canvas{display:block;touch-action:none}
 .bay-grade{position:absolute;inset:0;pointer-events:none;background:radial-gradient(120% 90% at 50% 48%,transparent 52%,rgba(4,10,18,.62) 100%),linear-gradient(180deg,rgba(4,10,18,.45),transparent 18%)}
 .bay:after{content:'';position:absolute;inset:0;background:#05090d;opacity:0;pointer-events:none;transition:opacity .9s ease}
 .bay.bay-leaving:after{opacity:1}
-.bay-loading{position:absolute;inset:0;display:grid;place-content:center;margin:0;font:500 11px/1 var(--lg-mono);letter-spacing:.24em;text-transform:uppercase;color:#95a69c}
+.bay-loading{position:absolute;inset:0;z-index:5;background:#05090d;display:grid;place-content:center;margin:0;font:500 11px/1 var(--lg-mono);letter-spacing:.24em;text-transform:uppercase;color:#95a69c}
 
 .bay-top{position:absolute;top:24px;left:28px;right:28px;display:flex;justify-content:space-between;align-items:center}
 .bay-brand{display:flex;flex-direction:column;gap:2px;pointer-events:none}
@@ -20,7 +22,6 @@
 .bay-rail{position:absolute;left:28px;top:84px;animation:baySlide .8s .3s both var(--lg-ease)}
 
 .bay-side{position:absolute;right:28px;top:84px;width:312px;display:flex;flex-direction:column;gap:12px}
-.bay:not(.bay-ready) .bay-side,.bay:not(.bay-ready) .bay-chapters{visibility:hidden}
 .bay-card{position:relative;width:312px;padding:22px 24px 22px;background:var(--lg-paper);border-radius:var(--lg-radius-panel);box-shadow:var(--lg-shadow-panel);animation:bayCard .6s both var(--lg-ease)}
 .bay-card h1{margin:0 0 6px;font:600 25px/1.12 var(--lg-display);letter-spacing:-.015em;color:var(--lg-ink-strong)}
 .bay-card p{margin:0;color:var(--lg-ink)}

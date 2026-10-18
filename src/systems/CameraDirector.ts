@@ -35,8 +35,20 @@ const LOOK:Partial<Record<Phase,[number,number]>>={
  */
 const ZOOM_SHOTS:Partial<Record<Phase,[number,number]>>={'chip-focus':[-.55,.7],'chest-focus':[-.6,.55],'socket-ready':[-.5,.3]};
 export const ZOOM_PHASES=Object.keys(ZOOM_SHOTS) as Phase[];
-/** Beats where Baymax is elsewhere (the other side of the portal) or the camera isn't on yet. */
-const AWAY=new Set(['loading','through-portal','sf-arrival','sf-turnback','back-decision','back-through']);
+/**
+ * Beats where the keep-Baymax-in-frame guard stays off: he is elsewhere (the other side of the
+ * portal), the camera isn't on yet, or the shot deliberately turns its back on him. The whole
+ * escape faces the gate (tracker S-01: the guard was dragging the walk to the portal round to
+ * Baymax, so Hiro walked in backwards); call-baymax aims at him on its own, and the hurt
+ * re-entry twists round to watch the gate seal.
+ */
+const AWAY=new Set<Phase>(['loading','portal-sighted','call-baymax','to-portal','through-portal','sf-arrival','sf-turnback','back-decision','back-through','reentry']);
+/**
+ * Where the hurt re-entry leaves Hiro lying (z). The run back through the ring (z 24) ends a few
+ * metres past it, not halfway to Baymax (tracker S-09). ExperienceDirector places the debris round it.
+ */
+export const REENTRY_Z=16.6;
+const RUN_END=REENTRY_Z+2.9;
 export type ShotContext={chest:Vector3;normal:Vector3;chip:Vector3;baymax:Vector3;head:Vector3};
 
 /** Sole owner of the camera. Each phase is a directed shot; impulses come from the sequence. */
@@ -187,7 +199,7 @@ export class CameraDirector {
       case 'back-through':{
         // Run and jump back through the ring into the dimension; the landing lands in 'reentry'.
         const whoosh=span(t,.15,1.1),cross=span(t,.1,1.9);
-        P.set(MathUtils.lerp(0,-.8,span(t,1,2.2)),2.5,MathUtils.lerp(27,11,cross));
+        P.set(MathUtils.lerp(0,-.8,span(t,1,2.2)),2.5,MathUtils.lerp(27,RUN_END,cross));
         A.set(0,MathUtils.lerp(4,3,span(t,.2,1.6)),MathUtils.lerp(24,-6,span(t,.2,1.6)));
         this.fov=MathUtils.lerp(46,58,whoosh);this.roll=whoosh*.06;this.focusDistance=12;break;
       }
@@ -195,11 +207,13 @@ export class CameraDirector {
         // The crossing throws him down hard. Still on the ground he twists to look back, and
         // watches the gate seal behind him (RiftGate.seal); then he goes still, knocked out.
         const hit=span(t,0,.45),reel=span(t,.5,2.6),turn=span(t,.75,1.8),settle=span(t,3.1,4.6);
-        P.set(-1.2+(reducedMotion?0:Math.sin(t*17)*.025*(1-reel)),MathUtils.lerp(1.4,.52,hit)+breathe*.01,MathUtils.lerp(10,7.4,hit));
+        P.set(-1.2+(reducedMotion?0:Math.sin(t*17)*.025*(1-reel)),MathUtils.lerp(1.4,.52,hit)+breathe*.01,MathUtils.lerp(RUN_END-.9,REENTRY_Z,hit));
         // Turn by heading and pitch (not by sliding the aim point), so the look back swings
         // round past his shoulder instead of through the sky.
         this.v.set(MathUtils.lerp(-.6,1.6,hit),MathUtils.lerp(2.2,3.2,hit),MathUtils.lerp(-11,-13,hit)).sub(P);
-        this.v2.set(0,4.2,24).sub(P);
+        // Lying only a few metres short of the ring now, he looks at its lower half so the road and
+        // the implosion share the frame instead of the lens craning into the sky.
+        this.v2.set(0,1.8,24).sub(P);
         const yaw=MathUtils.lerp(Math.atan2(this.v.x,this.v.z),Math.atan2(this.v2.x,this.v2.z),turn);
         const pitch=MathUtils.lerp(Math.atan2(this.v.y,Math.hypot(this.v.x,this.v.z)),Math.atan2(this.v2.y,Math.hypot(this.v2.x,this.v2.z)),turn)-settle*.3;
         A.set(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),Math.cos(yaw)*Math.cos(pitch)).multiplyScalar(12).add(P);

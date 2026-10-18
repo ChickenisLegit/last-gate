@@ -36,7 +36,18 @@ export class PhaseSixAudio {
       this.jet = c.createGain(); this.jet.gain.value = 0; this.jetFilter = c.createBiquadFilter(); this.jetFilter.type = 'bandpass'; this.jetFilter.frequency.value = 520; this.jetFilter.Q.value = .5; loop(this.jetFilter, this.jet);
       // City air, and the quiet water on the other side.
       this.air = c.createGain(); this.air.gain.value = .05; const airF = c.createBiquadFilter(); airF.type = 'lowpass'; airF.frequency.value = 380; loop(airF, this.air);
-      this.calm = c.createGain(); this.calm.gain.value = 0; const calmF = c.createBiquadFilter(); calmF.type = 'bandpass'; calmF.frequency.value = 900; calmF.Q.value = .3; loop(calmF, this.calm);
+      // Home (tracker S-08): soft harbour water that swells and falls, under a slow warm chord, instead of a flat hiss.
+      this.calm = c.createGain(); this.calm.gain.value = 0;
+      const waves = c.createGain(), waveF = c.createBiquadFilter(); waveF.type = 'lowpass'; waveF.frequency.value = 520; waveF.Q.value = .2;
+      waves.gain.value = .55; loop(waveF, waves); waves.disconnect(); waves.connect(this.calm);
+      const swell = c.createOscillator(), swellDepth = c.createGain(); swell.frequency.value = .11; swellDepth.gain.value = .4; swell.connect(swellDepth); swellDepth.connect(waves.gain); swell.start();
+      const pad = c.createGain(), padF = c.createBiquadFilter(); padF.type = 'lowpass'; padF.frequency.value = 900; pad.gain.value = .5; padF.connect(pad); pad.connect(this.calm);
+      for (const [f, v] of [[146.83, .3], [220, .22], [277.18, .14], [329.63, .1]] as const) {
+        const o = c.createOscillator(), g = c.createGain(), lfo = c.createOscillator(), depth = c.createGain();
+        o.type = 'triangle'; o.frequency.value = f; g.gain.value = v; lfo.frequency.value = .05 + f / 4000; depth.gain.value = v * .45;
+        lfo.connect(depth); depth.connect(g.gain); o.connect(g); g.connect(padF); o.start(); lfo.start();
+      }
+      this.calm.connect(this.master);
       // The frame's hum: two close low tones beating slowly.
       this.hum = c.createGain(); this.hum.gain.value = 0; this.hum.connect(this.master);
       for (const f of [55, 55.7, 110.4]) { const o = c.createOscillator(); o.frequency.value = f; const g = c.createGain(); g.gain.value = f > 100 ? .25 : .5; o.connect(g); g.connect(this.hum); o.start(); }
@@ -55,7 +66,7 @@ export class PhaseSixAudio {
     this.jetFilter.frequency.setTargetAtTime(380 + s.jet * 600, now, .2);
     this.hum.gain.setTargetAtTime(s.hum * .16, now, .4);
     this.air.gain.setTargetAtTime(s.air * .06, now, .8);
-    this.calm.gain.setTargetAtTime(s.calm * .05, now, 1.2);
+    this.calm.gain.setTargetAtTime(s.calm * .11, now, 1.8);
     this.near?.gain.setTargetAtTime((s.near ?? 0) * .22, now, .25);
     // Heartbeat: lub-dub, quicker and louder as the dread rises.
     const dread = s.dread ?? 0;

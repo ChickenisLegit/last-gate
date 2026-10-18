@@ -264,13 +264,13 @@ export async function createBaymax() {
       shoulders.forEach((sh, i) => {
         const right = i === 1, s = right ? 1 : -1;
         const guard = cur.guard * (1 - slug * .3);
-        const fwd = guard * (.75 + tense * .12) + (right ? cur.punch * 1.05 : -cur.punch * .25) + (!right ? cur.hold * .5 : 0)
+        const fwd = guard * (.55 + tense * .1) + (right ? cur.punch * 1.05 : -cur.punch * .25) + (!right ? cur.hold * .5 : 0)
           + Math.sin(gait - .5 + (right ? 0 : Math.PI)) * stride * .24 * heavy - sag * (1 - guard) + tremor
           + cur.flail * (.9 + .4 * Math.sin(t * 9 + i * 2))
           - push * .9 + brace * .25 + p.overhead * 2.7;
         // Lying, the arms rest back along the ground.
         sh.rotation.x = -fwd + lie * (1 - cur.hold) * .35 + sweep * .6 + cur.flop * .28;
-        sh.rotation.z = s * (sweep * .12 + cur.flail * (.35 + .3 * Math.sin(t * 7 + i)) + guard * .28 + cur.dangle * .32 + (!right ? cur.hold * .55 : 0) + push * .2 + brace * .32 - sag * .05 + tense * .04);
+        sh.rotation.z = s * (sweep * .12 + cur.flail * (.35 + .3 * Math.sin(t * 7 + i)) + guard * .2 + cur.dangle * .32 + (!right ? cur.hold * .55 : 0) + push * .2 + brace * .32 - sag * .05 + tense * .04);
         sh.rotation.y = -s * guard * .2;
       });
 
@@ -298,8 +298,9 @@ export async function createBaymax() {
           kneeL: knee(-1), kneeR: knee(1),
           head: headNode ? qH.setFromEuler(headNode.rotation).multiply(headRest) : undefined,
           // Elbows: bent up in guard, straightening into a punch or reaching overhead.
-          elbowL: .3 + cur.guard * .75 - cur.punch * .8 - p.overhead * .2 + cur.flail * .3,
-          elbowR: .3 + cur.guard * .75 - cur.hold * .5 - p.overhead * .2 + cur.flail * .3,
+          // Guard: forearms forward and a little up, a ready stance rather than hands in the air (tracker S-06).
+          elbowL: .3 + cur.guard * .45 - cur.punch * .6 - p.overhead * .2 + cur.flail * .3,
+          elbowR: .3 + cur.guard * .45 - cur.hold * .5 - p.overhead * .2 + cur.flail * .3,
         });
       }
       if (pose.armour > .5 && !unseatBay) unseatBay = armoured.seatOnPlate(bay.root, .2, .2, .235, 1.2);

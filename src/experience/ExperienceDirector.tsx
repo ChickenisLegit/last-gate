@@ -1,6 +1,6 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { ACESFilmicToneMapping, Color, DodecahedronGeometry, FogExp2, Group, Mesh, MeshStandardMaterial, PerspectiveCamera, PMREMGenerator, SRGBColorSpace, Vector3 } from 'three';
+import { ACESFilmicToneMapping, Color, DodecahedronGeometry, DynamicDrawUsage, Euler, FogExp2, Group, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, PMREMGenerator, Quaternion, SRGBColorSpace, Vector3 } from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CinematicPost } from '../effects/CinematicPost';
 import { createPortalDimension } from '../environment/PortalDimension.js';
@@ -9,7 +9,7 @@ import { createSanFransokyo } from '../environment/HarbourCity';
 import { createPortalGate, portalWorldMask } from '../environment/RiftGate';
 import { useCanvasBudget } from '../performance/CanvasBudget';
 import { assets } from '../systems/AssetManager';
-import { CameraDirector, ZOOM_PHASES, type ShotContext } from '../systems/CameraDirector';
+import { CameraDirector, REENTRY_Z, ZOOM_PHASES, type ShotContext } from '../systems/CameraDirector';
 import { SequenceDirector, type SequenceEvent } from '../systems/SequenceDirector';
 import { BaymaxController } from '../characters/BaymaxController';
 import { pinLights } from '../systems/lightPins';
@@ -44,6 +44,66 @@ const SEAL_AT=1.45;
 /** Tracker N-01: on the hurt re-entry, a chunk of debris tumbles in and hits Hiro: that is what knocks him out. */
 const ROCK_AT=2.95,ROCK_FROM=2.35;
 
+/**
+ * Tracker S-02: the rock is one piece of a shower. Chunks and grit thrown through the ring with
+ * Hiro (the tail of back-through), rubble falling round where he lands, then ejecta from the gate
+ * as it implodes, a couple of near misses, and finally the rock. Two instanced draws sharing the
+ * rock's geometry; the clock runs from -0.8 s (back-through) through the re-entry. Positions
+ * are laid out round where he lands (REENTRY_Z) and the ring (z 24).
+ */
+const HIDDEN=new Matrix4().makeScale(0,0,0),TINT=new Color();
+type Piece={at:number;p:Vector3;v:Vector3;spin:Vector3;scale:Vector3;tint:number;pos:Vector3;vel:Vector3;rot:Euler;live:boolean;rest:boolean};
+const DEBRIS_G=12;
+function createDebris(geometry:DodecahedronGeometry){
+  let seed=11;const rnd=(a:number,b:number)=>{seed=seed*16807%2147483647;return a+(b-a)*(seed-1)/2147483646;};
+  const piece=(at:number,p:Vector3,v:Vector3,size:number,squash=.25):Piece=>({at,p,v,spin:new Vector3(rnd(-9,9),rnd(-7,7),rnd(-9,9)),
+    scale:new Vector3(size*rnd(1-squash,1+squash),size*rnd(1-squash,1),size*rnd(1-squash,1+squash)),tint:rnd(.7,1.25),pos:new Vector3(),vel:new Vector3(),rot:new Euler(rnd(0,6),rnd(0,6),rnd(0,6)),live:false,rest:false});
+  // Launched from p so it reaches `to` after `time` seconds under gravity.
+  const aimed=(at:number,p:Vector3,to:Vector3,time:number,size:number,squash?:number)=>piece(at,p,new Vector3((to.x-p.x)/time,(to.y-p.y)/time+.5*DEBRIS_G*time,(to.z-p.z)/time),size,squash);
+  const chunks:Piece[]=[],grit:Piece[]=[],L=REENTRY_Z;
+  // Thrown through the ring with him: ahead of the lens, receding and dropping toward Baymax.
+  for(let i=0;i<4;i++)chunks.push(piece(rnd(-.75,-.35),new Vector3(rnd(-2.6,1.8),rnd(3,4.8),L+rnd(.6,3.1)),new Vector3(rnd(-1,1),rnd(-.6,1.2),rnd(-13,-9)),rnd(.5,.95)));
+  for(let i=0;i<8;i++)grit.push(piece(rnd(-.7,-.2),new Vector3(rnd(-2.4,1.6),rnd(2.6,4.6),L+rnd(1.1,3.6)),new Vector3(rnd(-1.5,1.5),rnd(-1,1.5),rnd(-15,-10)),rnd(.12,.24),.4));
+  // Rubble already coming down round the landing spot.
+  for(let i=0;i<4;i++)chunks.push(piece(rnd(.05,.6),new Vector3(rnd(-3.5,2.5),rnd(5,7.5),L+rnd(-5.9,-1.9)),new Vector3(rnd(-.8,.8),rnd(-2,0),rnd(-1.5,1)),rnd(.3,.75)));
+  // His own landing throws up grit in front of him.
+  for(let i=0;i<16;i++)grit.push(piece(rnd(0,.15),new Vector3(-1.2+rnd(-1.4,1.2),.05,L+rnd(-2.8,-.6)),new Vector3(rnd(-1.5,1.5),rnd(2,4.5),rnd(-1.5,.8)),rnd(.1,.2),.4));
+  // The gate implodes (SEAL_AT) and spits out what's left of the crossing, toward and past him.
+  for(let i=0;i<6;i++)chunks.push(aimed(1.5+i*.26+rnd(0,.15),new Vector3(rnd(-3,3),rnd(2.5,5.5),rnd(22.5,23.8)),new Vector3(rnd(-5.5,3.5),0,L+rnd(-3.4,3.6)),rnd(.8,1.2),rnd(.35,1.1)));
+  for(let i=0;i<16;i++)grit.push(aimed(rnd(1.6,3),new Vector3(rnd(-2.5,2.5),rnd(2,5),rnd(22,23.8)),new Vector3(rnd(-5,4),0,L+rnd(-4.4,4.6)),rnd(.6,.9),rnd(.12,.24),.4));
+  // Two near misses either side of his head, just before the one that doesn't miss.
+  chunks.push(aimed(1.45,new Vector3(1.6,4.6,23.4),new Vector3(-.05,1.1,L),.9,.55));
+  chunks.push(aimed(1.8,new Vector3(-3.2,5.2,23.5),new Vector3(-2.5,.9,L-.2),.85,.45));
+  const material=new MeshStandardMaterial({color:'#5f6b6c',roughness:.95,flatShading:true});
+  const build=(list:Piece[])=>{const m=new InstancedMesh(geometry,material,list.length);m.frustumCulled=false;m.visible=false;
+    list.forEach((p,i)=>{m.setMatrixAt(i,HIDDEN);m.setColorAt(i,TINT.setScalar(p.tint));});m.instanceMatrix.setUsage(DynamicDrawUsage);return m;};
+  const chunkMesh=build(chunks),gritMesh=build(grit),meshes=[chunkMesh,gritMesh];
+  const q=new Quaternion(),m4=new Matrix4();let last=-Infinity;
+  const step=(list:Piece[],mesh:InstancedMesh,clock:number,dt:number)=>{
+    list.forEach((p,i)=>{
+      if(clock<p.at){if(p.live){p.live=false;mesh.setMatrixAt(i,HIDDEN);}return;}
+      if(!p.live){p.live=true;p.rest=false;p.pos.copy(p.p).addScaledVector(p.v,clock-p.at);p.vel.copy(p.v);}
+      else if(!p.rest){
+        p.vel.y-=DEBRIS_G*dt;p.pos.addScaledVector(p.vel,dt);p.rot.x+=p.spin.x*dt;p.rot.y+=p.spin.y*dt;p.rot.z+=p.spin.z*dt;
+        const floor=p.scale.y*.3;
+        // One heavy bounce on the road, then it stays where it fell.
+        if(p.pos.y<floor){p.pos.y=floor;if(p.vel.y<-2.5){p.vel.y*=-.28;p.vel.x*=.45;p.vel.z*=.45;p.spin.multiplyScalar(.5);}else p.rest=true;}
+      }
+      mesh.setMatrixAt(i,m4.compose(p.pos,q.setFromEuler(p.rot),p.scale));
+    });
+    mesh.instanceMatrix.needsUpdate=true;
+  };
+  return {meshes,
+    /** clock: seconds into the re-entry (negative for the end of back-through), or null when off. */
+    update(clock:number|null,dt:number){
+      if(clock===null||clock<-.8){if(chunkMesh.visible){meshes.forEach(m=>m.visible=false);[...chunks,...grit].forEach(p=>p.live=false);last=-Infinity;}return;}
+      if(clock<last)[...chunks,...grit].forEach(p=>p.live=false);last=clock;
+      meshes.forEach(m=>m.visible=true);step(chunks,chunkMesh,clock,dt);step(grit,gritMesh,clock,dt);
+    },
+    dispose(){meshes.forEach(m=>m.dispose());material.dispose();}
+  };
+}
+
 type SceneProps={director:CameraDirector;seq:SequenceDirector;marker:React.RefObject<HTMLButtonElement|null>;readout:React.RefObject<HTMLDivElement|null>;audio:AudioDirector};
 function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
   const {camera,gl,size,scene}=useThree();
@@ -68,7 +128,8 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
   const phaseT=useRef(0),prevPhaseRef=useRef<string>('');
   const rock=useMemo(()=>{const m=new Mesh(new DodecahedronGeometry(.34,0),new MeshStandardMaterial({color:'#5f6b6c',roughness:.95,flatShading:true}));m.visible=false;m.scale.set(1,.8,1.15);return m;},[]);
   const rockFwd=useMemo(()=>new Vector3(),[]),rockSide=useMemo(()=>new Vector3(),[]);
-  useEffect(()=>{scene.add(rock);return()=>{scene.remove(rock);rock.geometry.dispose();(rock.material as MeshStandardMaterial).dispose();};},[scene,rock]);
+  const debris=useMemo(()=>createDebris(rock.geometry as DodecahedronGeometry),[rock]);
+  useEffect(()=>{scene.add(rock,...debris.meshes);return()=>{scene.remove(rock,...debris.meshes);debris.dispose();rock.geometry.dispose();(rock.material as MeshStandardMaterial).dispose();};},[scene,rock,debris]);
   const ctx=useMemo<ShotContext>(()=>({chest:new Vector3(3,1.97,-11.3),normal:new Vector3(0,0,1),chip:new Vector3(),baymax:new Vector3(2.7,0,-12),head:new Vector3(2.72,2.98,-11.6)}),[]);
   const projection=useMemo(()=>new Vector3(),[]);
   useEffect(()=>{
@@ -93,12 +154,12 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     let active=true;
     // Compile the linear composer variants, rather than the default framebuffer variants.
     // The armoured suit is parsed and mounted first, so its programs compile with the rest; the
-    // reentry rock is shown for the compile too (tracker Q-02).
+    // reentry rock and its debris shower are shown for the compile too (tracker Q-02, S-02).
     const compiled=(baymax.current?.prepareSuit()??Promise.resolve()).then(()=>{
       // Every light stays counted from here on, so phase changes never recompile (tracker R-01).
       pins.current??=pinLights(scene);pins.current.before();
-      const previousTarget=gl.getRenderTarget();gl.setRenderTarget(post.composer.readBuffer);rock.visible=true;
-      const c=gl.compileAsync(scene,camera);rock.visible=false;gl.setRenderTarget(previousTarget);pins.current.after();return c;
+      const previousTarget=gl.getRenderTarget();gl.setRenderTarget(post.composer.readBuffer);rock.visible=true;debris.meshes.forEach(m=>m.visible=true);
+      const c=gl.compileAsync(scene,camera);rock.visible=false;debris.meshes.forEach(m=>m.visible=false);gl.setRenderTarget(previousTarget);pins.current.after();return c;
     });
     void compiled.then(async()=>{
       if(!active)return;
@@ -143,7 +204,7 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
       if(active)useSceneState.getState().ready();
     }).catch(()=>{if(active)useSceneState.setState({error:'Could not prepare the scene. Reload to try again.'});});
     return()=>{active=false;};
-  },[shell,shellMask,gl,scene,camera,post,sf,gate,environment,worldMasks,rock]);
+  },[shell,shellMask,gl,scene,camera,post,sf,gate,environment,worldMasks,rock,debris]);
   useEffect(()=>seq.on((event:SequenceEvent)=>{
     rupture.onEvent(event,seq,camera as PerspectiveCamera);
     const pan=(p:Vector3)=>{projection.copy(p).project(camera);return Math.max(-1,Math.min(1,projection.x*.8));};
@@ -221,6 +282,7 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
       else rock.visible=false;
       if(rt>=ROCK_AT){const h=Math.exp(-(rt-ROCK_AT)*8);fx.flash=Math.max(fx.flash,.85*h);fx.chroma=Math.max(fx.chroma,.4*h);}
     }else rock.visible=false;
+    debris.update(phase==='reentry'?phaseT.current:phase==='back-through'?phaseT.current-(SHELL_DURATIONS['back-through']??2.2):null,dt);
     // The seal: a white implosion flash and a brief chromatic tear.
     if(gate.flash>0){fx.flash=Math.max(fx.flash,gate.flash*.45);fx.chroma=Math.max(fx.chroma,gate.flash*.3);}
     gl.domElement.dataset.phase=phase;
@@ -249,13 +311,15 @@ const PHASE_CUES:Partial<Record<Phase,[number,(audio:AudioDirector)=>void][]>>={
   'chip-held':[[.2,a=>a.shellCue('inspect')]],
   'panel-opening':[[.45,a=>a.shellCue('latch')],[.75,a=>a.shellCue('release')],[1.2,a=>a.shellCue('servo')],[2.55,a=>a.shellCue('present')]],
   inserting:[[1.04,a=>a.shellCue('lock')]],
-  booting:[[.2,a=>a.shellCue('seal')],[1.3,a=>a.shellCue('boot')],[3.5,a=>a.shellCue('chime')]],
-  diagnostic:[[4.95,a=>a.shellCue('wrong')]],
+  booting:[[.2,a=>a.shellCue('seal')],[.95,a=>a.power()],[1.3,a=>a.shellCue('boot')],[3.5,a=>a.shellCue('chime')]],
+  // The bent chime follows the combat-system alarm (dataLine) rather than sounding over it.
+  diagnostic:[[5.45,a=>a.shellCue('wrong')]],
   threat:[[1.7,a=>a.shellCue('lock-on')]],
   ignition:[[1.9,a=>a.spool()]],
   fracture:[[0,a=>a.rupture()]],
   pulled:[[3.1,a=>a.whiteout()]],
-  reentry:[[0,a=>a.impact(1,true,0,1)],[.12,a=>a.impact(.6,false,-.2,1)],[2.95,a=>a.impact(1.3,true,.4,1)]],
+  // Rubble from the crossing lands round him and two chunks whip past (S-02) before the rock connects.
+  reentry:[[0,a=>a.impact(1,true,0,1)],[.12,a=>a.impact(.6,false,-.2,1)],[.35,a=>a.rubble(-.2,.6)],[.62,a=>a.rubble(.35,.4)],[2.13,a=>a.whiz(-.5)],[2.43,a=>a.whiz(.5)],[2.7,a=>a.rubble(.2,.45)],[2.95,a=>a.impact(1.3,true,.4,1)]],
   handoff:[[1.2,a=>a.arrival()]]
 };
 const PHASE_LINES:Partial<Record<Phase,[number,string,('HIRO'|'BAYMAX')?][]>>={
@@ -323,7 +387,8 @@ export function ExperienceDirector(){
   useEffect(()=>{
     const timers=[...(PHASE_CUES[phase]??[]).map(([at,cue])=>setTimeout(()=>cue(audio),at*1000)),
       ...(PHASE_LINES[phase]??[]).map(([at,text,who])=>setTimeout(()=>useSceneState.getState().say(text,who??'HIRO'),at*1000))];
-    if(phase==='diagnostic')LINE_TIMES.forEach((at,i)=>timers.push(setTimeout(()=>audio.shellCue(DIAGNOSTIC_LINES[i].tone==='ok'?'line':'fault'),at*1000)));
+    // Each line chatters while its key and value resolve (38 glyphs a second, value .35 s behind), then sounds its verdict.
+    if(phase==='diagnostic')LINE_TIMES.forEach((at,i)=>{const line=DIAGNOSTIC_LINES[i];timers.push(setTimeout(()=>audio.dataLine(line.tone,Math.max((line.key.length+4)/38,.35+(line.value.length+4)/38)),at*1000));});
     return()=>timers.forEach(clearTimeout);
   },[phase,audio,replay]);
   useEffect(()=>{

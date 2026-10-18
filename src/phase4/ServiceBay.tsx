@@ -12,6 +12,7 @@ import { sfx, nearestOnPath, useSfxBed, useUiSfx } from '../audio/sfx';
 import { SoundToggle } from '../audio/SoundToggle';
 import { CABLE_PATH, CABLE_WALK, EYE, VIEWS, takeServiceBay, type BayState, type ServiceBay as Bay, type View } from './bayScene';
 import type { V3 } from './bayKit';
+import { createBayRender, type BayRender } from './bayRender';
 import './bay.css';
 import './bay-theme.css';
 
@@ -46,7 +47,7 @@ function World({ bay, cam, state, pins, pinEls, hiro, onPick, onReady }: {
   pins: MutableRefObject<Pin[]>; pinEls: MutableRefObject<Record<string, HTMLButtonElement | null>>; hiro: MutableRefObject<SVGGElement | null>;
   onPick: (part: string) => void; onReady: () => void;
 }) {
-  const { camera, scene, gl } = useThree();
+  const { camera, scene, gl, raycaster } = useThree();
   const skyline = useMemo(() => {
     const city = createPortalDimension();
     city.group.position.set(0, -4, -78); city.group.scale.setScalar(1.05);
@@ -55,28 +56,37 @@ function World({ bay, cam, state, pins, pinEls, hiro, onPick, onReady }: {
   }, []);
   const move = useRef<{ curve: T.CatmullRomCurve3; from: T.Vector3; to: T.Vector3; t: number; duration: number; lookAlong?: Request['lookAlong']; done?: () => void } | null>(null);
   const look = useMemo(() => new T.Vector3(...VIEWS.gate.look), []), lookOut = useMemo(() => new T.Vector3(), []), v = useMemo(() => new T.Vector3(), []), dir = useMemo(() => new T.Vector3(), []);
-  const pointer = useRef(new T.Vector2()), steps = useRef(0), frames = useRef(0), bobPos = useMemo(() => new T.Vector3(), []);
+  const pointer = useRef(new T.Vector2()), steps = useRef(0), frames = useRef(0), smooth = useRef(0), bobPos = useMemo(() => new T.Vector3(), []);
   const stride = useRef(0), cableAt = useMemo((): [number, number, number] => [0, 0, 0], []);
   const [live, setLive] = useState(false);
 
+  const draw = useRef<BayRender | null>(null);
   useEffect(() => {
     const pmrem = new T.PMREMGenerator(gl), env = pmrem.fromScene(new RoomEnvironment(), .04).texture;
     scene.environment = env; scene.environmentIntensity = .2;
-    if (import.meta.env.DEV) (window as Window & { __bay?: unknown }).__bay = { scene, bay, skyline, gl };
+    // Raycasts must still reach the regulator's glass, which draws in the late pass (see bayRender.ts).
+    raycaster.layers.enableAll();
     // Compile every shader off the main path first, then put the bay in the scene in one go.
     let alive = true;
-    scene.add(bay.root, skyline.group); bay.root.visible = skyline.group.visible = false;
+    const split = draw.current = createBayRender(scene, bay.root, skyline.group);
+    if (import.meta.env.DEV) (window as Window & { __bay?: unknown }).__bay = { scene, bay, skyline, gl, split };
     const show = () => { if (!alive) return; bay.root.visible = skyline.group.visible = true; setLive(true); };
     bay.root.visible = skyline.group.visible = true;
-    gl.compileAsync(scene, camera).then(show, show);
+    split.compile(gl, camera).then(show, show);
     bay.root.visible = skyline.group.visible = false;
-    return () => { alive = false; scene.remove(bay.root, skyline.group); scene.environment = null; env.dispose(); pmrem.dispose(); skyline.dispose(); };
-  }, [scene, gl, camera, bay, skyline]);
+    return () => { alive = false; draw.current = null; split.dispose(gl); scene.environment = null; env.dispose(); pmrem.dispose(); skyline.dispose(); };
+  }, [scene, gl, camera, raycaster, bay, skyline]);
+  // Rendering is ours (priority 1): see bayRender.ts.
+  useFrame(() => { draw.current?.render(gl, camera, bay.shadowsDirty); }, 1);
 
   useFrame(({ clock }, delta) => {
     const dt = Math.min(delta, .05), t = clock.elapsedTime, c = cam.current;
-    // The first frames compile every material; tell the page once the bay is actually on screen.
-    if (live && ++frames.current === 3) onReady();
+    // The first frames push everything through the GPU once; tell the page once the bay is on screen
+    // and frames have settled (two quick ones in a row), so the fade-in never hitches.
+    if (live && frames.current >= 0 && ++frames.current >= 4) {
+      smooth.current = delta < 1 / 12 ? smooth.current + 1 : 0;
+      if (smooth.current >= 2 || frames.current >= 90) { frames.current = -1; onReady(); }
+    }
     skyline.update(t, dt, reducedMotion, 0, 'approaching');
     if (c.snap) { bobPos.set(...c.snap.pos); look.set(...c.snap.look); move.current = null; c.snap = null; }
     if (c.request) {

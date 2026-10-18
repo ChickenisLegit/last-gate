@@ -582,6 +582,7 @@ export function createServiceBay() {
   const anim = { cleared: 0, latch: [0, 0], lid: 0, lift: 0 };
   const hold = new T.Vector3(), holdQ = new T.Quaternion(), tmpQ = new T.Quaternion(), tilt = new T.Quaternion().setFromEuler(new T.Euler(.32, -.42, .06));
   const ease = (t: number) => t * t * (3 - 2 * t);
+  let shadowTick = 0; const shadowWas = [0, 0, 0, 0, 0];
 
   return {
     root: k.root, box, crates: crateGroup, limiter,
@@ -589,16 +590,24 @@ export function createServiceBay() {
       cradle: new T.Vector3(CX, 3.2, CZ - 1.4), jobcard: new T.Vector3(-9.95, 1.12, -11.75), toolwall: new T.Vector3(-10.8, 2.6, -16.6),
       cable: new T.Vector3(-8.5, .2, -12.6), crates: new T.Vector3(-8.2, 1.5, -27.4), latch0: new T.Vector3(), latch1: new T.Vector3(), lid: new T.Vector3(), regulator: new T.Vector3(),
     },
+    /** Whether the shadow map needs redrawing this frame (set by update). */
+    shadowsDirty: true,
     /** Moves the animated parts toward the state; `camera` places the regulator in Hiro's hands. */
     update(t: number, dt: number, s: BayState, camera: T.Camera) {
       cableMat.uniforms.uTime.value = t; shaftMat.uniforms.uTime.value = t; dustMat.uniforms.uTime.value = t;
       cableMat.uniforms.uHot.value = 1 - s.lift * .7;
       const d = (rate: number) => 1 - Math.exp(-dt * rate);
+      const was = shadowWas; was[0] = anim.cleared; was[1] = anim.latch[0]; was[2] = anim.latch[1]; was[3] = anim.lid; was[4] = anim.lift;
       anim.cleared += ((s.cleared) - anim.cleared) * d(2.2);
       anim.latch[0] += ((s.latches[0] ? 1 : 0) - anim.latch[0]) * d(9);
       anim.latch[1] += ((s.latches[1] ? 1 : 0) - anim.latch[1]) * d(9);
       anim.lid += ((s.lid ? 1 : 0) - anim.lid) * d(2.4);
       anim.lift += (s.lift - anim.lift) * d(3);
+      // Shadows only change when a caster moves: crates, latches, lid, or the regulator (which rides
+      // with the camera once lifted). The fragments under the skylight turn a few milliradians a
+      // second, well under a shadow texel per redraw at one frame in eight.
+      const moved = Math.abs(anim.cleared - was[0]) + Math.abs(anim.latch[0] - was[1]) + Math.abs(anim.latch[1] - was[2]) + Math.abs(anim.lid - was[3]) + Math.abs(anim.lift - was[4]) > 1e-5;
+      this.shadowsDirty = moved || anim.lift > 1e-3 || ++shadowTick % 8 === 0;
       for (const c of crateList) {
         const q = ease(T.MathUtils.clamp((anim.cleared - c.delay) / (1 - c.delay), 0, 1));
         c.mesh.position.lerpVectors(c.from, c.to, q); c.mesh.position.y += Math.sin(Math.PI * q) * .25;

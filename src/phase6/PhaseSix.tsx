@@ -42,7 +42,10 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
   const e = useStageTime(s.stage);
   const [ready, setReady] = useState(false);
   // Tell the chapter cover (presentation/chapterTransition) the scene is drawn and it can lift.
-  const onReady = useCallback(() => { setReady(true); requestAnimationFrame(() => requestAnimationFrame(() => window.dispatchEvent(new Event('lastgate:scene-ready')))); }, []);
+  const onReady = useCallback(() => {
+    // Tracker S-05: the wake (his fly-in) starts when the scene is actually shown, not while it loads.
+    if (useP6.getState().stage === 'wake') useP6.setState({ since: now() });
+    setReady(true); requestAnimationFrame(() => requestAnimationFrame(() => window.dispatchEvent(new Event('lastgate:scene-ready')))); }, []);
   const grab = useRef<HTMLDivElement>(null), drop = useRef<HTMLDivElement>(null);
   const hints = useMemo(() => ({ grab, drop }), []);
   const warp = useRef<SVGFEDisplacementMapElement>(null), world = useRef<HTMLDivElement>(null), hurt = useRef<HTMLDivElement>(null);
@@ -113,7 +116,7 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
   const st = s.stage;
 
   // ---- Hiro's line for the moment.
-  const line = st === 'wake' && e > 5.4 ? 'Baymax? Hey, buddy. It’s me.'
+  const line = st === 'wake' && e > 6.2 ? 'Baymax? Hey, buddy. It’s me.'
     : st === 'limited' && e > 9.8 && !s.took ? 'The capture. That comes with me.'
     : st === 'limited' && e > 9.8 ? 'The trace went to the old gate. That’s where it ends.'
     : st === 'escape' && s.caught ? 'No, no—'
@@ -166,7 +169,7 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
 
     {ready && homeUi && <div className="p6-side" role="status">
       {/* 1 · Wake: the regulator, on standby. */}
-      {(st === 'wake' && e > 3.2 || st === 'switchOn1') && <Panel id="wake" label="Power regulator" tone="red"
+      {(st === 'wake' && e > 4 || st === 'switchOn1') && <Panel id="wake" label="Power regulator" tone="red"
         rows={[['Status', s.regulator ? 'Active' : 'Standby', s.regulator ? 'orange' : ''], ['Baymax output', s.regulator ? '35%' : '100%', s.regulator ? 'orange' : 'red'], ['Limit when active', '35%']]}>
         <RegulatorToggle action="on" busy={insert} onPress={toggle('switchOn1')} />
       </Panel>}
