@@ -112,8 +112,8 @@ every Chapter 6 stage and records errors.
 ## Credits
 
 Technical:
-Shivam Singh Sisodiya
-Rudraksh Dubey
+Shivam Singh Sisodiya, 
+Rudraksh Dubey, 
 Ojasvi Goswami
 
 Team Delhi Public School, Maruti Kunj
