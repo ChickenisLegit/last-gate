@@ -15,9 +15,13 @@ import type { HiroPose } from '../characters/HiroModel';
  */
 export const HOME_GATE = new T.Vector3(0, 3.4, 7);
 export const HOME_BAYMAX = new T.Vector3(-.6, 0, 2.4);
-/** The healthcare chip came through ahead of them and landed in a harbour litter bin, poking out of the top. */
-export const CARE_BIN_AT = new T.Vector3(1.4, 0, 1.7);
-export const CARE_CHIP_AT = new T.Vector3(1.4, .9, 1.7);
+/**
+ * The healthcare chip came through ahead of them and landed in a harbour litter bin, poking out of
+ * the top. The bin stands where the lawn meets the promenade path, a few metres off, and Hiro walks
+ * over to it (tracker: the bin shouldn't sit right beside him as if put there for him).
+ */
+export const CARE_BIN_AT = new T.Vector3(3.4, 0, -2);
+export const CARE_CHIP_AT = new T.Vector3(3.4, .9, -2);
 const CARE_CHIP_TILT = new T.Euler(-.35, 0, .5);
 
 const SKY_FS = `varying vec3 vDir;void main(){float h=normalize(vDir).y;
@@ -139,6 +143,13 @@ const sm = (e: number, a: number, b: number) => T.MathUtils.smoothstep(e, a, b);
 const v = (x: number, y: number, z: number) => new T.Vector3(x, y, z);
 /** Where Hiro kneels at Baymax's side (clear of his arm), and where he steps back to as he gets up. */
 export const HIRO_KNEEL = new T.Vector3(HOME_BAYMAX.x + 2.5, 0, HOME_BAYMAX.z + .35);
+/** Where Hiro stands at the bin, on his side of it. */
+const BIN_SPOT = CARE_BIN_AT.clone().add(HIRO_KNEEL.clone().sub(CARE_BIN_AT).setY(0).setLength(.6));
+/** The fetch (care 'fetch'): up off his knee, over to the bin, the chip out of it, and a jog back to him. */
+const F_RISE = .6, F_OUT = 2.8, F_PICK = .9, F_BACK = 2, F_KNEEL = .6, F_HOME = F_RISE + F_OUT + F_PICK;
+export const FETCH_PICK = F_RISE + F_OUT + .45, FETCH_END = F_HOME + F_BACK + F_KNEEL;
+/** Turn from heading a to b by k, the short way round. */
+const turn = (a: number, b: number, k: number) => a + ((((b - a + Math.PI * 3) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI) * k;
 export const HIRO_STAND = new T.Vector3(HOME_BAYMAX.x + 2.75, 0, HOME_BAYMAX.z - 1.05);
 /** Where Hiro steps in to for the fist bump. */
 export const HIRO_BUMP = new T.Vector3(HOME_BAYMAX.x + 1.65, 0, HOME_BAYMAX.z - 1.55);
@@ -147,7 +158,7 @@ export type HomeCast = {
   baymax: { root: T.Object3D; pose: BaymaxPose; dock: T.Object3D; handWorld(out?: T.Vector3): T.Vector3; headWorld(out?: T.Vector3): T.Vector3 };
   hiro: { root: T.Object3D; pose: HiroPose; handWorld(out?: T.Vector3): T.Vector3 };
 };
-export type HomeShot = { stage: string; e: number; t: number; dt: number; care: 'ground' | 'hand' | 'open' | 'seated'; dragPos: T.Vector3; returning: number; camera: T.Camera; bayOpen: number };
+export type HomeShot = { stage: string; e: number; t: number; dt: number; care: 'ground' | 'fetch' | 'hand' | 'open' | 'seated'; fetch: number; dragPos: T.Vector3; returning: number; camera: T.Camera; bayOpen: number };
 
 /**
  * Everything the home set does each frame: the gate closing, the healthcare chip on the grass (or
@@ -163,6 +174,26 @@ export type HomeShot = { stage: string; e: number; t: number; dt: number; care: 
  * Returns the camera target and lens; `cue` fires the sounds the moment they happen.
  */
 const bumpFix = new T.Vector3();
+/** Hiro over to the bin and back: walks out, reaches in for the chip, jogs back and kneels again. */
+function fetchWalk(f: number, hiro: HomeCast['hiro'], H: HomeCast['hiro']['pose'], look: T.Vector3, dt: number, cue: { step(level: number): void }) {
+  const out = sm(f, F_RISE, F_RISE + F_OUT), back = sm(f, F_HOME, F_HOME + F_BACK);
+  const at = HIRO_KNEEL.clone().lerp(BIN_SPOT, out).lerp(HIRO_KNEEL, back);
+  hiro.root.position.copy(at);
+  const going = out > 0 && out < 1, coming = back > 0 && back < 1, rate = going ? 8.5 : 12;
+  H.kneel = 1 - sm(f, 0, F_RISE) + sm(f, FETCH_END - F_KNEEL, FETCH_END);
+  H.stride = going ? .55 : coming ? .75 : 0;
+  H.walk = going ? (f - F_RISE) * rate : coming ? (f - F_HOME) * rate : 0;
+  if ((going || coming) && Math.floor(H.walk / Math.PI) !== Math.floor((H.walk - dt * rate) / Math.PI)) cue.step(.15);
+  // Facing: round to the bin, at it, then back the way he came, and round to Baymax as he kneels.
+  const toBin = Math.atan2(CARE_BIN_AT.x - at.x, CARE_BIN_AT.z - at.z), toHim = Math.atan2(HIRO_KNEEL.x - BIN_SPOT.x, HIRO_KNEEL.z - BIN_SPOT.z);
+  H.yaw = f < F_HOME - .1 ? turn(-Math.PI / 2, toBin, sm(f, .2, F_RISE + .4)) : turn(toBin, toHim, sm(f, F_HOME - .1, F_HOME + .3));
+  if (f > FETCH_END - F_KNEEL - .3) H.yaw = turn(toHim, -Math.PI / 2, sm(f, FETCH_END - F_KNEEL - .3, FETCH_END));
+  // At the bin: a look down into it and a reach in; then the chip held in front of him on the way back.
+  const dip = sm(f, F_RISE + F_OUT - .1, FETCH_PICK) * (1 - sm(f, FETCH_PICK + .15, F_HOME));
+  H.reach = Math.max(dip * .9, f > FETCH_PICK ? .35 : 0); H.lookUp = -.1 - .35 * dip; H.look = 0;
+  // The camera keeps him in view.
+  look.lerp(at.setY(.8), .45 * sm(f, 0, 1) * (1 - sm(f, FETCH_END - 1, FETCH_END)));
+}
 export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime(): void; step(level: number): void; done(): void }, camPos: T.Vector3, look: T.Vector3) {
   const { baymax, hiro } = cast, P = baymax.pose, H = hiro.pose;
   const { stage, e, t, dt } = s;
@@ -177,8 +208,8 @@ export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime
   // The healthcare chip: on the grass, in the hand, sliding back, or seated in his dock.
   const care = home.care.chip;
   if (s.care !== 'seated') {
-    // In Hiro's hand once taken; then following the pointer to the open socket.
-    if (s.care === 'hand') { hiro.handWorld(care.position); care.lookAt(s.camera.position); care.scale.setScalar(1.3); }
+    // In Hiro's hand once he's taken it out of the bin; then following the pointer to the open socket.
+    if (s.care === 'hand' || (s.care === 'fetch' && s.fetch >= FETCH_PICK)) { hiro.handWorld(care.position); care.lookAt(s.camera.position); care.scale.setScalar(1.3); }
     else if (s.care === 'open') { care.position.copy(s.dragPos); care.lookAt(s.camera.position); care.scale.setScalar(1.3); }
     else { care.position.copy(CARE_CHIP_AT); care.rotation.copy(CARE_CHIP_TILT); care.scale.setScalar(1); }
     home.careLight.position.copy(care.position).add(v(0, .25, 0));
@@ -186,6 +217,13 @@ export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime
       // Coming through: the camera settles as Hiro drops to his knee beside him.
       camPos.set(3, 3.8, 11.5).lerp(v(6.4, 3.5, 5.2), sm(e, 0, 3.5)); look.set(-.5, .8, 1.5).lerp(v(-.7, .8, 2.9), sm(e, 0, 3.5));
       H.kneel = sm(e, .8, 2.4); H.reach = s.care === 'ground' ? .35 * sm(e, 2, 3) : s.care === 'hand' ? .55 : .7; H.lookUp = -.3;
+      // Until he has it, a wider shot that takes in the bin by the path as well.
+      if (s.care === 'ground' || s.care === 'fetch') { camPos.set(3, 3.8, 11.5).lerp(v(7.4, 3.6, 5.4), sm(e, 0, 3.5)); look.set(-.5, .8, 1.5).lerp(v(.9, .7, 1), sm(e, 0, 3.5)); }
+      if (s.care === 'fetch') {
+        fetchWalk(s.fetch, hiro, H, look, dt, cue);
+        // Placed again now he's moved: the chip goes where his hand is, not where he knelt.
+        if (s.fetch >= FETCH_PICK) { hiro.root.updateMatrixWorld(true); hiro.handWorld(care.position); care.lookAt(s.camera.position); home.careLight.position.copy(care.position).add(v(0, .25, 0)); }
+      }
     }
     return { fov, shot };
   }

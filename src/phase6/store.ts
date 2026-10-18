@@ -33,7 +33,9 @@ export const START_ANGLES = [215, 40, 300];
 type State = {
   stage: Stage; since: number;
   regulator: boolean; angles: number[];
-  chip: 'bay' | 'held' | 'out'; cart: 'hand' | 'held' | 'slot'; care: 'ground' | 'hand' | 'open' | 'seated';
+  chip: 'bay' | 'held' | 'out'; cart: 'hand' | 'held' | 'slot'; care: 'ground' | 'fetch' | 'hand' | 'open' | 'seated';
+  /** When Hiro set off for the bin with the healthcare chip in it (care: 'fetch'). */
+  fetchAt: number;
   /** When the combat chip came out (Hiro then walks to the gate's reader). */
   pulledAt: number;
   /** Hiro has taken the RX/06 capture out of the relay's recorder. */
@@ -50,7 +52,7 @@ function stateFor(stage: Stage): State {
     chip: atLeast(stage, 'bloom') ? 'out' : 'bay',
     cart: atLeast(stage, 'bloom') ? 'slot' : 'hand',
     pulledAt: 0, took: atLeast(stage, 'escape'), caught: false,
-    care: atLeast(stage, 'seated') ? 'seated' : 'ground',
+    care: atLeast(stage, 'seated') ? 'seated' : 'ground', fetchAt: 0,
   };
 }
 

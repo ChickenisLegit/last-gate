@@ -37,7 +37,7 @@ export function EndCard({ onReplay }: { onReplay: () => void }) {
         <p className="lg-ending-label">Made by</p>
         <p className="lg-ending-team">Team Delhi Public School, Maruti Kunj</p>
         <p className="lg-ending-tech"><span>Technical</span> Rudraksh Dubey, Shivam S., Ojasvi Goswami</p>
-        <p className="lg-ending-tech"><span>Armoured Baymax model</span> DoodleNotes1, CC BY 3.0</p>
+        <p className="lg-ending-extras">Extras coming soon.</p>
         <button type="button" className="lg-ending-return" onClick={onReplay}>Return to the opening</button>
       </div>
     </div>

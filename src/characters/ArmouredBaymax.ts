@@ -240,7 +240,9 @@ export async function createArmouredBaymax(opts: { eye?: T.Material; hole?: () =
       const depth = (lift + sink) / s;
       const housing = new T.Mesh(new T.CylinderGeometry(rim * 1.04, rim * 1.1, depth, 40, 1, true), new T.MeshStandardMaterial({ color: '#23262b', roughness: .55, metalness: .5, side: T.DoubleSide }));
       housing.name = 'bay-housing'; housing.rotation.x = Math.PI / 2; housing.position.z = -depth / 2 + .004; obj.add(housing);
-      return () => { housing.removeFromParent(); housing.geometry.dispose(); (housing.material as T.Material).dispose(); undo(); };
+      // The white chest's skin collar (ChestBay) stays behind on the white body.
+      const collar = obj.getObjectByName('bay-collar'); if (collar) collar.visible = false;
+      return () => { housing.removeFromParent(); housing.geometry.dispose(); (housing.material as T.Material).dispose(); if (collar) collar.visible = true; undo(); };
     },
     /** His helmet in world space (the camera's eye target once he's armoured). */
     headWorld: (out = new T.Vector3()) => head.localToWorld(out.set(0, .12, .05)),

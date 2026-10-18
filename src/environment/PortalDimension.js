@@ -155,12 +155,12 @@ const skyMaterial=new THREE.ShaderMaterial({
     float noise(vec2 p){vec2 i=floor(p),f=fract(p);f=f*f*(3.0-2.0*f);return mix(mix(hash(i),hash(i+vec2(1,0)),f.x),mix(hash(i+vec2(0,1)),hash(i+vec2(1,1)),f.x),f.y);}
     float fbm(vec2 p){float n=0.;float a=.5;for(int i=0;i<5;i++){n+=noise(p)*a;p=p*2.05+vec2(3.1,7.2);a*=.5;}return n;}
     void main(){
-      vec2 p=(vUv-vec2(.54,.61))*vec2(1.35,1.);float r=length(p);float a=atan(p.y,p.x);
+      vec2 p=(vUv-vec2(.54,.61))*vec2(1.35,1.);float r=length(p);float a=atan(p.y,abs(p.x)+abs(p.y)>1e-6?p.x:1.);
       vec2 flow=vec2(a*1.3+r*9.,r*12.-uTime*.008);float n=fbm(flow);
-      float ring=exp(-pow((r-.32)*12.,2.));float clouds=fbm(vUv*7.+vec2(uTime*.003,0.));
+      float ring=exp(-(((r-.32)*12.)*((r-.32)*12.)));float clouds=fbm(vUv*7.+vec2(uTime*.003,0.));
       float light=ring*(.26+n*.7)*smoothstep(-.7,.7,p.y+.25)+clouds*.1;
       vec3 col=mix(vec3(.018,.035,.075),vec3(.18,.46,.62),clamp(light,0.,.8));
-      float fold=pow(max(0.,n-.3),2.)*ring;
+      float fold=((max(0.,n-.3))*(max(0.,n-.3)))*ring;
       col+=vec3(.29,.07,.31)*fold*1.8;
       col+=vec3(.06,.16,.22)*exp(-r*r*13.)*.65;
       // Attacks open hairline fractures across the sky, cyan cores with violet bleed.

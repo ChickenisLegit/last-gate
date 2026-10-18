@@ -39,9 +39,9 @@ export function createPortalGate(z=24) {
   // 1. Corona: soft light in the air around the rim, flickering with the energy.
   const corona=new T.ShaderMaterial({transparent:true,depthWrite:false,side:T.DoubleSide,blending:T.AdditiveBlending,uniforms:shared,vertexShader:VERT,
     fragmentShader:`varying vec2 vUv;uniform float uTime;uniform float uInstability;uniform float uIntensity;${NOISE}
-    void main(){vec2 p=(vUv-.5)*3.2;float r=length(p);float a=atan(p.y,p.x);
+    void main(){vec2 p=(vUv-.5)*3.2;float r=length(p);float a=atan(p.y,abs(p.x)+abs(p.y)>1e-6?p.x:1.);
       float n=fbm(vec2(a*2.2+uTime*.15,r*2.-uTime*.4));
-      float halo=exp(-pow((r-1.)*3.2,2.))*(.55+.6*n)+exp(-pow((r-1.)*9.,2.))*.5;
+      float halo=exp(-(((r-1.)*3.2)*((r-1.)*3.2)))*(.55+.6*n)+exp(-(((r-1.)*9.)*((r-1.)*9.)))*.5;
       vec3 col=mix(vec3(.30,.72,.95),vec3(.62,.46,.95),n);
       gl_FragColor=vec4(col,halo*.16*(1.+uInstability*2.5)*uIntensity);}`});
   mesh(new T.PlaneGeometry(R*3.2,R*3.2),corona).renderOrder=3;
@@ -51,21 +51,21 @@ export function createPortalGate(z=24) {
   const field=new T.ShaderMaterial({transparent:true,depthWrite:false,side:T.DoubleSide,blending:T.AdditiveBlending,uniforms:shared,vertexShader:VERT,
     fragmentShader:`varying vec2 vUv;uniform float uTime;uniform float uAperture;uniform float uInstability;uniform float uIntensity;${NOISE}${WOBBLE_GLSL}
     vec2 rot(vec2 p,float a){float c=cos(a),s=sin(a);return mat2(c,-s,s,c)*p;}
-    void main(){vec2 p=(vUv-.5)*2.;float r=length(p);if(r>1.)discard;float a=atan(p.y,p.x);
+    void main(){vec2 p=(vUv-.5)*2.;float r=length(p);if(r>1.)discard;float a=atan(p.y,abs(p.x)+abs(p.y)>1e-6?p.x:1.);
       float edge=uAperture*(1.+wobble(a,uTime)*(1.+uInstability*3.));
       float band=smoothstep(edge-.015,edge+.03,r)*(1.-smoothstep(.93,1.,r));
       float swirlA=fbm(rot(p,uTime*.32+r*2.6)*3.1+vec2(0.,-uTime*.6));
       float swirlB=fbm(rot(p,-uTime*.21-r*3.4)*4.3+vec2(uTime*.4,0.));
-      float streaks=pow(.5+.5*sin(a*14.+r*30.-uTime*2.2+swirlA*6.),6.);
+      float streaks=pow(max(0.,.5+.5*sin(a*14.+r*30.-uTime*2.2+swirlA*6.)),6.);
       vec3 cyan=vec3(.34,.86,1.),violet=vec3(.66,.47,1.);
       vec3 col=cyan*swirlA*1.3+violet*swirlB*1.1+vec3(.8,.95,1.)*streaks*.45;
       float alpha=band*(.18+.42*swirlA*swirlB+streaks*.18);
       // The seam: a hot line on the inner edge, split into cyan / violet a hair apart.
       float d=r-edge;
-      float seamC=exp(-pow(d*90.,2.)),seamV=exp(-pow((d-.012)*70.,2.)),seamO=exp(-pow((d+.01)*70.,2.));
+      float seamC=exp(-((d*90.)*(d*90.))),seamV=exp(-(((d-.012)*70.)*((d-.012)*70.))),seamO=exp(-(((d+.01)*70.)*((d+.01)*70.)));
       col+=vec3(.9,1.,1.)*seamC*1.6+violet*seamV*.9+cyan*seamO*.9;alpha+=seamC*.85+(seamV+seamO)*.35;
       // Rim glow at the outer edge.
-      float rim=exp(-pow((r-.95)*26.,2.));col+=cyan*rim*.6;alpha+=rim*.25;
+      float rim=exp(-(((r-.95)*26.)*((r-.95)*26.)));col+=cyan*rim*.6;alpha+=rim*.25;
       gl_FragColor=vec4(col,alpha*.8*min(uIntensity,1.8)*(1.+uInstability*.5));}`});
   const fieldMesh=mesh(new T.CircleGeometry(R*1.08,160),field);fieldMesh.renderOrder=5;
 
@@ -103,13 +103,13 @@ export function createPortalGate(z=24) {
 
   // 6. The seal: an implosion core and a shockwave ring, both invisible until the gate collapses.
   const flashMat=new T.ShaderMaterial({transparent:true,depthWrite:false,depthTest:false,side:T.DoubleSide,blending:T.AdditiveBlending,uniforms:{uFlash:{value:0}},vertexShader:VERT,
-    fragmentShader:`varying vec2 vUv;uniform float uFlash;void main(){vec2 p=(vUv-.5)*2.;float r=length(p);float a=atan(p.y,p.x);
-      float core=exp(-r*r*18.)+exp(-r*5.)*.35;float rays=pow(.5+.5*sin(a*9.),12.)*exp(-r*3.)*.6;
+    fragmentShader:`varying vec2 vUv;uniform float uFlash;void main(){vec2 p=(vUv-.5)*2.;float r=length(p);float a=atan(p.y,abs(p.x)+abs(p.y)>1e-6?p.x:1.);
+      float core=exp(-r*r*18.)+exp(-r*5.)*.35;float rays=pow(max(0.,.5+.5*sin(a*9.)),12.)*exp(-r*3.)*.6;
       gl_FragColor=vec4(vec3(.85,.96,1.)*2.,(core+rays)*uFlash);}`});
   const flash=mesh(new T.PlaneGeometry(R*2.4,R*2.4),flashMat,group);flash.renderOrder=9;
   const waveMat=new T.ShaderMaterial({transparent:true,depthWrite:false,side:T.DoubleSide,blending:T.AdditiveBlending,uniforms:{uWave:{value:0},uAlpha:{value:0}},vertexShader:VERT,
     fragmentShader:`varying vec2 vUv;uniform float uWave;uniform float uAlpha;void main(){vec2 p=(vUv-.5)*2.;float r=length(p);
-      float ring=exp(-pow((r-uWave)*(14.-uWave*8.),2.));float inner=smoothstep(uWave,0.,r)*.12;
+      float ring=exp(-(((r-uWave)*(14.-uWave*8.))*((r-uWave)*(14.-uWave*8.))));float inner=smoothstep(uWave,0.,r)*.12;
       gl_FragColor=vec4(mix(vec3(.55,.9,1.),vec3(.7,.55,1.),r),(ring+inner)*uAlpha);}`});
   const wave=mesh(new T.PlaneGeometry(R*6,R*6),waveMat,group);wave.renderOrder=8;
 

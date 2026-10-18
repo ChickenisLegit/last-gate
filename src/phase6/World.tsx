@@ -5,12 +5,12 @@ import { createRedChip } from '../characters/RedChip.js';
 import { reducedMotion } from '../config/experience';
 import { createBaymax, type Baymax } from './baymax';
 import { createHiro } from './hiro';
-import { createFirstPersonHands, createLimiterController } from '../characters/RegulatorController';
+import { createFirstPersonHands, createLimiterController, type FirstPersonHands } from '../characters/RegulatorController';
 import { FirstPerson } from './fp';
 import { createRelay, BAYMAX_YARD, BAYMAX_REACH_Z } from './relay';
 import { RECORDER } from './relay';
 import { createStreet, createCartridge, ringLive, rampY, ROUTE, ROUTE_LENGTH, FRAME, DECK, LANDING, PEDESTAL, LADDER_X, WALK_Y, type Street } from './street';
-import { createHome, directHome, HOME_GATE, HOME_BAYMAX, CARE_CHIP_AT, type Home } from './home';
+import { createHome, directHome, HOME_GATE, HOME_BAYMAX, CARE_CHIP_AT, FETCH_PICK, FETCH_END, type Home } from './home';
 import { useP6, go, now, setOf, isInsert, atLeast, type Stage, type SetName } from './store';
 import type { PhaseSixAudio } from './audio';
 
@@ -48,6 +48,8 @@ const GATE_SPOT = v3(-.6, 0, -83.8);
 const DECK_SPOT = v3(DECK.x + .7, DECK.y, DECK.z + .45);
 const READER_SPOT = v3(PEDESTAL.x - .1, 0, PEDESTAL.z + 1.02);
 const RELAY_SPOT = v3(1.5, 0, -3.3);
+/** The wake's dive: high behind the relay, down west of the receiver tower, then low under the dish into the yard. */
+const WAKE_PATH = new T.CubicBezierCurve3(v3(BAYMAX_YARD.x - 9, 17, BAYMAX_YARD.z - 26), v3(BAYMAX_YARD.x - 8.1, 12, BAYMAX_YARD.z - 6.5), v3(BAYMAX_YARD.x - 5.1, 1.6, BAYMAX_YARD.z - .1), BAYMAX_YARD.clone());
 /** Lying on his back (yaw π) his feet are 1.81 m toward the gate from his root, his head 2.76 m back. */
 const FEET = 1.81, LIE_CENTRE = .47, LIE_LENGTH = 4.57;
 /** Hauling: how far ahead of his feet Hiro walks, and the root position at which Hiro's eye crosses the surface. */
@@ -70,6 +72,82 @@ function along(points: T.Vector3[], k: number, out = new T.Vector3()) {
 /** Haul rhythm: braced short pulls, k 0…1 over `tugs` pulls. */
 const tugged = (k: number, tugs: number) => { const x = clamp01(k) * tugs, f = x - Math.floor(x); return Math.min(1, (Math.floor(x) + Math.min(1, f / .42) ** .7) / tugs); };
 
+/**
+ * The haul: both of Hiro's hands on Baymax's ankles, his right on Baymax's left boot and his left on
+ * the right one, each hooked over the collar between the sole and the boot with the fingers curled
+ * down into the ankle's crease. Where the collar's top is is found once on the boot itself and kept in
+ * the boot's frame, so the hand rides with the leg as he slides. Every frame (after the camera's last
+ * move) each hand is set on that spot, knuckles up and the back of the hand toward Hiro's eye, its
+ * forearm running back to his shoulder; the remote stays in his pocket. `k` 0..1 blends in from
+ * wherever the hands were.
+ */
+type HandRig = { root: T.Group; palm: T.Group; fingers: T.Group[][]; thumb: T.Group[] };
+function createAnkleGrip(hands: FirstPersonHands) {
+  const d = (hands as unknown as { debug: { left: HandRig; right: HandRig; leftMount: T.Group; rightMount: T.Group } }).debug;
+  const grips = ([[d.right, d.rightMount, 'L', 'R', 1], [d.left, d.leftMount, 'R', 'L', -1]] as const).map(([hand, mount, leg, other, out]) => {
+    const [sleeve, cuff] = hand.root.children;
+    return { hand, mount, leg, other, out, sleeve, cuff, rest: { len: sleeve.scale.y, z: sleeve.position.z, palm: hand.palm.quaternion.clone(), girth: sleeve.scale.x, cuff: cuff.scale.x }, at: new T.Vector3(), found: false };
+  });
+  const ankle = new T.Vector3(), knee = new T.Vector3(), other = new T.Vector3(), up = new T.Vector3(), shin = new T.Vector3(), inward = new T.Vector3(),
+    p = new T.Vector3(), shoulder = new T.Vector3(), fwd = new T.Vector3(), side = new T.Vector3(), wrist = new T.Vector3(), F = new T.Vector3(),
+    X = new T.Vector3(), Y = new T.Vector3(), Z = new T.Vector3(), M = new T.Matrix4(), P = new T.Matrix4(), rel = new T.Matrix4(), inv = new T.Matrix4(),
+    pos = new T.Vector3(), q = new T.Quaternion(), qr = new T.Quaternion(), scl = new T.Vector3(), ray = new T.Raycaster(), DOWN = new T.Vector3(0, -1, 0), WORLD_UP = new T.Vector3(0, 1, 0);
+  // The hand pitched a little knuckles-up off the collar, so its back faces up and toward Hiro.
+  const PITCH = .22, HOOK = [1.02, 1.06, 1.1, 1.14];
+  let on = false;
+  return (baymax: Baymax, camera: T.Camera, k: number, feet: T.Vector3, eye: number) => {
+    if (k <= 0) {
+      if (on) { on = false; hands.controller.root.visible = true; for (const g of grips) { g.sleeve.scale.set(g.rest.girth, g.rest.len, g.rest.girth); g.sleeve.position.z = g.rest.z; g.cuff.scale.set(g.rest.cuff, g.cuff.scale.y, g.rest.cuff); g.hand.palm.quaternion.copy(g.rest.palm); g.found = false; } }
+      return;
+    }
+    on = true; hands.controller.root.visible = false;
+    camera.updateMatrixWorld(true); baymax.root.updateMatrixWorld(true);
+    up.copy(WORLD_UP).applyQuaternion(baymax.root.getWorldQuaternion(q));
+    fwd.subVectors(baymax.root.position, feet).setY(0).normalize(); side.crossVectors(fwd, WORLD_UP);
+    inv.copy(hands.root.matrixWorld).invert();
+    for (const g of grips) {
+      const boot = baymax.boot(g.leg);
+      baymax.ankleWorld(g.leg, ankle); baymax.kneeWorld(g.leg, knee);
+      shin.subVectors(ankle, knee).normalize();
+      if (!g.found) {
+        // Find the spot once: a ray down onto the top of the collar, a little in from its middle.
+        baymax.ankleWorld(g.other, other);
+        inward.subVectors(other, ankle); inward.addScaledVector(shin, -inward.dot(shin)).addScaledVector(up, -inward.dot(up)).normalize();
+        p.copy(ankle).addScaledVector(shin, .02).addScaledVector(inward, .09);
+        ray.set(p.clone().addScaledVector(WORLD_UP, 1), DOWN);
+        const hit = ray.intersectObjects(boot.meshes, false)[0];
+        if (hit) p.copy(hit.point); else p.addScaledVector(up, .23);
+        boot.bone.updateWorldMatrix(true, false); g.at.copy(p).applyMatrix4(P.copy(boot.bone.matrixWorld).invert()); g.found = true;
+      }
+      p.copy(g.at).applyMatrix4(boot.bone.matrixWorld);
+      // Shoulders low and wide of the eye, as a first-person arm is carried, so the forearm comes up
+      // from the bottom corner and never hides the hand.
+      shoulder.copy(feet).addScaledVector(WORLD_UP, eye - .52).addScaledVector(side, g.out * .26).addScaledVector(fwd, -.02);
+      // The hand: fingers on along his shin away from Hiro, knuckles just above the crease's edge.
+      F.copy(shin).multiplyScalar(-Math.cos(PITCH)).addScaledVector(up, Math.sin(PITCH));
+      Y.copy(up).multiplyScalar(Math.cos(PITCH)).addScaledVector(shin, Math.sin(PITCH));
+      Z.copy(F).negate(); X.crossVectors(Y, Z); P.makeBasis(X, Y, Z);
+      wrist.copy(p).addScaledVector(up, .036).addScaledVector(F, -.075);
+      // The wrist into a forearm that runs straight back to the shoulder.
+      Z.subVectors(shoulder, wrist).normalize(); X.crossVectors(Y, Z).normalize(); Y.crossVectors(Z, X);
+      M.makeBasis(X, Y, Z).setPosition(wrist);
+      g.hand.palm.quaternion.slerpQuaternions(g.rest.palm, qr.setFromRotationMatrix(M).invert().multiply(q.setFromRotationMatrix(P)), k);
+      // The hand hangs in its mount through a fixed offset (the left one through the remote's grip): solve the mount.
+      rel.identity(); for (let o: T.Object3D = g.hand.root; o !== g.mount; o = o.parent!) { o.updateMatrix(); rel.premultiply(o.matrix); }
+      M.multiply(rel.invert()).premultiply(inv).decompose(pos, q, scl);
+      g.mount.position.lerp(pos, k); g.mount.quaternion.slerp(q, k); g.mount.visible = true;
+      // Fingers curled down over the edge into the crease, the thumb tucked down along its side.
+      g.hand.fingers.forEach((f, i) => { const c = HOOK[i]; f[0].rotation.x = T.MathUtils.lerp(f[0].rotation.x, -c * .95, k); f[1].rotation.x = T.MathUtils.lerp(f[1].rotation.x, -c * 1.05, k); f[2].rotation.x = T.MathUtils.lerp(f[2].rotation.x, -c * .7, k); });
+      const [t0, t1, t2] = g.hand.thumb;
+      t0.rotation.x = T.MathUtils.lerp(t0.rotation.x, -.75, k); t0.rotation.y = T.MathUtils.lerp(t0.rotation.y, 0, k); t1.rotation.x = T.MathUtils.lerp(t1.rotation.x, -.45, k); t2.rotation.x = T.MathUtils.lerp(t2.rotation.x, -.35, k);
+      // The sleeve reaches back to his shoulder (out of frame under the camera), snug at the wrist.
+      const len = T.MathUtils.lerp(g.rest.len, (wrist.distanceTo(shoulder) - .04) / .32, k), girth = T.MathUtils.lerp(g.rest.girth, .8, k);
+      g.sleeve.scale.set(girth, len, girth); g.sleeve.position.z = .04 + .16 * len;
+      g.cuff.scale.set(girth * 1.05, g.cuff.scale.y, girth * 1.05);
+    }
+  };
+}
+
 export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio; hints: Hints; fx: Fx; run: RefObject<RunState>; onReady: () => void }) {
   const { scene, camera, gl, size } = useThree();
   const cam = camera as T.PerspectiveCamera;
@@ -79,6 +157,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
   const hiro = useMemo(createHiro, []);
   const hands = useMemo(() => createFirstPersonHands(createLimiterController()), []);
   const fp = useMemo(() => new FirstPerson(), []);
+  const haul = useMemo(() => createAnkleGrip(hands), [hands]);
   const cart = useMemo(createCartridge, []);
   useEffect(() => { if (import.meta.env.DEV) (window as Window & { __lastGateWorld?: unknown }).__lastGateWorld = { baymax, hiro, hands, fp, camera, T, gl, scene }; }, [baymax, hiro, hands, fp, camera, gl, scene]);
   const home = useMemo<Home>(createHome, []);
@@ -132,7 +211,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       if (!alive) { b.dispose(); return; }
       made = b; mem.current.headH = b.headHeight;
       b.root.traverse(o => { if (o instanceof T.Mesh) (Array.isArray(o.material) ? o.material : [o.material]).forEach(m => { m.clippingPlanes = [crossing]; }); });
-      scene.add(b.root); warmStreet(b.root); setBaymax(b); onReady();
+      scene.add(b.root); warmStreet(b.root); setBaymax(b); mem.current.readyIn = 3;
     });
     gl.localClippingEnabled = true;
     scene.add(camera, hiro.root, chipProxy.chip, eyeLight, eyeLight.target, eyeGlow);
@@ -259,7 +338,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
   }, [gl, cam, baymax, home, audio]);
 
   // Memory that outlives a stage: where Baymax has got to on the street, step timing, shake, chase events.
-  const mem = useRef({ trail: .28, stepAt: 0, shake: 0, landed: false, lastStage: '' as Stage | '', bayAt: new T.Vector3(), lift: 0, glance: 0, headH: 3.1, swingAt: -9, swung: false, wakeFx: 0, wakeSince: -1, falls: 0, warped: false, thirdShot: '', pressed: '' as Stage | '', idle: 0, escSince: -1 });
+  const mem = useRef({ trail: .28, stepAt: 0, shake: 0, landed: false, lastStage: '' as Stage | '', bayAt: new T.Vector3(), lift: 0, glance: 0, headH: 3.1, swingAt: -9, swung: false, wakeFx: 0, wakeSince: -1, readyIn: 0, falls: 0, warped: false, thirdShot: '', pressed: '' as Stage | '', idle: 0, escSince: -1 });
   const look = useMemo(() => new T.Vector3(), []);
   const feet = useMemo(() => new T.Vector3(), []);
   const camPos = useMemo(() => new T.Vector3(), []);
@@ -267,7 +346,18 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
 
   useFrame(({ clock }, delta) => {
     if (!baymax || !env.current || env.current.name !== set) return;
-    const dt = Math.min(delta, .05), t = clock.elapsedTime, s = useP6.getState(), e = now() - s.since, m = mem.current, r = run.current!;
+    const dt = Math.min(delta, .05), t = clock.elapsedTime, m = mem.current, r = run.current!;
+    // The scene counts as shown once its first frames have drawn (tracker T-03): the first one or two
+    // can stall for seconds on a cold GPU, and the cover stays up over them.
+    if (m.readyIn > 0 && --m.readyIn === 0) onReady();
+    let s = useP6.getState();
+    // The wake's fly-in runs on the frames it draws (tracker T-03): a stalled frame right after the
+    // load (shaders, uploads) moves the clock on by one capped step, not by the whole stall.
+    if (s.stage === 'wake' && delta > .05 && now() - s.since < 8) {
+      const since = s.since + (delta - dt), same = m.wakeSince === s.since;
+      useP6.setState({ since }); s = useP6.getState(); if (same) m.wakeSince = since;
+    }
+    const e = now() - s.since;
     const P = baymax.pose, H = hiro.pose;
     const enter = m.lastStage !== s.stage;
     // Each start of the run (and each retry after he catches Hiro) begins it from the top.
@@ -297,7 +387,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
     Object.assign(H, { walk: 0, stride: 0, lean: 0, haul: 0, kneel: 0, reach: 0, look: 0 });
     hiro.root.visible = false;
     let first = true, eye = 1.56, fov = 62, raise = .3, reach = 0, freeLook = .12, lookRate = 5, place = false;
-    let jet = 0, hum = 0, dread = 0, near = 0, warp = 0, cartShown = false;
+    let jet = 0, hum = 0, dread = 0, near = 0, warp = 0, cartShown = false, grip = 0;
     const head = () => baymax.headWorld(tmp).clone();
 
     if (set === 'relay') {
@@ -308,10 +398,14 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         // Tracker R-03/S-05: he comes in hunting (the clock restarts as the cover lifts, so this is seen). A red glow over the dish, then he drops out of the sky,
         // jets roaring and eyes burning, slams down in the yard, and rises into the stance. Hiro steps back.
         const fly = span(e, 1, 3.3), land = e >= 3.3;
-        const arc = ease(fly), from = v3(BAYMAX_YARD.x - 9, 17, BAYMAX_YARD.z - 26);
+        // The receiver's dish hangs over the yard (y 5.7–9.8, just west of the landing), so a straight
+        // dive put him through it and the tower's front leg. He drops steeply west of the tower
+        // instead, then swoops in low under the dish to land: one cubic, altitude included.
+        const arc = ease(fly);
         if (!land) {
-          baymax.root.position.lerpVectors(from, BAYMAX_YARD, arc).setY(T.MathUtils.lerp(17, 0, Math.pow(arc, 1.6)) + Math.sin(Math.PI * arc) * 2.2);
-          P.yaw = Math.atan2(BAYMAX_YARD.x - from.x, BAYMAX_YARD.z - from.z) * (1 - arc);
+          WAKE_PATH.getPoint(arc, baymax.root.position);
+          const heading = WAKE_PATH.getTangent(Math.min(arc, .999), tmp);
+          P.yaw = Math.atan2(heading.x, heading.z) * (1 - arc);
           P.thrust = 1; jet = .9; P.dangle = .55 * (1 - span(e, 2.8, 3.25)); P.lean = .55 - span(e, 2.6, 3.25) * .4; P.guard = .25;
           if (e > 2.3 && m.wakeFx < 1) { m.wakeFx = 1; audio.whoosh(); }
         } else {
@@ -541,8 +635,10 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
           const cz = root.z + LIE_CENTRE, fz = root.z - FEET, hz = root.z + LIE_LENGTH - FEET;
           baymax.root.position.set(root.x, rampY(cz), root.z);
           baymax.root.rotation.x = Math.atan2(rampY(fz) - rampY(hz), LIE_LENGTH);
+          // Leaning in, both hands go onto his ankles and stay there for the whole haul.
+          grip = span(e, 7.6, 8.3);
           feet.set(root.x * .85, 0, fz - LEAD); feet.y = rampY(feet.z);
-          eye = e < 8.3 ? 1.56 - span(e, 7.6, 8.3) * .1 : 1.46; reach = span(e, 7.6, 8.2) * .5;
+          eye = 1.56 - grip * .03; reach = span(e, 7.6, 8.2) * .5;
           look.set(root.x, baymax.root.position.y + .6, root.z + 1.3); lookRate = 4;
           // One look over his shoulder at the open gate, then back to Baymax.
           const glance = Math.sin(Math.PI * clamp01((e - 12.8) / 1.8));
@@ -551,8 +647,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
           if (pull !== m.stepAt && e > 8.3) { m.stepAt = pull; audio.step(.4); m.shake = Math.max(m.shake, reducedMotion ? 0 : .38); }
           // Each tug: a dip and a jolt through his arms, then the brace for the next one.
           const tug = Math.sin(Math.PI * ((clamp01((e - 8.3) / 10) * 12) % 1));
-          // Hands low on his ankles, not reaching across the middle of the view.
-          if (e > 8.3) { eye -= .07 * tug; reach = .48 + .1 * tug; }
+          if (e > 8.3) eye -= .07 * tug;
           // The surface: the warp grows as his eye reaches it.
           warp = span(-(feet.z), -(FRAME.z + 1.25), -FRAME.z);
           if (warp > .3 && !m.warped) { m.warped = true; audio.warp(); }
@@ -615,8 +710,10 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         baymax.root.position.set(root.x, homeFloor(root.z + LIE_CENTRE), root.z);
         baymax.root.rotation.x = Math.atan2(homeFloor(fz) - homeFloor(hz), LIE_LENGTH);
         crossing.normal.set(0, 0, -1); crossing.constant = HOME_GATE.z;
+        // Still hauling by his ankles until he's clear of the gate, then letting go.
+        grip = 1 - span(e, EMERGE - 1.6, EMERGE - .8);
         feet.set(root.x * .85, 0, Math.min(HOME_GATE.z - .05, fz - LEAD)); feet.y = homeFloor(feet.z);
-        eye = 1.46; reach = 1 - span(e, EMERGE - 1.6, EMERGE - .8);
+        eye = 1.46; reach = grip;
         look.set(root.x, baymax.root.position.y + .6, root.z + 1.3).lerp(v3(HOME_GATE.x, HOME_GATE.y - 1, HOME_GATE.z), span(e, EMERGE - 2, EMERGE - .6) * .6);
         lookRate = 3.5; raise = 0;
         warp = 1 - span(e, .1, 1.1);
@@ -630,8 +727,14 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         c.progress = holding && s.stage === 'home' ? clamp01((now() - (c.target ? c.at : c.keyAt)) / HOLD) : 0;
         if (holding && c.progress >= 1) {
           c.target = null; c.key = false; c.progress = 0;
-          if (holding === 'chip' && s.care === 'ground') { useP6.setState({ care: 'hand' }); audio.snap(); }
+          // He gets up and goes over to the bin for it (home.ts directs the walk).
+          if (holding === 'chip' && s.care === 'ground') useP6.setState({ care: 'fetch', fetchAt: now() });
           else if (holding === 'chest' && s.care === 'hand') { useP6.setState({ care: 'open' }); audio.servo(); hiro.handWorld(c.guide); }
+        }
+        if (s.care === 'fetch') {
+          const f = now() - s.fetchAt;
+          if (f >= FETCH_PICK && f - dt < FETCH_PICK) audio.snap();
+          if (f >= FETCH_END) useP6.setState({ care: 'hand' });
         }
         // The bay opens as it did in Phase 1, and stays open until the boot closes it.
         c.open = T.MathUtils.clamp(c.open + (s.care === 'open' || s.care === 'seated' ? dt * 2.6 : -dt * 4), 0, 4.6);
@@ -652,7 +755,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         drag.current.pos.copy(c.guide);
         const homeShot = directHome(home, { baymax, hiro }, {
           stage: s.stage, e: s.stage === 'home' ? Math.max(0, he) : e, t, dt,
-          care: s.care, dragPos: drag.current.pos, returning: drag.current.returning, camera, bayOpen: care.current.open,
+          care: s.care, fetch: s.care === 'fetch' ? now() - s.fetchAt : -1, dragPos: drag.current.pos, returning: drag.current.returning, camera, bayOpen: care.current.open,
         }, { chime: () => audio.chime(), step: level => audio.step(level), done: () => go('end') }, camPos, look);
         fov = homeShot.fov;
       }
@@ -715,6 +818,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
     // Shake: hard on the fall, on near misses and debris, small on each of his footfalls near Hiro.
     m.shake = Math.max(0, m.shake - dt * 1.6);
     if (m.shake > 0 && !reducedMotion) { const a = m.shake * m.shake * .1; camera.position.add(v3(Math.sin(t * 61) * a, Math.sin(t * 73 + 1) * a, Math.sin(t * 57 + 2) * a * .5)); camera.rotateZ(Math.sin(t * 47) * a * .3); }
+    haul(baymax, camera, first ? grip : 0, fp.feet, fp.eye);
     // The crossing: the page warps around the surface.
     if (fx.warp.current) fx.warp.current.setAttribute('scale', String(reducedMotion ? 0 : warp * 38));
     if (fx.world.current) fx.world.current.classList.toggle('p6-warping', warp > .01 && !reducedMotion);

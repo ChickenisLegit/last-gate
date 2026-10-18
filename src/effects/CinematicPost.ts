@@ -1,4 +1,4 @@
-import { MathUtils, type Line, type Material, type Mesh, type Object3D, PerspectiveCamera, type Points, Scene, type Sprite, Vector2, WebGLRenderer } from 'three';
+import { MathUtils, type Line, type Material, type Mesh, type Object3D, PerspectiveCamera, type Points, Scene, type ShaderMaterial, type Sprite, Vector2, WebGLRenderer } from 'three';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { BokehPass } from 'three/addons/postprocessing/BokehPass.js';
@@ -39,6 +39,11 @@ export class CinematicPost {
     const bokehRender=this.bokeh.render.bind(this.bokeh);
     this.bokeh.render=(...args:Parameters<BokehPass['render']>)=>{hide();bokehRender(...args);restore();};
     this.bloom=new UnrealBloomPass(new Vector2(1920,1080),.18,.55,1.65);this.composer.addPass(this.bloom);
+    // Tracker T-01: one NaN or Inf pixel in the scene (a glow shader on a rare exact pixel) is
+    // blurred by bloom across the whole frame, and the grade clamps it to black: a one-frame black
+    // flash. Bloom reads the frame only through this high-pass, so clean its input there.
+    const highPass=(this.bloom as unknown as {materialHighPassFilter:ShaderMaterial}).materialHighPassFilter;
+    highPass.fragmentShader=highPass.fragmentShader.replace('vec4 texel = texture2D( tDiffuse, vUv );','vec4 texel = texture2D( tDiffuse, vUv );texel = ( any( isnan( texel ) ) || any( isinf( texel ) ) ) ? vec4( 0. ) : min( texel, vec4( 64. ) );');highPass.needsUpdate=true;
     this.grade=new ShaderPass({uniforms:{tDiffuse:{value:null},instability:{value:0},uWarp:{value:0},uCenter:{value:new Vector2(.5,.5)},uTime:{value:0},uFlash:{value:0},uWhite:{value:0},uRed:{value:0},uCyan:{value:0},uChroma:{value:0},uAspect:{value:16/9},uSoftFocus:{value:0}},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',fragmentShader:`uniform sampler2D tDiffuse;uniform float instability;uniform float uWarp;uniform vec2 uCenter;uniform float uTime;uniform float uFlash;uniform float uWhite;uniform float uRed;uniform float uCyan;uniform float uChroma;uniform float uAspect;uniform float uSoftFocus;varying vec2 vUv;
       void main(){
         vec2 uv=vUv;

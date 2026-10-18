@@ -45,6 +45,7 @@
 .lg-ending-credits{display:flex;flex-direction:column;gap:4px;font-size:12px;line-height:1.5}
 .lg-ending-team{color:var(--end-text);font-weight:600}
 .lg-ending-tech{color:var(--end-dim)}
+.lg-ending-extras{margin-top:8px !important;color:var(--end-accent);font-style:italic}
 .lg-ending-tech span{font:500 10px/1 var(--lg-mono);letter-spacing:.14em;text-transform:uppercase;color:var(--end-faint);margin-right:6px}
 .lg-ending-return{pointer-events:auto;align-self:flex-start;margin-top:12px;padding:4px 0;background:none;border:0;border-radius:2px;cursor:pointer;
   font:500 12px/1.4 var(--lg-body);letter-spacing:.04em;color:var(--end-dim);

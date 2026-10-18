@@ -119,6 +119,12 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
   const baymax=useRef<BaymaxController|null>(null);
   const [shell,setShell]=useState<Group|null>(null);
   useCanvasBudget(!!shell,3_800_000);
+  // Tracker T-01: a quality-tier change resizes the canvas from inside the frame loop, right before
+  // the frame is drawn. Resizing from a React commit cleared the canvas and the bare page showed
+  // through for a frame (the black flicker); useCanvasBudget already adjusts the ratio in-frame.
+  const setDpr=useThree(s=>s.setDpr),qualityDpr=useRef(useQuality.getState().dpr),appliedDpr=useRef(qualityDpr.current);
+  useEffect(()=>useQuality.subscribe(s=>{qualityDpr.current=s.dpr;}),[]);
+  useFrame(()=>{if(qualityDpr.current!==appliedDpr.current){appliedDpr.current=qualityDpr.current;setDpr(qualityDpr.current);}});
   const worldMasks=useMemo(()=>({city:portalWorldMask(sf.group),dimension:portalWorldMask(environment.group),rupture:portalWorldMask(rupture.root),chip:portalWorldMask(chip.group)}),[sf,environment,rupture,chip]);
   const shellMask=useMemo(()=>shell?portalWorldMask(shell):null,[shell]);
   useEffect(()=>()=>{Object.values(worldMasks).forEach(mask=>mask.dispose());shellMask?.dispose();},[worldMasks,shellMask]);
@@ -360,7 +366,6 @@ export function ExperienceDirector(){
   const aperture=useRef<HTMLDivElement>(null),marker=useRef<HTMLButtonElement>(null),readout=useRef<HTMLDivElement>(null);
   const [idleHint,setIdleHint]=useState(false),[runHint,setRunHint]=useState(false);
   const pressedAt=useRef(0),firstScroll=useRef(true),scrollGuard=useRef(0),idleTimer=useRef<ReturnType<typeof setTimeout>|null>(null),sprintTimer=useRef<ReturnType<typeof setTimeout>|null>(null);
-  const dpr=useQuality(s=>s.dpr);
   const camera=useMemo(()=>new CameraDirector(),[]),transitions=useMemo(()=>new TransitionDirector(),[]),audio=useMemo(()=>new AudioDirector(),[]),seq=useMemo(()=>new SequenceDirector(),[]);
 
   useEffect(()=>{
@@ -469,15 +474,19 @@ export function ExperienceDirector(){
     const enabled=!sound;
     try{await audio.setEnabled(enabled);useSceneState.getState().toggleSound();setAudioError(false);setAudioHint(false);}catch{setAudioError(true);}
   };
-  const action=SHELL_ACTIONS[phase];
-  const diagnosticVisible=['diagnostic','corrupting','threat','ignition'].includes(phase);
-  return <main className={`experience phase-${phase}`} aria-label="LAST GATE: Hiro’s vision inside the portal dimension">
-    <div className="world">
-      <RenderBoundary><Canvas camera={{fov:50,near:.05,far:360,position:[-.6,2.3,10.6]}} dpr={dpr} shadows gl={{antialias:false,stencil:true,powerPreference:'high-performance',toneMapping:ACESFilmicToneMapping,outputColorSpace:SRGBColorSpace}} onCreated={({gl,camera})=>{gl.toneMappingExposure=1.12;camera.lookAt(0,4.2,24);}} fallback={<span aria-hidden="true"/>}>
+  // Tracker T-01: built once. Every re-render of <Canvas> re-applies its dpr prop, which undid
+  // useCanvasBudget's ratio and resized (cleared) the canvas outside the frame loop on each
+  // subtitle or phase change: a black flicker. The ratio is owned in-frame by AwakeScene instead.
+  const world=useMemo(()=><div className="world">
+      <RenderBoundary><Canvas camera={{fov:50,near:.05,far:360,position:[-.6,2.3,10.6]}} dpr={useQuality.getState().dpr} shadows gl={{antialias:false,stencil:true,powerPreference:'high-performance',toneMapping:ACESFilmicToneMapping,outputColorSpace:SRGBColorSpace}} onCreated={({gl,camera})=>{gl.toneMappingExposure=1.12;camera.lookAt(0,4.2,24);}} fallback={<span aria-hidden="true"/>}>
         <AwakeScene director={camera} seq={seq} marker={marker} readout={readout} audio={audio}/>
         <RuntimeBridge/>
       </Canvas></RenderBoundary>
-    </div>
+    </div>,[camera,seq,audio]);
+  const action=SHELL_ACTIONS[phase];
+  const diagnosticVisible=['diagnostic','corrupting','threat','ignition'].includes(phase);
+  return <main className={`experience phase-${phase}`} aria-label="LAST GATE: Hiro’s vision inside the portal dimension">
+    {world}
     <div className="lens-vignette" aria-hidden="true"/><div className="film-grain" aria-hidden="true"/>
     <div className="cinema-edge top" aria-hidden="true"/><div className="cinema-edge bottom" aria-hidden="true"/>
     <div className="organic-blink" ref={aperture} aria-hidden="true"><i className="blink-lid blink-top"/><i className="blink-lid blink-bottom"/></div>

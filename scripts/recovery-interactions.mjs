@@ -91,14 +91,15 @@ try {
   if ((await p6()).care !== 'ground') throw new Error(`a short click should not take the chip: ${JSON.stringify(await p6())}`);
   at = await hintAt('.p6-hint-grab');
   await page.mouse.move(at.x, at.y); await page.mouse.down(); await pause(1200); await page.mouse.up(); await pause(300);
-  if ((await p6()).care !== 'hand') throw new Error(`holding should take the chip: ${JSON.stringify(await p6())}`);
+  if ((await p6()).care !== 'fetch') throw new Error(`holding should send Hiro to the bin: ${JSON.stringify(await p6())}`);
+  await page.waitForFunction(() => window.__lastGateP6.store.getState().care === 'hand', { timeout: 12000 }); await pause(1500);
   const chest = await hintAt('.p6-hint-drop');
   await page.mouse.move(chest.x, chest.y); await page.mouse.down(); await pause(1200); await page.mouse.up();
   await page.mouse.move(chest.x + 300, chest.y + 220); await pause(2200);
   if ((await p6()).care !== 'open') throw new Error(`holding his chest should open the bay: ${JSON.stringify(await p6())}`);
   const socket = await hintAt('.p6-hint-drop');
   for (let i = 0; i <= 20; i++) { await page.mouse.move(socket.x + 260 - i * 13, socket.y + 140 - i * 7); await pause(40); }
-  await waitStage('seated', 6000); checks.push('Healthcare chip: a click does nothing, hold takes it, hold opens his chest, guided into the socket (mouse)');
+  await waitStage('seated', 6000); checks.push('Healthcare chip: a click does nothing, hold sends Hiro to the bin for it, hold opens his chest, guided into the socket (mouse)');
   await pause(800); await press('Close the bay'); await waitStage('boot');
   await waitStage('end', 25000); await pause(5500);
   checks.push({ end: await page.evaluate(() => document.querySelector('.lg-ending')?.innerText) });

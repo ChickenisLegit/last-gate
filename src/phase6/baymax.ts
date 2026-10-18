@@ -142,6 +142,11 @@ export async function createBaymax() {
   const whiteTorso = shell.filter(m => !under(m, [...hips, ...shoulders]));
   const qA = new T.Quaternion(), qB = new T.Quaternion(), qC = new T.Quaternion(), qD = new T.Quaternion(), qH = new T.Quaternion(), eul = new T.Euler(), headRest = new T.Quaternion();
   const box = new T.Box3();
+  // The suit's shins (knee end, ankle end), for Hiro taking him by the legs.
+  const leg = (s: 'L' | 'R') => [armoured.root.getObjectByName(`Armor_L_Leg${s}`) ?? model, armoured.root.getObjectByName(`Armor_Foot${s}`) ?? model];
+  const legBones = { L: leg('L'), R: leg('R') };
+  const bootMeshes = (s: 'L' | 'R') => { const out: T.Mesh[] = []; armoured.root.getObjectByName(`B_Armor_Foot${s}`)?.traverse(o => { if (o instanceof T.Mesh) out.push(o); }); return out; };
+  const boots = { L: { bone: legBones.L[1], meshes: bootMeshes('L') }, R: { bone: legBones.R[1], meshes: bootMeshes('R') } };
   return {
     root, model, bay, pose, combatChip, dock, eyeMat,
     /** World position of the dock (the chip's seat). */
@@ -153,6 +158,11 @@ export async function createBaymax() {
     fistWorld: (out = new T.Vector3()) => ((fist as T.Mesh | null) ?? model).getWorldPosition(out),
     headHeight,
     chestWorld: (out = new T.Vector3()) => bay.chestWorld(out),
+    /** The suit's ankle joint and the knee end of that shin ('L' is his left), for taking him by the legs. */
+    ankleWorld: (side: 'L' | 'R', out = new T.Vector3()) => legBones[side][1].getWorldPosition(out),
+    kneeWorld: (side: 'L' | 'R', out = new T.Vector3()) => legBones[side][0].getWorldPosition(out),
+    /** That leg's boot: the bone it rides on and its meshes (to find where a hand meets it). */
+    boot: (side: 'L' | 'R') => boots[side],
     /** His current (smoothed) facing. */
     facing: () => cur.yaw,
     update(t: number) {

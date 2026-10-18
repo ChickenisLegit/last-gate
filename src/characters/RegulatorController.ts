@@ -207,9 +207,12 @@ export type FirstPersonHands = {
  * Left-thumb poses (base pitch, base yaw, bend), solved against the controller as it sits in the
  * hand: resting along the edge, tucked under the guard's lip, the flick, on the bat (off / on).
  */
+// Solved against the switch's real geometry for the grip below (tracker: the thumb went through
+// the face plate and missed the switch by ~2 cm): each pose puts the pad on its target, and the
+// blends press() runs between them keep every part of the thumb outside the controller.
 const THUMB = {
-  rest: { tx: -.4, ty: 1.6, tb: 1.05 }, under: { tx: -.5, ty: 1.7, tb: .3 }, lip: { tx: -1.8, ty: 1.3, tb: 0 },
-  flick: { tx: -1.7, ty: 1.1, tb: 0 }, tog: { tx: -1.3, ty: 1.2, tb: 0 }, togOn: { tx: -.9, ty: 1.1, tb: 0 },
+  rest: { tx: -1.21, ty: .41, tb: 1.4 }, under: { tx: -1.7, ty: .42, tb: .65 }, lip: { tx: -1.62, ty: .43, tb: .67 },
+  flick: { tx: -1.61, ty: .29, tb: 0 }, tog: { tx: -1.68, ty: .4, tb: 0 }, togOn: { tx: -1.42, ty: .54, tb: .13 },
 };
 
 type Hand = { root: T.Group; fingers: T.Group[][]; thumb: T.Group[]; palm: T.Group };
@@ -275,12 +278,14 @@ export function createFirstPersonHands(controller: LimiterController = createLim
   const left = buildHand(1, own), right = buildHand(-1, own);
   // Each hand hangs from a mount that does the big moves (raise, reach, sway).
   const leftMount = new T.Group(), rightMount = new T.Group(); root.add(leftMount, rightMount);
-  // Left: the controller sits in the mount, face tilted up toward the eye; the hand is placed
-  // round it (palm under, fingers wrapping the right edge, thumb along the left of the face).
+  // Left: the controller sits in the mount, face tilted up toward the eye; the hand holds it the
+  // way a thick remote is held: palm cradling the left edge, fingers curled under it, thumb on the
+  // face beside the switch. (The old pose sank the palm and fingertips through the body; this one
+  // was solved against the controller's volumes so nothing passes inside it.)
   const held = new T.Group(); leftMount.add(held);
   held.add(controller.root); controller.root.position.set(0, 0, 0); controller.root.rotation.set(0, 0, 0);
   held.add(left.root);
-  left.root.position.set(-.05, -.03, .045); left.root.rotation.set(0, -.72, Math.PI - .25, 'YXZ');
+  left.root.position.set(-.0515, -.0055, .0685); left.root.rotation.set(-.292, .465, 1.712, 'YXZ');
   rightMount.add(right.root);
   // Right: palm down, a little turned in; it opens as it reaches.
   right.root.rotation.set(-.2, -.25, -.15);
@@ -289,7 +294,7 @@ export function createFirstPersonHands(controller: LimiterController = createLim
   // Animated values; press() tweens these.
   const s = { ...THUMB.rest, tilt: 0, nudge: 0 };
   const sm = { walk: 0, raise: 0, reach: 0 };
-  const hold = { curl: [.85, .9, .95, 1] };
+  const hold = { curl: [1, 1.05, .91, .86] };
   let timeline: gsap.core.Timeline | null = null;
 
   const curl = (h: Hand, amount: number[], spread = 0) => h.fingers.forEach((f, i) => {

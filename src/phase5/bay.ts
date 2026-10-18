@@ -116,7 +116,8 @@ export async function createBay() {
         legL: legQ(hipsP5.find(h => h.name === 'hip-right')), legR: legQ(hipsP5.find(h => h.name === 'hip-left')),
         head: head ? headQ.setFromEuler((head as T.Object3D).rotation).multiply(headRestInv) : undefined,
       });
-      bay.update({ t, open: 4.6, seated: 1, red: .9, seamGlow: .15 + p * .35 });
+      // His bay stays shut here (tracker T-02): the limiter only goes on his chest plate.
+      bay.update({ t, open: 0, seated: 1, red: .9, seamGlow: .15 + p * .35 });
     },
     dispose() {
       limiter.dispose();

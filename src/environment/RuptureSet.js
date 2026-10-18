@@ -36,7 +36,7 @@ export function createRuptureSet(environment){
   let boltIndex=0;
   // ----------------------------------------------------------------- impacts
   const ringMat=()=>new THREE.ShaderMaterial({transparent:true,depthWrite:false,blending:THREE.AdditiveBlending,side:THREE.DoubleSide,uniforms:{uAge:{value:9},uColor:{value:new THREE.Color()}},vertexShader:fullVertex,
-    fragmentShader:'varying vec2 vUv;uniform float uAge;uniform vec3 uColor;void main(){float r=length(vUv-.5)*2.;float band=exp(-pow((r-.86)*14.,2.))+exp(-pow((r-.6)*9.,2.))*.35;float fade=exp(-uAge*3.2);gl_FragColor=vec4(uColor*band*fade*1.6,band*fade);}'});
+    fragmentShader:'varying vec2 vUv;uniform float uAge;uniform vec3 uColor;void main(){float r=length(vUv-.5)*2.;float band=exp(-(((r-.86)*14.)*((r-.86)*14.)))+exp(-(((r-.6)*9.)*((r-.6)*9.)))*.35;float fade=exp(-uAge*3.2);gl_FragColor=vec4(uColor*band*fade*1.6,band*fade);}'});
   const dustMat=()=>new THREE.SpriteMaterial({map:glow,color:'#8b9db3',transparent:true,opacity:0,depthWrite:false});
   const impacts=[0,1,2,3].map(()=>{
     const flash=new THREE.Sprite(additive('#fff1e6',0));root.add(flash);
@@ -92,7 +92,7 @@ export function createRuptureSet(environment){
       float profile=(1.-smoothstep(.45,1.,abs(y)))*(.85+.15*sin(y*4.+1.));
       float w=uOpen*.2*profile+.004;float x=p.x-jag*(.4+uOpen);float d=abs(x)-w;
       float inside=smoothstep(.006,-.02,d);
-      float edge=exp(-pow(d/(.004+uOpen*.008),2.));
+      float edge=exp(-((d/(.004+uOpen*.008))*(d/(.004+uOpen*.008))));
       float fringe=exp(-max(d,0.)*(26.-uOpen*10.))*(1.-inside);
       float lanes=.6+.4*sin((abs(x)/(w+.001))*9.-uTime*3.)*sin(y*30.+uTime);
       vec3 col=mix(vec3(.62,.9,1.),vec3(1.),1.-abs(x)/(w+.001))*inside*(.75+.25*lanes);
@@ -107,7 +107,7 @@ export function createRuptureSet(environment){
     const m=new THREE.ShaderMaterial({transparent:true,depthWrite:false,side:THREE.DoubleSide,blending:THREE.AdditiveBlending,uniforms:{uOpen:{value:0},uTime:{value:0},uDepth:{value:i/10}},vertexShader:fullVertex,
       fragmentShader:`varying vec2 vUv;uniform float uOpen;uniform float uTime;uniform float uDepth;${noiseGLSL}
       void main(){vec2 p=(vUv-.5)*vec2(30.,40.);float bend=sin(p.y*.12+uDepth*4.+uTime*.2)*1.4*uDepth;float w=1.6+uDepth*3.2;float d=abs(p.x-bend)-w;
-        float edge=exp(-pow(d*1.6,2.))*.7;float membrane=exp(-max(d,0.)*.22)*.09*vn(p*.3+uTime*.1+uDepth*9.);
+        float edge=exp(-((d*1.6)*(d*1.6)))*.7;float membrane=exp(-max(d,0.)*.22)*.09*vn(p*.3+uTime*.1+uDepth*9.);
         float fall=smoothstep(19.,6.,abs(p.y));vec3 c=mix(vec3(.45,.82,1.),vec3(.62,.38,.98),vn(vec2(p.y*.1,uDepth*5.)))*(edge*.9+membrane)+vec3(.85,.97,1.)*smoothstep(.0,-1.,d)*uDepth*uDepth*.035;
         gl_FragColor=vec4(c*fall*uOpen,1.);}`});
     const layer=new THREE.Mesh(new THREE.PlaneGeometry(30,40),m);layer.position.set(Math.sin(i*.9)*.6,2,-2.5-i*3.4);layer.rotation.z=Math.sin(i*1.3)*.08;corridor.add(layer);layerMats.push(m);

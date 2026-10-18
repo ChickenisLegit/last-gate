@@ -49,6 +49,8 @@ const AWAY=new Set<Phase>(['loading','portal-sighted','call-baymax','to-portal',
  */
 export const REENTRY_Z=16.6;
 const RUN_END=REENTRY_Z+2.9;
+/** The gate's plane (createPortalGate(24) in ExperienceDirector). */
+const RING_Z=24;
 export type ShotContext={chest:Vector3;normal:Vector3;chip:Vector3;baymax:Vector3;head:Vector3};
 
 /** Sole owner of the camera. Each phase is a directed shot; impulses come from the sequence. */
@@ -124,9 +126,13 @@ export class CameraDirector {
       if(!this.initialized){this.fromPos.copy(this.pos);this.fromLook.copy(this.aim);this.fromFov=this.fov;this.fromRoll=this.roll;}
       const b=reducedMotion?1:span(this.shotTime,0,BLEND[state.phase]??1.2);
       camera.position.lerpVectors(this.fromPos,this.pos,b);this.target.lerpVectors(this.fromLook,this.aim,b);
+      this.turnBlend(camera.position,b);
       camera.fov=MathUtils.lerp(this.fromFov,this.fov,b);roll=MathUtils.lerp(this.fromRoll,this.roll,b);
       this.lastFov=camera.fov;
       this.applyImpulses(camera,seq,dt);
+      // Tracker T-01: never render with the lens on the ring's plane (z 24). The near plane slices
+      // the portal's stencil disc there, neither world draws and the frame flashes flat blue.
+      if((state.phase==='through-portal'||state.phase==='back-through')&&Math.abs(camera.position.z-RING_Z)<.1)camera.position.z=RING_Z+(camera.position.z<RING_Z?-.1:.1);
     }else{this.phase=state.phase;this.lastFov=camera.fov;}
     camera.lookAt(this.target);
     // Free look: the pointer turns Hiro's head within limits set by the beat. Damped twice
@@ -338,6 +344,25 @@ export class CameraDirector {
       }
       default:{P.copy(camera.position);A.copy(this.target);this.fov=camera.fov;}
     }
+  }
+  /**
+   * Tracker T-01: a big turn between shots (the glance back at Baymax and round to the portal
+   * again, about 170°) can't blend its look-at point in a straight line: the point passes beside
+   * Hiro's head and the view whips through the dark void off the street in a couple of frames,
+   * which reads as a black flicker. Large turns blend heading and pitch instead, at an even rate,
+   * dipping a little toward the road on the way round. Small turns keep the point blend.
+   */
+  private turnBlend(position:Vector3,b:number){
+    if(b<=0||b>=1)return;
+    this.v.subVectors(this.fromLook,this.fromPos);this.v2.subVectors(this.aim,this.pos);
+    const d0=this.v.length(),d1=this.v2.length();if(d0<1e-3||d1<1e-3)return;
+    const w=MathUtils.smoothstep(this.v.angleTo(this.v2),.6,1.2);if(w<=0)return;
+    const yaw0=Math.atan2(this.v.x,this.v.z),pitch0=Math.atan2(this.v.y,Math.hypot(this.v.x,this.v.z));
+    const yaw1=Math.atan2(this.v2.x,this.v2.z),pitch1=Math.atan2(this.v2.y,Math.hypot(this.v2.x,this.v2.z));
+    let turn=yaw1-yaw0;turn-=Math.PI*2*Math.round(turn/(Math.PI*2));
+    const yaw=yaw0+turn*b,pitch=MathUtils.lerp(pitch0,pitch1,b)-Math.sin(Math.PI*b)*.16*Math.min(1,Math.abs(turn)/2);
+    this.v.set(Math.sin(yaw)*Math.cos(pitch),Math.sin(pitch),Math.cos(yaw)*Math.cos(pitch)).multiplyScalar(MathUtils.lerp(d0,d1,b)).add(position);
+    this.target.lerp(this.v,w);
   }
   private glance(seq:SequenceDirector){
     const b=seq.beat,t=seq.beatTime;

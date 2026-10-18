@@ -27,7 +27,7 @@ export function createSanFransokyo() {
   for (let i=0;i<7;i++) k.mesh(new T.SphereGeometry(rand(24,44),16,8,0,Math.PI*2,0,Math.PI/2),k.standard(i%2?'#223e4b':'#2e4953',1,0),{p:[-130+i*43,-7,220+rand(-10,15)],s:[1,.37,1]},hills);
 
   // Water reflections are one inexpensive surface, with continuous fine ripples.
-  const waterMaterial = k.ownMaterial(new T.ShaderMaterial({ uniforms:{uTime:{value:0}}, vertexShader:'varying vec3 vP;void main(){vP=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}', fragmentShader:`varying vec3 vP;uniform float uTime;void main(){float ripple=sin(vP.x*2.7+vP.z*4.2+uTime*.45)*sin(vP.z*8.-uTime*.7);float streak=pow(max(0.,sin(vP.x*.21+sin(vP.z*.12)*.13)),16.);float breakUp=.3+.7*pow(.5+.5*sin(vP.z*5.+uTime*.3),3.);vec3 col=vec3(.035,.09,.12)+ripple*.006+vec3(.11,.11,.075)*streak*breakUp;gl_FragColor=vec4(col,1.);}` }));
+  const waterMaterial = k.ownMaterial(new T.ShaderMaterial({ uniforms:{uTime:{value:0}}, vertexShader:'varying vec3 vP;void main(){vP=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}', fragmentShader:`varying vec3 vP;uniform float uTime;void main(){float ripple=sin(vP.x*2.7+vP.z*4.2+uTime*.45)*sin(vP.z*8.-uTime*.7);float streak=pow(max(0.,sin(vP.x*.21+sin(vP.z*.12)*.13)),16.);float breakUp=.3+.7*pow(max(0.,.5+.5*sin(vP.z*5.+uTime*.3)),3.);vec3 col=vec3(.035,.09,.12)+ripple*.006+vec3(.11,.11,.075)*streak*breakUp;gl_FragColor=vec4(col,1.);}` }));
   k.mesh(new T.PlaneGeometry(310,210),waterMaterial,{p:[0,-1.15,128],r:[-Math.PI/2,0,0]});
   const built = new T.Group(); built.name='waterfront-architecture'; k.root.add(built);
   k.box({p:[0,-.6,32],s:[22,1.2,18]},stone,built);

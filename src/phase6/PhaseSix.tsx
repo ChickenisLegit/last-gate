@@ -3,6 +3,7 @@ import { Canvas } from '@react-three/fiber';
 import * as T from 'three';
 import { reducedMotion } from '../config/experience';
 import { World, EMERGE, CLUE_AT, CLUE_END, type RunState } from './World';
+import { FETCH_PICK } from './home';
 import { PhaseSixAudio } from './audio';
 import { FadeIn, RegulatorToggle, OutputMeter, DragHand, RingTask, Panel, HiroLine, type Row } from './ui';
 import { ROUTE_LENGTH, ringLive } from './street';
@@ -18,7 +19,7 @@ import { EndCard } from './EndCard';
  * its frame back. He won't leave Baymax, so he lets him come at full power and cuts him back to 35%
  * mid-air. Powered, the gate tries and folds shut: its reader has locked onto something, and Hiro
  * can't tell what. When Baymax falls and his bay opens, the combat chip and the reader beat in the
- * same rhythm: the chip, from this side, is what the gate is locked onto. Hiro pulls it, the reader
+ * same rhythm: the chip, from this side, is the signal the gate's reader is tuned to. Hiro pulls it, the reader
  * lets go, and he plays the relay's capture of the healthcare chip's last transmission into it.
  * The frame opens onto where that signal went, and Hiro hauls him through. On the other side he
  * puts the healthcare chip back.
@@ -111,6 +112,7 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
   };
   const metres = Math.max(0, Math.round((1 - live.p) * ROUTE_LENGTH + 14));
   const pulled = s.chip === 'out' ? now() - s.pulledAt : 0;
+  const fetched = s.care === 'fetch' ? now() - s.fetchAt : 0;
   const homeUi = s.stage !== 'home' || e > EMERGE + 1.2;
 
   const st = s.stage;
@@ -128,13 +130,14 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
     : st === 'flyin' && e > 2.4 ? 'Wait for it.'
     : st === 'faceoff' && e > .4 ? 'I’m right here. Come on.'
     : st === 'carry' && s.chip !== 'out' && e > CLUE_AT + .3 && e < CLUE_END ? 'The chip…'
-    : st === 'carry' && s.chip !== 'out' && e >= CLUE_END ? 'The gate’s locked onto his chip.'
+    : st === 'carry' && s.chip !== 'out' && e >= CLUE_END ? 'It’s reading his combat chip. That’s all it can hear.'
     : st === 'carry' && s.chip === 'out' && pulled > .6 && pulled < 3.4 ? 'It let go.'
     : st === 'carry' && s.chip === 'out' && pulled >= 3.4 && s.cart !== 'slot' ? 'It needs somewhere to go. Where his healthcare chip went.'
     : st === 'bloom' && e > 2 && e < 6 ? 'There you are.'
     : st === 'bloom' && e > 8.6 ? 'Come on. We’re going home.'
     : st === 'home' && e > 1.4 && e < EMERGE ? 'Almost. Almost.'
-    : st === 'home' && e > EMERGE + 2.4 && s.care === 'ground' ? 'It crossed all that way… to land in a bin.'
+    : st === 'home' && e > EMERGE + 2.4 && s.care === 'ground' ? 'That green light… over by the bin?'
+    : st === 'home' && s.care === 'fetch' && fetched > FETCH_PICK ? 'It crossed all that way… to land in a bin.'
     : null;
 
   // ---- What each panel reads.
@@ -217,19 +220,19 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
       {/* 7 · The chip and the reader beat together. Pull it; then give the gate somewhere to go. */}
       {st === 'carry' && s.chip !== 'out' && e > 2 && <Panel id={e > CLUE_END ? 'chip' : 'signal'} label="The Last Gate" tone="cyan"
         title={e > CLUE_END ? 'Pull the combat chip' : undefined}
-        rows={gateRows(e > CLUE_END ? ['Control input', 'Locked · his chip', 'red'] : ['Control input', 'Signal detected', 'red'])}
+        rows={gateRows(e > CLUE_END ? ['Reader', 'Tuned to his combat chip', 'red'] : ['Reader', 'Signal close by', 'red'])}
         action={e > CLUE_END ? drag('Drag it up out of his chest.') : undefined} />}
       {st === 'carry' && s.chip === 'out' && pulled > 1 && <Panel id={pulled > 3.6 ? 'cart' : 'clear'} label="The Last Gate" tone="cyan"
         title={pulled > 3.6 ? 'Play the capture' : undefined}
-        rows={pulled > 3.6 ? [['Control input', 'Clear', 'cyan'], ['Destination', 'None'], ['RX/06', 'Healthcare chip’s last signal', 'orange']] : gateRows(['Control input', 'Clear', 'cyan'])}
+        rows={pulled > 3.6 ? [['Reader', 'Clear', 'cyan'], ['Destination', 'None'], ['RX/06', 'Healthcare chip’s last signal', 'orange']] : gateRows(['Reader', 'Clear', 'cyan'])}
         action={pulled > 3.6 ? drag('Drag the cartridge into the reader.') : undefined} />}
       {st === 'bloom' && e > 1.2 && e < 7.4 && <Panel id="bloom" label="The Last Gate" tone="cyan"
         rows={[['Control input', 'RX/06', 'cyan'], ['Gate', 'Open', 'cyan'], ['Field', 'Stable', 'ok']]} />}
 
       {/* 8 · Home. */}
       {st === 'home' && e > EMERGE + 2.4 && <Panel id="home" label="Baymax" title="His healthcare chip"
-        rows={[['Healthcare chip', s.care === 'ground' ? 'In a litter bin' : 'In your hand', 'ok'], ['Chest bay', s.care === 'open' ? 'Open' : 'Closed', s.care === 'open' ? 'cyan' : 'dim'], ['Combat chip', 'Removed', 'dim']]}
-        action={drag(s.care === 'ground' ? 'Click and hold the chip to take it.' : s.care === 'hand' ? 'Click and hold his chest to open the bay.' : 'Guide the chip into the socket, or hold E.')} />}
+        rows={[['Healthcare chip', s.care === 'ground' || (s.care === 'fetch' && fetched < FETCH_PICK) ? 'In a litter bin' : 'In your hand', 'ok'], ['Chest bay', s.care === 'open' ? 'Open' : 'Closed', s.care === 'open' ? 'cyan' : 'dim'], ['Combat chip', 'Removed', 'dim']]}
+        action={s.care === 'fetch' ? undefined : drag(s.care === 'ground' ? 'Click and hold the chip to go and get it.' : s.care === 'hand' ? 'Click and hold his chest to open the bay.' : 'Guide the chip into the socket, or hold E.')} />}
       {st === 'seated' && <Panel id="seated" label="Baymax" rows={[['Healthcare chip', 'Seated', 'ok'], ['Chest bay', 'Open']]}>
         <button className="p6-btn" onClick={toggle('boot')}>Close the bay <i>→</i></button>
       </Panel>}
