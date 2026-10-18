@@ -1,4 +1,5 @@
 import * as T from 'three';
+import { BAYMAX_SCALE as BS } from './baymax';
 import { SceneKit, seeded, type Pose } from '../phase2/SceneKit';
 import { buildSanFransokyo } from '../environment/SanFransokyoSkyline';
 import { chipOutline } from '../characters/RedChip.js';
@@ -99,6 +100,9 @@ export function createHome() {
   const sun = new T.DirectionalLight('#ffb07a', 2.2); sun.position.set(-20, 12, -40); k.root.add(sun);
   const back = new T.DirectionalLight('#8f86c9', .7); back.position.set(10, 8, 20); k.root.add(back);
   for (const p of lamps) { const l = new T.PointLight('#ffcf8a', 3, 9, 1.8); l.position.copy(p); k.root.add(l); }
+  // Warm pools on the path under each lamp, and dusk haze over the water so the far shore sits in air.
+  for (const p of lamps) k.haze({ p: [p.x, .05, -4.4], s: [5.5, 4.2, 1], r: [-Math.PI / 2, 0, 0] }, '#ffb46a', .2);
+  k.haze({ p: [30, 6, -118], s: [520, 34, 1] }, '#ffb08a', .14);
   // The gate on this side, closing behind them.
   const gateMat = k.ownMaterial(new T.MeshBasicMaterial({ color: '#b9a6ff', side: T.DoubleSide, transparent: true, opacity: 0, blending: T.AdditiveBlending, depthWrite: false, toneMapped: false }));
   const gate = k.mesh(k.ownGeometry(new T.CircleGeometry(3.1, 64)), gateMat, { p: [HOME_GATE.x, HOME_GATE.y, HOME_GATE.z] });
@@ -117,6 +121,7 @@ export function createHome() {
   return {
     root: k.root, care, careLight, kit: k,
     background: new T.Color('#2a2440'),
+    fog: new T.Fog('#b07f7e', 60, 480),
     update(t: number, dt: number, s: { gate: number; careBlink: number }) {
       waterMat.uniforms.uTime.value = t;
       sf.update(t, dt);
@@ -142,7 +147,7 @@ const RED_OFF = new T.Color('#0b0f11'), CARE_WHITE = new T.Color('#f4f8ff');
 const sm = (e: number, a: number, b: number) => T.MathUtils.smoothstep(e, a, b);
 const v = (x: number, y: number, z: number) => new T.Vector3(x, y, z);
 /** Where Hiro kneels at Baymax's side (clear of his arm), and where he steps back to as he gets up. */
-export const HIRO_KNEEL = new T.Vector3(HOME_BAYMAX.x + 2.5, 0, HOME_BAYMAX.z + .35);
+export const HIRO_KNEEL = new T.Vector3(HOME_BAYMAX.x + 2.5 * BS + .25, 0, HOME_BAYMAX.z + .35 * BS);
 /** Where Hiro stands at the bin, on his side of it. */
 const BIN_SPOT = CARE_BIN_AT.clone().add(HIRO_KNEEL.clone().sub(CARE_BIN_AT).setY(0).setLength(.6));
 /** The fetch (care 'fetch'): up off his knee, over to the bin, the chip out of it, and a jog back to him. */
@@ -150,9 +155,9 @@ const F_RISE = .6, F_OUT = 2.8, F_PICK = .9, F_BACK = 2, F_KNEEL = .6, F_HOME = 
 export const FETCH_PICK = F_RISE + F_OUT + .45, FETCH_END = F_HOME + F_BACK + F_KNEEL;
 /** Turn from heading a to b by k, the short way round. */
 const turn = (a: number, b: number, k: number) => a + ((((b - a + Math.PI * 3) % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) - Math.PI) * k;
-export const HIRO_STAND = new T.Vector3(HOME_BAYMAX.x + 2.75, 0, HOME_BAYMAX.z - 1.05);
+export const HIRO_STAND = new T.Vector3(HOME_BAYMAX.x + 2.75 * BS + .45, 0, HOME_BAYMAX.z - 1.05 * BS);
 /** Where Hiro steps in to for the fist bump. */
-export const HIRO_BUMP = new T.Vector3(HOME_BAYMAX.x + 1.65, 0, HOME_BAYMAX.z - 1.55);
+export const HIRO_BUMP = new T.Vector3(HOME_BAYMAX.x + 1.65 * BS + .3, 0, HOME_BAYMAX.z - 1.55 * BS);
 
 export type HomeCast = {
   baymax: { root: T.Object3D; pose: BaymaxPose; dock: T.Object3D; handWorld(out?: T.Vector3): T.Vector3; headWorld(out?: T.Vector3): T.Vector3 };
@@ -284,7 +289,7 @@ export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime
   fov = 40;
   if (stage === 'end') {
     // Behind the two of them, high and wide: side by side, looking out over the rail at the city.
-    hiro.root.position.set(HOME_BAYMAX.x + 1.75, 0, HOME_BAYMAX.z - .5); Object.assign(H, { yaw: Math.PI, stride: 0, bump: 0, lookUp: .05, look: .25, kneel: 0, reach: 0 });
+    hiro.root.position.set(HOME_BAYMAX.x + 1.75 * BS + .3, 0, HOME_BAYMAX.z - .5 * BS); Object.assign(H, { yaw: Math.PI, stride: 0, bump: 0, lookUp: .05, look: .25, kneel: 0, reach: 0 });
     P.hold = 0; P.head[0] = .08; P.head[1] = -.3; P.head[2] = -.12;
     camPos.set(5.2, 4.6, 15.5).lerp(v(4.4, 5.6, 17.5), sm(e, 0, 20)); look.set(-6, 7, -60); fov = 46; shot = 'end';
   }

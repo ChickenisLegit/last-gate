@@ -2,6 +2,7 @@ import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SceneKit, seeded, type Pose } from '../phase2/SceneKit';
 import { concreteTexture } from '../presentation/Surfaces';
+import { Dressing, cityMaterials, dressRoof, type Rand } from '../environment/CityDressing';
 
 /** Solid, static set dressing. Repeated surfaces are baked by material into a handful of draws. */
 export function batchStaticGeometry(k: SceneKit) {
@@ -166,6 +167,8 @@ export function createBaySixArchitecture() {
 export function createServiceStreetDetail() {
   const k = new SceneKit('north-service-street-detail'), m = palette(k);
   const random = seeded(61243), rand = (a: number, b: number) => a + random() * (b - a);
+  // Roof plant, tanks, masts and signs (instanced), on their own seed so the street layout holds.
+  const dress = new Dressing(k), cm = cityMaterials(k), roofRandom: Rand = seeded(61244);
   const map = concreteTexture(); map.repeat.set(6, 40);
   const paving = k.standard('#67736f', .94, .02); paving.map = map; paving.bumpMap = map; paving.bumpScale = .018;
   k.box({ p: [0, .025, -28], s: [12.2, .035, 83] }, paving);
@@ -183,6 +186,8 @@ export function createServiceStreetDetail() {
       for(const x of [-w/2,w/2]) k.box({p:[x,height+.45,-d/2],s:[.2,.7,d+.5]},m.panel,shop);
       k.box({p:[0,height+.45,.18],s:[w,.7,.18]},m.panel,shop);
       k.box({p:[w*.18,height+.7,-d*.62],s:[2,1.2,2.4]},m.metal,shop);
+      shop.updateMatrix();
+      dressRoof(dress,cm,shop.matrix.clone().multiply(new T.Matrix4().makeTranslation(0,0,-d/2-.2)),w,height+.3,d,roofRandom,{parapet:false,sign:i===2||i===5});
       // Three kinds of street frontage: workshop shutter, glazed parts shop, recessed loading bay.
       if(i%3===0){
         k.box({p:[-.9,1.9,.04],s:[w*.65,3.3,.15]},m.dark,shop);
@@ -251,7 +256,9 @@ export function createServiceStreetDetail() {
     for (const xx of [-.32, .32]) k.box({ p: [x + xx, .52, z + .56], s: [.035, .85, .035] }, m.metal);
     k.box({ p: [x, .75, z + .575], s: [.56, .18, .02] }, m.brass);
   }
-  const kit = batchStaticGeometry(k), disposeKit = kit.dispose.bind(kit);
+  const kit = batchStaticGeometry(k);
+  dress.build();
+  const disposeKit = kit.dispose.bind(kit);
   kit.dispose = () => { disposeKit(); map.dispose(); };
   return kit;
 }

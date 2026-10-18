@@ -10,7 +10,9 @@ import { enterServiceBay } from './entry';
 import { sfx, useSfxBed, useUiSfx } from '../audio/sfx';
 import { SoundToggle } from '../audio/SoundToggle';
 import { batchStaticGeometry, createBaySixArchitecture, createServiceStreetDetail } from './environmentDetail';
+import { Dressing, buildingFrame, cityMaterials, dressFacade, dressRoof, roadBreakup, skyline } from '../environment/CityDressing';
 import './walk.css';
+import { AdaptiveDpr } from '../performance/AdaptiveDpr';
 
 /**
  * Between the board and Bay 6: Hiro leaves Baymax and walks the corrupted city, following the
@@ -51,7 +53,23 @@ function buildStreet() {
   // Kerbs and broken barriers.
   for (const side of [-1, 1]) for (let z = 6; z > -60; z -= 5.5) if (random() > .25) k.box({ p: [side * 5.9, .32, z], s: [.45, .65, rand(2.2, 4)], r: [0, 0, side * rand(0, .05)] }, k.ivory);
 
-  // Solid, varied blocks and their side walls are owned by the street-detail kit.
+  // Solid, varied blocks and their side walls are owned by the street-detail kit. Behind them, a
+  // taller second row and the far city close the sky, so the street reads as one district of many.
+  const dress = new Dressing(k), cm = cityMaterials(k), cityRandom = seeded(6062);
+  const backTones = [k.standard('#3e4c50', .9, .08), k.standard('#5a5f5c', .9, .06), k.standard('#4a4642', .9, .06)];
+  for (const side of [-1, 1]) for (let z = 4; z > -66; z -= 9 + cityRandom() * 4) {
+    const w = 8 + cityRandom() * 5, d = 8 + cityRandom() * 4, h = 24 + cityRandom() * 18, x = side * (21 + w / 2 + cityRandom() * 4);
+    const frame = buildingFrame(x, z);
+    k.box({ p: [x, h / 2, z], s: [w, h, d] }, backTones[Math.floor(cityRandom() * backTones.length)]);
+    dressFacade(dress, cm, frame, w, h, d, [side > 0 ? '-x' : '+x', '+z'], cityRandom, { from: 1.2 });
+    dressRoof(dress, cm, frame, w, h, d, cityRandom, { tower: h > 36 });
+  }
+  const far = [k.standard('#2c3a40', .9, .1), k.standard('#363d40', .9, .1)];
+  skyline(dress, cm, cityRandom, { x: [-55, 55], z: [-112, -88], count: 12, h: [26, 52], tones: far });
+  skyline(dress, cm, cityRandom, { x: [-34, 34], z: [32, 54], count: 7, h: [18, 36], facing: -1, tones: far });
+  roadBreakup(dress, cm, cityRandom, { x: [-4.6, 4.6], z: [-58, 7], y: .043, count: 18, cracks: false, patch: k.standard('#434d4b', .95, .02) });
+  dress.build();
+  k.haze({ p: [0, 10, -86], s: [110, 28, 1] }, '#4f8396', .14);
   // Floating fragments held over the street.
   for (let i = 0; i < 9; i++) k.box({ p: [rand(-9, 9), rand(9, 18), rand(-55, 0)], s: [rand(.6, 2.4), rand(.3, 1), rand(.6, 2)], r: [rand(0, 3), rand(0, 3), rand(0, 3)] }, k.concrete);
 
@@ -168,8 +186,8 @@ function WalkWorld({ state, onProgress }: { state: React.MutableRefObject<WalkSt
 
   return <>
     <color attach="background" args={['#0a1622']} />
-    <fog attach="fog" args={['#172d39', 26, 145]} />
-    <hemisphereLight args={['#a1c2cc', '#151c1d', 1.15]} />
+    <fog attach="fog" args={['#172d39', 20, 135]} />
+    <hemisphereLight args={['#a1c2cc', '#151c1d', .95]} />
     <directionalLight position={[-8, 16, 6]} intensity={2} color="#d5dfdb" />
     <pointLight position={[0, 3.1, GATE_Z + 3]} intensity={10} distance={14} color="#ffd3a0" />
     <pointLight position={[4.7, 2.2, GATE_Z + 1.4]} intensity={6} distance={7} color="#ffc27a" />
@@ -224,7 +242,7 @@ export function Walk() {
 
   const metres = Math.max(0, Math.round((1 - progress) * LENGTH + (0 - GATE_Z - 56)));
   return <main className={`walk ${leaving ? 'walk-leaving' : ''}`} aria-label="Phase 4: the walk to Bay 6">
-    <div className="walk-world"><Canvas dpr={[1, 1.4]} camera={{ fov: 54, near: .1, far: 460, position: [0, EYE, 8] }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
+    <div className="walk-world"><Canvas dpr={[1, 1.4]} camera={{ fov: 54, near: .1, far: 460, position: [0, EYE, 8] }} gl={{ antialias: true, powerPreference: 'high-performance' }}><AdaptiveDpr />
       <WalkWorld state={state} onProgress={setProgress} />
       <SceneQuality />
     </Canvas></div>

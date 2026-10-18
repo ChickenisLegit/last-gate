@@ -12,6 +12,7 @@ import { type PhaseSixStep } from './entry';
 import { SoundToggle } from '../audio/SoundToggle';
 import './phase-six.css';
 import { EndCard } from './EndCard';
+import { AdaptiveDpr } from '../performance/AdaptiveDpr';
 
 /**
  * Phase 6, through Hiro's eyes. The combat chip brings Baymax back up at the relay. Hiro's
@@ -149,7 +150,7 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
   return <main className={`p6 p6-set-${set} p6-stage-${st} ${insert ? 'p6-insert' : ''}`} style={style} aria-label="Phase 6: Baymax wakes again">
     <SoundToggle />
     <div className="p6-world" ref={world}>
-      <Canvas dpr={[1, 1.4]} camera={{ fov: 62, near: .02, far: 900, position: [2, 2, 2] }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
+      <Canvas dpr={[1, 1.4]} camera={{ fov: 62, near: .02, far: 900, position: [2, 2, 2] }} gl={{ antialias: true, powerPreference: 'high-performance' }}><AdaptiveDpr />
         <World audio={audio} hints={hints} fx={fx} run={run} onReady={onReady} />
       </Canvas>
     </div>

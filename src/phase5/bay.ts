@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { createHarbourWorld } from '../recovery/HarbourWorld';
-import { createLimiter } from '../phase4/limiter';
+import { createLimiter, LIMITER_FEED } from '../phase4/limiter';
 
 /**
  * Back at the harbour bay: the same district and the same Baymax pose as the landing and the
@@ -41,6 +41,13 @@ export async function createBay() {
   const side = new T.Vector3(-axis.z, 0, axis.x); if (side.x > 0) side.negate();
   const red = new T.PointLight('#ff2a1c', 0, 6, 1.8); red.position.copy(body).add(new T.Vector3(-.6, 1.2, .4)); district.group.add(red);
 
+  // The same finish as Phase 6: worn paint rather than a glossy clear coat (this suit instance only).
+  armoured?.root.traverse(o => {
+    if (!(o instanceof T.Mesh)) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m instanceof T.MeshPhysicalMaterial && !m.transparent) {
+      m.clearcoat = Math.min(m.clearcoat, .1); m.clearcoatRoughness = .55; m.roughness = Math.max(m.roughness, m.metalness > .7 ? .36 : .5);
+    }
+  });
   const limiter = createLimiter();
   limiter.scale.setScalar(.46);
   const ground = -1.02;
@@ -57,7 +64,29 @@ export async function createBay() {
     const mw = new T.Matrix4().makeBasis(spot.x, n, spot.z).setPosition(spot.point.clone().addScaledVector(n, -.02)).scale(limiter.scale.clone());
     mountLocal.copy(spot.bone.matrixWorld).invert().multiply(mw);
   }
-  let shake = 0, clunk = 0, contacted = false; const baseY = model.position.y, baseRotZ = model.rotation.z;
+  // The feed: once the unit is home, its heavy black lead runs from the main gland into the rim of
+  // his chest bay ("in line with his main feed"), drawn out along its length, then the plug seats.
+  const feedMat = new T.MeshStandardMaterial({ color: '#15171a', roughness: .62, metalness: .15 });
+  const plugMat = new T.MeshStandardMaterial({ color: '#c9762e', roughness: .45, metalness: .4 });
+  let feed: { tube: T.Mesh; plug: T.Mesh; count: number } | null = null;
+  const buildFeed = () => {
+    if (!spot) return;
+    const bone = spot.bone; bone.updateWorldMatrix(true, true); limiter.updateMatrixWorld(true);
+    const n = new T.Vector3(0, 1, 0).transformDirection(limiter.matrixWorld), along = new T.Vector3(1, 0, 0).transformDirection(limiter.matrixWorld);
+    const a = limiter.localToWorld(LIMITER_FEED.clone()), c = bay.root.getWorldPosition(new T.Vector3());
+    const rim = bay.root.getWorldScale(new T.Vector3()).x * .235;
+    const to = a.clone().sub(c); to.addScaledVector(n, -to.dot(n)).normalize();
+    const b = c.clone().addScaledVector(to, rim * .98).addScaledVector(n, .01);
+    const lift = Math.max(.05, a.distanceTo(b) * .22);
+    const pts = [a, a.clone().addScaledVector(along, .05).addScaledVector(n, lift * .5), a.clone().lerp(b, .5).addScaledVector(n, lift), b.clone().addScaledVector(n, lift * .4), b].map(q => bone.worldToLocal(q.clone()));
+    const sc = bone.getWorldScale(new T.Vector3()).x;
+    const tube = new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(pts), 32, .016 / sc, 8), feedMat);
+    const plug = new T.Mesh(new T.CylinderGeometry(.026 / sc, .022 / sc, .05 / sc, 12), plugMat);
+    plug.position.copy(pts[4]); plug.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), pts[4].clone().sub(pts[3]).normalize());
+    bone.add(tube, plug);
+    feed = { tube, plug, count: tube.geometry.index!.count };
+  };
+  let shake = 0, clunk = 0, contacted = false, seatHit = 0, seated = false; const baseY = model.position.y, baseRotZ = model.rotation.z;
   const hipsP5 = model.children.filter(c => c.name.startsWith('hip-')), hipBase = hipsP5.map(h => h.rotation.x);
   const headQ = new T.Quaternion(), headRestInv = new T.Quaternion().setFromEuler(headBase).invert(), legE = new T.Euler();
   const legQ = (h: T.Object3D | undefined) => h ? new T.Quaternion().setFromEuler(legE.set(h.rotation.x - 1.42, 0, h.rotation.z)) : undefined;
@@ -67,16 +96,37 @@ export async function createBay() {
     /** fitted: 0 staged → 1 on his flank. power: 0 dormant → 1 running against the limit. */
     update(t: number, dt: number, s: { fitted: number; power: number; held: boolean }) {
       district.update(t, dt, false);
-      // Lift off the apron and carry to the slot mouth (0–.6), line up (.6–.8), push home with a
-      // small settle (.8–1).
-      const f = s.fitted, carry = T.MathUtils.smootherstep(f, 0, .6), push = T.MathUtils.smootherstep(f, .75, .97);
+      // Timed to the fitting's sounds (2.2 s; PhaseFive's phaseFiveSounds): lifted at 0, two steps
+      // across (.5 s, .95 s), pushed home onto the plate with a clunk (1.25 s), the feed plugged into
+      // his bay (1.9 s). It comes up one end first and is carried with a step in it, lines up over the
+      // plate, and is driven home fast, so it lands with weight instead of easing into place.
+      const f = s.fitted, ss2 = T.MathUtils.smootherstep;
+      const lift = ss2(f, 0, .18), carry = ss2(f, .12, .5), push = Math.pow(T.MathUtils.clamp((f - .5) / .07, 0, 1), 2);
       if (spot) tmpM.copy(spot.bone.matrixWorld).multiply(mountLocal).decompose(mountPos, mountQ, mountS);
       mountN.set(0, 1, 0).applyQuaternion(mountQ);
-      tmpP.lerpVectors(staged, mountPos.clone().addScaledVector(mountN, .5), carry); tmpP.y += Math.sin(Math.PI * carry) * .35;
+      tmpP.copy(mountPos).addScaledVector(mountN, .32).sub(staged).multiplyScalar(carry).add(staged);
+      tmpP.y += lift * .45 * (1 - carry) + Math.sin(Math.PI * carry) * .3;
+      // Two footfalls on the way over: a dip and recover on each.
+      if (carry > 0 && carry < 1) tmpP.y -= Math.abs(Math.sin(Math.PI * 2 * T.MathUtils.clamp((f - .2) / .3, 0, 1))) * .03;
       limiter.position.copy(tmpP).lerp(mountPos, push);
-      limiter.position.addScaledVector(mountN, -Math.sin(Math.PI * T.MathUtils.clamp((f - .95) / .05, 0, 1)) * .02);
-      limiter.quaternion.copy(stagedQ).slerp(mountQ, T.MathUtils.smoothstep(f, .25, .8));
-      limiter.led.color.set(s.power > .05 ? '#ffb15a' : s.fitted > .99 ? '#7dffa6' : '#2a3a33');
+      // Seated: a small rebound off the plate, then still.
+      const settle = T.MathUtils.clamp((f - .57) / .1, 0, 1);
+      limiter.position.addScaledVector(mountN, Math.sin(Math.PI * settle) * Math.exp(-settle * 3) * .012);
+      limiter.quaternion.copy(stagedQ).slerp(mountQ, ss2(f, .28, .52));
+      // Picked up by one end: it hangs tilted while it's carried and levels out over the plate.
+      limiter.rotateZ(Math.sin(Math.PI * Math.min(1, lift * (1 - ss2(f, .35, .52)))) * .28 * (1 - push));
+      limiter.cables.visible = f < .02;
+      if (!seated && f >= .57) { seated = true; seatHit = 1; }
+      if (f < .5) seated = false;
+      // The feed: drawn out .7 → .86, the plug seats at .86.
+      if (f >= .57 && !feed) buildFeed();
+      if (feed) {
+        const k = ss2(f, .68, .86);
+        feed.tube.visible = f > .68; feed.tube.geometry.setDrawRange(0, Math.floor(feed.count * k / 3) * 3);
+        feed.plug.visible = f >= .86;
+      }
+      // The lamp: dark, amber while it latches, green once the feed is in.
+      limiter.led.color.set(s.power > .05 ? '#ffb15a' : f >= .86 ? '#7dffa6' : f >= .57 ? (Math.sin(t * 18) > 0 ? '#ffb15a' : '#2a3a33') : '#2a3a33');
       // The needle climbs with the load and stops short of the red: that's the limit holding.
       limiter.setGauge(s.fitted > .99 ? .1 + Math.min(s.power, 1) * .32 + Math.sin(t * 9) * .006 * s.power : .05);
       // Powered against the limit: eyes go red, the head turns toward Hiro, the body strains and settles.
@@ -101,7 +151,9 @@ export async function createBay() {
       // Body: rolls up onto his side toward Hiro as he tries to rise, held down at the limit.
       const rise = Math.min(ss(p, .15, .55), .6) * holdSag;
       model.rotation.z = baseRotZ + .07 * rise + Math.sin(t * 31) * .006 * (press + clunk) + Math.sin(t * 11) * .01 * shake;
-      model.position.y = baseY + .045 * rise + clunk * .02 + Math.sin(t * 17) * .005 * shake;
+      // The unit going home is felt through him: a short knock down into the apron, then it fades.
+      seatHit = Math.max(0, seatHit - dt * 4);
+      model.position.y = baseY + .045 * rise + clunk * .02 + Math.sin(t * 17) * .005 * shake - Math.sin(Math.PI * seatHit) * .012;
       shake = T.MathUtils.damp(shake, s.held ? test : Math.min(1, press + clunk), 6, dt);
       // Head lifts off the apron toward Hiro, pushing forward at the limit.
       if (head) (head as T.Object3D).rotation.set(headBase.x - .24 * rise - .05 * press, headBase.y + .42 * ss(p, .1, .5), headBase.z * (1 - p) + tremble * .4);
@@ -120,7 +172,8 @@ export async function createBay() {
       bay.update({ t, open: 0, seated: 1, red: .9, seamGlow: .15 + p * .35 });
     },
     dispose() {
-      limiter.dispose();
+      limiter.dispose(); feedMat.dispose(); plugMat.dispose();
+      if (feed) { feed.tube.geometry.dispose(); feed.plug.geometry.dispose(); }
       eyes.forEach(m => m.dispose()); bay.dispose(); district.dispose();
     },
   };

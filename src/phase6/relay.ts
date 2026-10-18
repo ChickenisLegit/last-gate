@@ -20,11 +20,12 @@ export function createRelay() {
   const k = new SceneKit('phase6-yard');
   const random = seeded(7117), rand = (a: number, b: number) => a + random() * (b - a);
   // Yard: hard standing outside the back wall, a fence line, crates and a road out.
+  const fence = k.standard('#2f3b40', .6, .55);
   k.box({ p: [0, -.2, -24], s: [30, .4, 34] }, k.concrete);
   k.box({ p: [0, .005, -24], s: [6, .02, 34] }, k.edge);
   for (const side of [-1, 1]) for (let z = -9; z > -40; z -= 3) {
     k.box({ p: [side * 12, 1.1, z], s: [.08, 2.2, .08] }, k.metal);
-    if (random() > .3) k.box({ p: [side * 12, 1.6, z - 1.5], s: [.03, 1.2, 3], r: [0, 0, side * rand(-.08, .08)] }, k.dim);
+    if (random() > .3) k.box({ p: [side * 12, 1.6, z - 1.5], s: [.03, 1.2, 3], r: [0, 0, side * rand(-.08, .08)] }, fence);
   }
   for (const [x, z, r] of [[-5.2, -9.6, .2], [-6.4, -10.8, -.3], [5.8, -11, .5], [4.4, -18, 0]]) k.box({ p: [x, .45, z], s: [1.1, .9, 1.1], r: [0, r, 0] }, random() > .5 ? k.ivory : k.metal);
   // He sat down against an old cable drum.

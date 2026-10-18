@@ -1,5 +1,6 @@
 import * as T from 'three';
 import gsap from 'gsap';
+import { mergeGeometries, mergeVertices } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { edgeWear, grain, grime, paint, scratches, seeded, wornPaint } from '../phase4/canvasTex';
 
 /**
@@ -182,6 +183,20 @@ export function createLimiterController(): LimiterController {
 
 // ─────────────────────────────────────────────────────────────── first-person hands
 
+export type HandSide = 'left' | 'right';
+/**
+ * Named hand shapes a scene can ask for with FirstPersonHands.pose():
+ * - hold: the left hand's grip on the remote (its default; solved against the remote's body).
+ * - relaxed: loose, half-curled; the right hand's default at rest.
+ * - open: flat and a little spread, reaching; the right hand's default at full reach.
+ * - point: index out, the rest curled; for a switch, a button, a touch on a panel.
+ * - pinch: thumb and index tips together; for a chip or a small part.
+ * - grip: a closed wrap round something about 3 cm thick (the cartridge, a handle, a rail).
+ * - press: flat palm, fingers together; pushing on a plate, a hatch, Baymax's chest.
+ * - hook: fingers bent hard at the middle joints; hauling on an edge or a strap.
+ */
+export type HandPose = 'hold' | 'relaxed' | 'open' | 'point' | 'pinch' | 'grip' | 'press' | 'hook';
+
 export type FirstPersonHands = {
   /** Parent it to the camera (the camera must be in the scene). Camera at Hiro's eye, -Z forward. */
   root: T.Object3D;
@@ -200,76 +215,207 @@ export type FirstPersonHands = {
    * timeline (pause or seek it for a still).
    */
   press(onClick: () => void, onDone: () => void, rate?: number): gsap.core.Timeline;
+  /**
+   * Shape a hand into a named pose; it blends there over about a fifth of a second. null hands it
+   * back to its default (left: holding the remote; right: relaxed, opening as it reaches).
+   */
+  pose(side: HandSide, name: HandPose | null): void;
+  /**
+   * The right hand reaches for a world point so its grip point (rightSocket) lands on it, blended in
+   * by k 0..1 over the usual reach. Clamped to arm's length. null lets go.
+   */
+  track(point: T.Vector3 | null, k?: number): void;
+  /** The grip point in the right hand; it follows the pose (between the pinch, inside the grip...). Parent a held object here. */
+  rightSocket: T.Object3D;
   dispose(): void;
 };
 
 /**
  * Left-thumb poses (base pitch, base yaw, bend), solved against the controller as it sits in the
- * hand: resting along the edge, tucked under the guard's lip, the flick, on the bat (off / on).
+ * hand: resting on the face beside the switch, tucked under the guard's lip, the flick, on the bat
+ * (off / on). Each puts the pad on its target and keeps the thumb out of the body; the blends press()
+ * runs between them do the same.
  */
-// Solved against the switch's real geometry for the grip below (tracker: the thumb went through
-// the face plate and missed the switch by ~2 cm): each pose puts the pad on its target, and the
-// blends press() runs between them keep every part of the thumb outside the controller.
+// Solved for GRIP below: pads land within ~3 mm of the lip and the bat, rest lies on the face by the chevrons.
 const THUMB = {
-  rest: { tx: -1.21, ty: .41, tb: 1.4 }, under: { tx: -1.7, ty: .42, tb: .65 }, lip: { tx: -1.62, ty: .43, tb: .67 },
-  flick: { tx: -1.61, ty: .29, tb: 0 }, tog: { tx: -1.68, ty: .4, tb: 0 }, togOn: { tx: -1.42, ty: .54, tb: .13 },
+  rest: { tx: -2.1, ty: .68, tb: .74 }, under: { tx: -1.94, ty: .94, tb: .44 }, lip: { tx: -1.94, ty: .94, tb: .42 },
+  flick: { tx: -1.61, ty: .88, tb: .2 }, tog: { tx: -1.77, ty: .89, tb: .28 }, togOn: { tx: -1.35, ty: 1.03, tb: .36 },
 };
 
+/**
+ * Where the left hand sits on the remote, in the remote's frame (face +Y, tip -Z): the palm under its
+ * back and rolled up onto the left edge, the fingers run diagonally along the back toward the tip,
+ * the wrist off the lower left so the forearm leaves the bottom-left corner of the frame. Solved so
+ * the palm just touches the body and the thumb can reach the guard's lip and the bat.
+ */
+const GRIP = { roll: .7, yaw: 1, at: [-.0584, -.0084, .03] as [number, number, number] };
+
+/** Per finger (index → little) the curl at each joint in radians, then spread, then the thumb (base pitch, base yaw, middle, tip). */
+type Shape = { f: [number, number, number][]; spread: number; thumb: [number, number, number, number]; at: [number, number, number] };
+const curled = (c: number[]): [number, number, number][] => c.map(x => [x * 1.15, x * 1.4, x]);
+/** In right-hand terms; the left mirrors the yaws. `at` is the grip point in the palm's frame. */
+const SHAPES: Record<Exclude<HandPose, 'hold'>, Shape> = {
+  relaxed: { f: curled([.55, .62, .7, .78]), spread: 0, thumb: [-.2, -.2, .3, .25], at: [0, -.035, -.07] },
+  open: { f: curled([.15, .2, .26, .33]), spread: 1, thumb: [-.1, -.4, .3, .25], at: [0, -.03, -.08] },
+  point: { f: [[.04, .06, .04], [1.15, 1.55, 1.0], [1.2, 1.6, 1.0], [1.25, 1.55, .95]], spread: .2, thumb: [.93, -1.24, .67, .59], at: [-.025, -.006, -.145] },
+  pinch: { f: [[.62, .72, .4], [.85, 1.05, .7], [1.0, 1.25, .8], [1.1, 1.35, .85]], spread: -.2, thumb: [-.12, -.91, .05, .04], at: [-.022, -.054, -.094] },
+  grip: { f: [[1.0, 1.25, .85], [1.05, 1.3, .9], [1.1, 1.35, .9], [1.15, 1.4, .9]], spread: -.3, thumb: [.84, -1.09, .84, .74], at: [-.004, -.027, -.071] },
+  press: { f: [[.02, .03, .02], [.0, .02, .02], [.02, .03, .02], [.05, .06, .04]], spread: .15, thumb: [-.3, -.3, .12, .08], at: [0, -.02, -.07] },
+  hook: { f: [[.25, 1.6, .9], [.25, 1.65, .9], [.28, 1.65, .9], [.3, 1.6, .85]], spread: -.2, thumb: [.36, -.64, 0, 0], at: [0, -.03, -.11] },
+};
+/** The left hand's hold on the remote, finger by finger: each joint closed until it meets the body (see GRIP). */
+const HOLD: [number, number, number][] = [[.19, .01, 1.29], [.45, 0, .87], [.61, 0, 0], [.8, 0, 0]];
+
 type Hand = { root: T.Group; fingers: T.Group[][]; thumb: T.Group[]; palm: T.Group };
+type Own = { g: <G extends T.BufferGeometry>(x: G) => G; skin: T.Material; skinDark: T.Material; nail: T.Material; sleeve: T.Material; cuff: T.Material };
+
+/**
+ * The palm: one smooth, slightly cupped slab instead of a cluster of balls, wider at the knuckles than
+ * at the heel, the back domed a little and thicker toward the wrist. Spans z -.002 (heel) to -.076
+ * (knuckles) in the hand's frame.
+ */
+function palmGeometry(g: Own['g']) {
+  const geo = new T.SphereGeometry(1, 32, 20), p = geo.attributes.position, v = new T.Vector3();
+  const sp = (x: number, e: number) => Math.sign(x) * Math.pow(Math.abs(x), e);
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const t = (v.z + 1) / 2; // 0 at the knuckles (-z), 1 at the heel
+    const hx = T.MathUtils.lerp(.0365, .03, t * t), hy = T.MathUtils.lerp(.0105, .0135, t), hz = .037;
+    let x = sp(v.x, .55) * hx, y = sp(v.y, .7) * hy;
+    const z = sp(v.z, .5) * hz - .039;
+    const across = 1 - Math.min(1, (x / hx) ** 2);
+    if (y > 0) y += .0035 * across * (1 - t * .5); // domed back
+    else y += .0022 * across * Math.sin(Math.PI * t); // cupped palm
+    // The little-finger edge drops a touch lower than the index edge, the way a hand rests.
+    y -= x * .06;
+    x *= 1 + .05 * Math.sin(Math.PI * t);
+    p.setXYZ(i, x, y, z);
+  }
+  geo.deleteAttribute('normal'); geo.deleteAttribute('uv');
+  const merged = mergeVertices(geo); geo.dispose(); merged.computeVertexNormals();
+  return g(merged);
+}
 
 /**
  * One hand in its own frame: wrist at the origin, fingers along -Z, palm facing -Y, back of the
  * hand +Y; the thumb on +X for a left hand, -X for a right. The hoodie sleeve runs back along +Z.
+ * Contract kept for the scenes that drive it directly (phase 6's haul): root.children[0] is the
+ * sleeve (a lathe authored .32 long on its local Y), [1] the cuff; palm, fingers[4][3], thumb[3].
  */
-function buildHand(side: -1 | 1, own: { g: <G extends T.BufferGeometry>(x: G) => G; skin: T.Material; skinDark: T.Material; nail: T.Material; sleeve: T.Material; cuff: T.Material }): Hand {
+function buildHand(side: -1 | 1, own: Own): Hand {
   const { g, skin, skinDark, nail, sleeve, cuff } = own;
   const root = new T.Group();
-  const sphere = g(new T.SphereGeometry(1, 20, 14));
+  const sphere = g(new T.SphereGeometry(1, 16, 12));
+  // A finger segment along -Z, capped at both ends, a touch flatter than it is wide.
   const seg = (len: number, r0: number, r1: number) => {
     const pts: T.Vector2[] = [];
-    for (let i = 0; i <= 4; i++) { const a = -Math.PI / 2 + i / 4 * Math.PI / 2; pts.push(new T.Vector2(Math.cos(a) * r1, -len + Math.sin(a) * r1)); }
-    for (let i = 0; i <= 4; i++) { const a = i / 4 * Math.PI / 2; pts.push(new T.Vector2(Math.max(.0001, Math.cos(a) * r0), Math.sin(a) * r0)); }
-    const geo = g(new T.LatheGeometry(pts, 12)); geo.rotateX(-Math.PI / 2); return geo; // along -Z
+    for (let i = 0; i <= 5; i++) { const a = -Math.PI / 2 + i / 5 * Math.PI / 2; pts.push(new T.Vector2(Math.max(.0001, Math.cos(a) * r1), -len + Math.sin(a) * r1)); }
+    for (let i = 1; i <= 5; i++) { const a = i / 5 * Math.PI / 2; pts.push(new T.Vector2(Math.max(.0001, Math.cos(a) * r0), Math.sin(a) * r0)); }
+    const geo = g(new T.LatheGeometry(pts, 14)); geo.rotateX(Math.PI / 2); geo.scale(1, .88, 1); return geo; // lathe +Y (base) → +Z, its -len tip → -Z
   };
-  // Sleeve and ribbed cuff behind the wrist.
-  const sl = new T.Mesh(g(new T.CylinderGeometry(.046, .052, .32, 18)), sleeve); sl.rotation.x = Math.PI / 2; sl.position.z = .2; root.add(sl);
-  const cf = new T.Mesh(g(new T.CylinderGeometry(.042, .045, .05, 18)), cuff); cf.rotation.x = Math.PI / 2; cf.position.z = .035; root.add(cf);
-  // Wrist and palm.
+  // Hoodie sleeve: soft fabric that bunches toward the cuff (a lathe with a few folds), over a
+  // ribbed cuff that sits snug on the wrist. Scaled on y by the haul to reach back to the shoulder,
+  // so the profile is authored along a unit-ish length (.32).
+  const sleeveProfile: T.Vector2[] = [];
+  for (let i = 0; i <= 20; i++) {
+    const v = i / 20, fold = Math.sin(v * Math.PI * 4.2) * .0028 * (1 - v) * (1 - v);
+    sleeveProfile.push(new T.Vector2(.044 + v * .01 + fold + Math.sin(v * Math.PI) * .004, (v - .5) * .32));
+  }
+  const slGeo = g(new T.LatheGeometry(sleeveProfile, 22)); slGeo.scale(1, 1, .86);
+  const sl = new T.Mesh(slGeo, sleeve); sl.rotation.x = Math.PI / 2; sl.position.z = .2; root.add(sl);
+  const cf = new T.Mesh(g(new T.CylinderGeometry(.037, .041, .045, 22)), cuff); cf.rotation.x = Math.PI / 2; cf.position.z = .036; cf.scale.set(1, 1, .86); root.add(cf);
+  // Rib lines round the cuff (children of the cuff, so they follow it when the haul resizes it).
+  // One merged mesh for the four ribs (one draw instead of four).
+  const ribs = [.018, .029, .04, .051].map(z => new T.TorusGeometry(.0385, .0017, 5, 22).rotateX(Math.PI / 2).translate(0, z - .036, 0));
+  cf.add(new T.Mesh(g(mergeGeometries(ribs)), cuff)); ribs.forEach(x => x.dispose());
+
   const palm = new T.Group(); root.add(palm);
-  const wrist = new T.Mesh(g(new T.CylinderGeometry(.026, .03, .05, 16)), skin); wrist.rotation.x = Math.PI / 2; wrist.position.z = .01; palm.add(wrist);
-  const p = new T.Mesh(sphere, skin); p.scale.set(.041, .016, .047); p.position.set(0, 0, -.042); palm.add(p);
-  // Thenar pad at the thumb's root, a little knuckle ridge.
-  const pad = new T.Mesh(sphere, skin); pad.scale.set(.018, .014, .026); pad.position.set(side * .026, -.004, -.026); palm.add(pad);
-  // Fingers: index, middle, ring, little; three segments each with a nail on the last.
+  // Wrist: narrower than the palm and oval, running into the cuff.
+  const wrist = new T.Mesh(g(new T.CylinderGeometry(.025, .027, .05, 18)), skin); wrist.rotation.x = Math.PI / 2; wrist.scale.set(1.2, 1, .74); wrist.position.z = .014; palm.add(wrist);
+  palm.add(new T.Mesh(palmGeometry(g), skin));
+  // Thenar pad at the thumb's root, on the palm side.
+  const pad = new T.Mesh(sphere, skin); pad.scale.set(.016, .013, .026); pad.position.set(side * .022, -.006, -.024); pad.rotation.y = side * .35; palm.add(pad);
+  // Fingers: index, middle, ring, little; three tapering segments each, a nail on the last.
   const fingers: T.Group[][] = [];
-  const specs: [number, number, number[]][] = [[.026, .0088, [.03, .021, .018]], [.009, .0092, [.033, .024, .019]], [-.009, .0087, [.031, .022, .018]], [-.026, .0076, [.024, .017, .015]]];
+  const specs: [number, number, number[]][] = [[.025, .0082, [.034, .023, .019]], [.0085, .0086, [.037, .026, .02]], [-.0085, .0081, [.035, .024, .019]], [-.024, .007, [.028, .019, .016]]];
   for (const [x0, r, lens] of specs) {
     const joints: T.Group[] = [];
-    let parent: T.Object3D = palm, z = -.078 + Math.abs(x0) * .5;
+    let parent: T.Object3D = palm, z = -.075 + Math.abs(x0) * .32;
     lens.forEach((len, i) => {
-      const j = new T.Group(); j.position.set(i === 0 ? side * x0 : 0, i === 0 ? .002 : 0, z); parent.add(j);
-      const rr = r * (1 - i * .09);
-      j.add(new T.Mesh(seg(len, rr, rr * .93), skin));
-      if (i === 0) { const k = new T.Mesh(sphere, skinDark); k.scale.setScalar(r * 1.02); k.position.y = r * .35; j.add(k); }
-      if (i === 2) { const n = new T.Mesh(sphere, nail); n.scale.set(rr * .75, rr * .3, rr * .9); n.position.set(0, rr * .72, -len * .62); j.add(n); }
+      const j = new T.Group(); j.position.set(i === 0 ? side * x0 : 0, i === 0 ? .001 : 0, z); parent.add(j);
+      const r0 = r * (1 - i * .09), r1 = r * (1 - (i + 1) * .09) * (i === 2 ? .92 : 1);
+      j.add(new T.Mesh(seg(len, r0, r1), skin));
+      // A soft knuckle on the back of each first joint (same skin, just a slightly warmer tone).
+      if (i === 0) { const k = new T.Mesh(sphere, skinDark); k.scale.set(r * .95, r * .62, r * .95); k.position.set(0, r * .38, .001); j.add(k); }
+      if (i === 2) { const n = new T.Mesh(sphere, nail); n.scale.set(r1 * .78, r1 * .26, len * .36); n.position.set(0, r1 * .74, -len * .6); j.add(n); }
       joints.push(j); parent = j; z = -len;
     });
     fingers.push(joints);
   }
-  // Thumb: from the heel of the palm, angled out and forward.
-  const thumbBase = new T.Group(); thumbBase.position.set(side * .034, -.006, -.016); thumbBase.rotation.set(0, side * -.7, side * .5); palm.add(thumbBase);
+  // Thumb: from the heel of the palm, angled out and forward; the first segment is the fleshy base.
+  const thumbBase = new T.Group(); thumbBase.position.set(side * .03, -.007, -.016); thumbBase.rotation.set(0, side * -.7, side * .5); palm.add(thumbBase);
   const thumb: T.Group[] = [];
-  { let parent: T.Object3D = thumbBase, z = 0; [.031, .025, .021].forEach((len, i) => { const j = new T.Group(); j.position.z = z; parent.add(j); j.add(new T.Mesh(seg(len, .0115 - i * .0008, .0105 - i * .0008), skin)); if (i === 2) { const n = new T.Mesh(sphere, nail); n.scale.set(.0072, .003, .009); n.position.set(0, .0075, -len * .6); j.add(n); } thumb.push(j); parent = j; z = -len; }); }
+  {
+    let parent: T.Object3D = thumbBase, z = 0;
+    ([[.04, .0122, .0108], [.029, .0104, .0095], [.023, .0093, .0078]] as const).forEach(([len, r0, r1], i) => {
+      const j = new T.Group(); j.position.z = z; parent.add(j);
+      j.add(new T.Mesh(seg(len, r0, r1), skin));
+      if (i === 2) { const n = new T.Mesh(sphere, nail); n.scale.set(.0066, .0024, .0085); n.position.set(0, .0071, -len * .58); j.add(n); }
+      thumb.push(j); parent = j; z = -len;
+    });
+  }
   return { root, fingers, thumb, palm };
+}
+
+/** The grip's transform in the remote's frame (see GRIP). */
+function gripTransform(obj: T.Object3D, gp = GRIP) {
+  const n = new T.Vector3(Math.sin(gp.roll), Math.cos(gp.roll), 0);
+  const f = new T.Vector3(Math.cos(gp.yaw), 0, -Math.sin(gp.yaw)); f.addScaledVector(n, -f.dot(n)).normalize();
+  const Y = n.clone().negate(), Z = f.clone().negate(), X = new T.Vector3().crossVectors(Y, Z);
+  obj.quaternion.setFromRotationMatrix(new T.Matrix4().makeBasis(X, Y, Z));
+  obj.position.fromArray(gp.at);
+}
+
+/** Set a hand's joints from a shape (yaws mirrored for the left hand). */
+function applyShape(h: Hand, side: -1 | 1, f: [number, number, number][], spread: number, th: [number, number, number, number]) {
+  h.fingers.forEach((j, i) => { j[0].rotation.set(-f[i][0], side * (i - 1.5) * spread * .1, 0); j[1].rotation.x = -f[i][1]; j[2].rotation.x = -f[i][2]; });
+  h.thumb[0].rotation.set(th[0], -side * th[1], 0); h.thumb[1].rotation.x = -th[2]; h.thumb[2].rotation.x = -th[3];
+}
+
+/** A shape being blended toward: its current values and where they are going. */
+type Blend = { f: [number, number, number][]; spread: number; thumb: [number, number, number, number]; at: T.Vector3 };
+const blendOf = (s: Shape): Blend => ({ f: s.f.map(x => [...x] as [number, number, number]), spread: s.spread, thumb: [...s.thumb], at: new T.Vector3().fromArray(s.at) });
+function damp(b: Blend, to: Shape, k: number) {
+  b.f.forEach((x, i) => { for (let j = 0; j < 3; j++) x[j] += (to.f[i][j] - x[j]) * k; });
+  b.spread += (to.spread - b.spread) * k;
+  for (let j = 0; j < 4; j++) b.thumb[j] += (to.thumb[j] - b.thumb[j]) * k;
+  b.at.x += (to.at[0] - b.at.x) * k; b.at.y += (to.at[1] - b.at.y) * k; b.at.z += (to.at[2] - b.at.z) * k;
+}
+/** The right hand's default: relaxed, opening as it reaches (q 0..1). */
+function reachShape(q: number, out: Shape) {
+  const c0 = [.55, .62, .7, .78], dc = [.4, .42, .44, .45];
+  for (let i = 0; i < 4; i++) { const c = c0[i] - q * dc[i]; out.f[i][0] = c * 1.15; out.f[i][1] = c * 1.4; out.f[i][2] = c; }
+  out.spread = q; out.thumb[0] = -.2 + q * .1; out.thumb[1] = -.2 - q * .2; out.thumb[2] = .3; out.thumb[3] = .25;
+  for (let j = 0; j < 3; j++) out.at[j] = T.MathUtils.lerp(SHAPES.relaxed.at[j], SHAPES.open.at[j], q);
+  return out;
 }
 
 export function createFirstPersonHands(controller: LimiterController = createLimiterController()): FirstPersonHands {
   const geos: T.BufferGeometry[] = [], mats: T.Material[] = [];
   const g = <G extends T.BufferGeometry>(x: G) => { geos.push(x); return x; };
   const std = (o: T.MeshStandardMaterialParameters) => { const m = new T.MeshStandardMaterial(o); mats.push(m); return m; };
-  const own = {
-    g, skin: std({ color: '#e3b28e', roughness: .6 }), skinDark: std({ color: '#d6a07c', roughness: .65 }), nail: std({ color: '#efcdb6', roughness: .35 }),
-    sleeve: std({ color: '#56677d', roughness: .93 }), cuff: std({ color: '#4b5b70', roughness: .97 }),
+  const phys = (o: T.MeshPhysicalMaterialParameters) => { const m = new T.MeshPhysicalMaterial(o); mats.push(m); return m; };
+  const knit = paint(128, 128, (x, w, h) => { const r = seeded(77); x.fillStyle = '#808080'; x.fillRect(0, 0, w, h); for (let y = 0; y < h; y += 4) { x.fillStyle = y % 8 ? '#8c8c8c' : '#747474'; x.fillRect(0, y, w, 2); } grain(x, w, h, r, 2500, .25); }, false);
+  knit.wrapS = knit.wrapT = T.RepeatWrapping; knit.repeat.set(6, 3);
+  const own: Own = {
+    g,
+    // Skin: a warm, slightly muted tan with a soft sheen, so the form reads under any set's light
+    // without going orange or plastic under the filmic tone map.
+    skin: phys({ color: '#c99b7f', roughness: .58, sheen: .35, sheenRoughness: .55, sheenColor: new T.Color('#f0b8a0') }),
+    skinDark: phys({ color: '#c08f74', roughness: .62, sheen: .3, sheenRoughness: .55, sheenColor: new T.Color('#eaa894') }),
+    nail: std({ color: '#e3c3b2', roughness: .3 }),
+    // Hoodie fabric: a knit bump so it reads as cloth, not a painted tube.
+    sleeve: std({ color: '#4d5d72', roughness: .95, bumpMap: knit, bumpScale: 1.4 }), cuff: std({ color: '#404e60', roughness: .98, bumpMap: knit, bumpScale: 2 }),
   };
   const root = new T.Group(); root.name = 'first-person-hands';
   // A soft key so the hands read whatever the set's lighting (it only reaches a metre).
@@ -278,57 +424,96 @@ export function createFirstPersonHands(controller: LimiterController = createLim
   const left = buildHand(1, own), right = buildHand(-1, own);
   // Each hand hangs from a mount that does the big moves (raise, reach, sway).
   const leftMount = new T.Group(), rightMount = new T.Group(); root.add(leftMount, rightMount);
-  // Left: the controller sits in the mount, face tilted up toward the eye; the hand holds it the
-  // way a thick remote is held: palm cradling the left edge, fingers curled under it, thumb on the
-  // face beside the switch. (The old pose sank the palm and fingertips through the body; this one
-  // was solved against the controller's volumes so nothing passes inside it.)
+  // Left: the controller sits in the mount, face tilted up toward the eye, held the way a thick
+  // remote is held: across the palm, fingers round its far edge, thumb free on the face (GRIP).
   const held = new T.Group(); leftMount.add(held);
   held.add(controller.root); controller.root.position.set(0, 0, 0); controller.root.rotation.set(0, 0, 0);
   held.add(left.root);
-  left.root.position.set(-.0515, -.0055, .0685); left.root.rotation.set(-.292, .465, 1.712, 'YXZ');
+  gripTransform(left.root);
   rightMount.add(right.root);
   // Right: palm down, a little turned in; it opens as it reaches.
   right.root.rotation.set(-.2, -.25, -.15);
+  const rightSocket = new T.Group(); rightSocket.name = 'right-hand-socket'; right.palm.add(rightSocket);
   root.traverse(o => { o.frustumCulled = false; if (o instanceof T.Mesh) o.renderOrder = 2; });
 
   // Animated values; press() tweens these.
   const s = { ...THUMB.rest, tilt: 0, nudge: 0 };
-  const sm = { walk: 0, raise: 0, reach: 0 };
-  const hold = { curl: [1, 1.05, .91, .86] };
+  const sm = { walk: 0, raise: 0, reach: 0, track: 0 };
+  const want: Record<HandSide, HandPose | null> = { left: null, right: null };
+  const tmpShape: Shape = { f: [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]], spread: 0, thumb: [0, 0, 0, 0], at: [0, 0, 0] };
+  // The left hand's hold, its thumb rewritten each frame from s (which press() drives).
+  const holdShape: Shape = { f: HOLD, spread: -.15, thumb: [THUMB.rest.tx, -THUMB.rest.ty, THUMB.rest.tb * .8, THUMB.rest.tb * .7], at: [0, 0, 0] };
+  const rightBlend = blendOf(reachShape(0, tmpShape));
+  const leftBlend = blendOf(holdShape);
+  const tracked = { on: false, point: new T.Vector3(), k: 1 };
+  // Weight: the hands trail the head a little when it turns and settle back with a small overshoot.
+  const lag = { x: 0, y: 0, vx: 0, vy: 0 }, prevQ = new T.Quaternion(), curQ = new T.Quaternion(), dq = new T.Quaternion();
+  let hasPrev = false;
   let timeline: gsap.core.Timeline | null = null;
-
-  const curl = (h: Hand, amount: number[], spread = 0) => h.fingers.forEach((f, i) => {
-    const c = amount[i] ?? amount[0];
-    f[0].rotation.set(-c * 1.15, (i - 1.5) * spread * .08, 0); f[1].rotation.x = -c * 1.4; f[2].rotation.x = -c * 1.0;
-  });
+  const v = new T.Vector3(), d = new T.Vector3(), off = new T.Vector3(), shoulder = new T.Vector3(.2, -.32, .05), inv = new T.Matrix4();
 
   const hands: FirstPersonHands = {
-    root, controller,
+    root, controller, rightSocket,
     update(t, dt, inp) {
       const k = 1 - Math.exp(-dt * 10);
       sm.walk += (inp.walk - sm.walk) * k; sm.raise += (inp.raise - sm.raise) * (1 - Math.exp(-dt * 6)); sm.reach += (inp.reach - sm.reach) * (1 - Math.exp(-dt * 7));
+      sm.track += ((tracked.on ? tracked.k : 0) - sm.track) * (1 - Math.exp(-dt * 8));
       const w = sm.walk, ph = inp.gait;
+      // Head-turn lag: angular speed of the rig → a spring the mounts ride on. A cut resets it.
+      root.getWorldQuaternion(curQ);
+      if (hasPrev && dt > 0) {
+        dq.copy(prevQ).invert().multiply(curQ);
+        const ang = 2 * Math.acos(Math.min(1, Math.abs(dq.w)));
+        if (ang > .35) { lag.x = lag.y = lag.vx = lag.vy = 0; } else {
+          const sgn = dq.w < 0 ? -1 : 1, sn = Math.sqrt(Math.max(1e-9, 1 - dq.w * dq.w));
+          const yawRate = sgn * dq.y / sn * ang / dt, pitchRate = sgn * dq.x / sn * ang / dt;
+          const tx = T.MathUtils.clamp(yawRate * .01, -.025, .025), ty = T.MathUtils.clamp(-pitchRate * .01, -.02, .02);
+          // A stiff, slightly under-damped spring: trails, then settles with a little give.
+          const kS = 140, kD = 16, h = Math.min(dt, 1 / 30);
+          lag.vx += ((tx - lag.x) * kS - lag.vx * kD) * h; lag.x += lag.vx * h;
+          lag.vy += ((ty - lag.y) * kS - lag.vy * kD) * h; lag.y += lag.vy * h;
+        }
+      }
+      prevQ.copy(curQ); hasPrev = true;
       const breathe = Math.sin(t * 1.6) * .004 * (1 - w);
       // Walk: a dip on each footfall, a sway side to side, and a pump with the run.
       const bob = -Math.abs(Math.cos(ph)) * .016 * w, sway = Math.sin(ph) * .014 * w, pump = Math.sin(ph) * .05 * w * w;
-      // Left hand + controller: lowered out of shot ↔ raised in front, a little left of centre.
+      // Left hand + controller: lowered out of shot ↔ raised in front, a little left of centre. The
+      // remote's weight shows as a slight lag behind the right hand.
       const r = sm.raise;
-      leftMount.position.set(T.MathUtils.lerp(-.2, -.085, r) + sway, T.MathUtils.lerp(-.5, -.105, r) + bob + breathe, T.MathUtils.lerp(-.25, -.36, r) + pump);
-      leftMount.rotation.set(T.MathUtils.lerp(-.9, .8, r) + s.tilt + Math.sin(ph) * .05 * w, T.MathUtils.lerp(.4, .15, r), .12 + Math.sin(ph) * .06 * w + s.nudge);
-      // Right hand: out of shot ↔ forward and down, open.
+      leftMount.position.set(T.MathUtils.lerp(-.2, -.085, r) + sway + lag.x, T.MathUtils.lerp(-.5, -.105, r) + bob + breathe + lag.y, T.MathUtils.lerp(-.25, -.36, r) + pump);
+      leftMount.rotation.set(T.MathUtils.lerp(-.9, .8, r) + s.tilt + Math.sin(ph) * .05 * w - lag.y * 2, T.MathUtils.lerp(.4, .15, r) + lag.x * 2, .12 + Math.sin(ph) * .06 * w + s.nudge);
+      // Right hand: out of shot ↔ forward and down, open. Reaching, the forearm comes in from the lower
+      // right like a real arm, so the sleeve runs off the bottom corner of the frame.
       const q = sm.reach;
-      // Reaching, the forearm comes in from the lower right like a real arm, so the sleeve runs off the
-      // bottom corner of the frame instead of pointing back into the lens (tracker R-06).
-      rightMount.position.set(T.MathUtils.lerp(.24, .14, q) - sway * .8, T.MathUtils.lerp(-.5, -.19, q) + bob + breathe, T.MathUtils.lerp(-.22, -.46, q) - pump);
+      rightMount.position.set(T.MathUtils.lerp(.24, .14, q) - sway * .8 + lag.x * .8, T.MathUtils.lerp(-.5, -.19, q) + bob + breathe + lag.y * .8, T.MathUtils.lerp(-.22, -.46, q) - pump);
       rightMount.rotation.set(T.MathUtils.lerp(-.8, .4, q) - Math.sin(ph) * .05 * w, T.MathUtils.lerp(-.3, .55, q), T.MathUtils.lerp(0, .35, q) - Math.sin(ph) * .06 * w);
-      rightMount.visible = q > .01 || w > .3; leftMount.visible = r > .01 || w > .3;
-      // Fingers: left wrapped round the controller; right relaxed, opening as it reaches.
-      curl(left, hold.curl);
-      curl(right, [.55 - q * .4, .62 - q * .42, .7 - q * .44, .78 - q * .45], q);
-      right.thumb[0].rotation.set(-.2 + q * .1, -.2 - q * .2, 0); right.thumb[1].rotation.x = -.3; right.thumb[2].rotation.x = -.25;
-      // Left thumb: resting along the controller's edge, or working the switch.
-      left.thumb[0].rotation.set(s.tx, s.ty, 0);
-      left.thumb[1].rotation.x = -s.tb * .8; left.thumb[2].rotation.x = -s.tb * .7;
+      // Fingers ease toward the asked-for pose, or the defaults.
+      const kp = 1 - Math.exp(-dt * 14);
+      damp(rightBlend, want.right ? (want.right === 'hold' ? SHAPES.grip : SHAPES[want.right]) : reachShape(q, tmpShape), kp);
+      applyShape(right, -1, rightBlend.f, rightBlend.spread, rightBlend.thumb);
+      rightSocket.position.copy(rightBlend.at);
+      // Tracking: move the mount so the socket lands on the point (clamped to arm's length).
+      if (sm.track > .001) {
+        root.updateMatrixWorld(true);
+        inv.copy(root.matrixWorld).invert();
+        v.copy(tracked.point).applyMatrix4(inv);
+        d.subVectors(v, shoulder); const len = d.length();
+        if (len > .62) v.copy(shoulder).addScaledVector(d, .62 / len);
+        // Socket's offset in the mount's frame, with the mount's current rotation.
+        rightSocket.updateWorldMatrix(true, false);
+        rightSocket.getWorldPosition(off).applyMatrix4(inv).sub(rightMount.position);
+        rightMount.position.lerp(v.sub(off), sm.track);
+      }
+      rightMount.visible = q > .01 || w > .3 || sm.track > .01 || want.right !== null; leftMount.visible = r > .01 || w > .3;
+      // Left: holding the remote (the thumb from s, which press() drives), or a named pose.
+      if (want.left && want.left !== 'hold') damp(leftBlend, SHAPES[want.left], kp);
+      else {
+        // The thumb follows press() exactly (no lag on a timed beat); the fingers settle back in.
+        const th = holdShape.thumb; th[0] = s.tx; th[1] = -s.ty; th[2] = s.tb * .8; th[3] = s.tb * .7;
+        damp(leftBlend, holdShape, kp); for (let j = 0; j < 4; j++) leftBlend.thumb[j] = th[j];
+      }
+      applyShape(left, 1, leftBlend.f, leftBlend.spread, leftBlend.thumb);
       controller.update(t);
     },
     press(onClick, onDone, rate = 1) {
@@ -350,7 +535,7 @@ export function createFirstPersonHands(controller: LimiterController = createLim
           .to(s, to('rest', .4, 'power2.inOut', { tilt: 0, nudge: 0 }), '<.12');
       } else {
         // Thumb hooks the bat back, rises over the open cover and presses it shut from on top (never
-        // under its lip, where the closing cover would land on it), then goes back to the edge.
+        // under its lip, where the closing cover would land on it), then goes back to the face.
         tl.to(s, to('togOn', .28, 'power2.out', { tilt: .05 }))
           .to(s, to('tog', .09, 'power3.in', { tilt: .08 }))
           .to(c, { toggle: 0, duration: .07, ease: 'back.out(3)' }, '<.02')
@@ -364,8 +549,10 @@ export function createFirstPersonHands(controller: LimiterController = createLim
       tl.timeScale(rate);
       return tl;
     },
-    dispose() { timeline?.kill(); controller.dispose(); geos.forEach(x => x.dispose()); mats.forEach(m => m.dispose()); root.removeFromParent(); },
+    pose(side, name) { want[side] = name; },
+    track(point, k = 1) { tracked.on = !!point; if (point) tracked.point.copy(point); tracked.k = T.MathUtils.clamp(k, 0, 1); },
+    dispose() { timeline?.kill(); controller.dispose(); geos.forEach(x => x.dispose()); mats.forEach(m => m.dispose()); knit.dispose(); root.removeFromParent(); },
   };
-  (hands as unknown as { debug: unknown }).debug = { left, right, held, leftMount, rightMount, s, hold };
+  (hands as unknown as { debug: unknown }).debug = { left, right, held, leftMount, rightMount, s, hold: HOLD, thumbPoses: THUMB, grip: GRIP, shapes: SHAPES, gripTransform, applyShape };
   return hands;
 }

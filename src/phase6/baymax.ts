@@ -1,6 +1,6 @@
 import * as T from 'three';
 import { createArmouredBaymax, mountArmour, seatOn } from '../characters/ArmouredBaymax';
-import { createLimiter } from '../phase4/limiter';
+import { createLimiter, LIMITER_FEED } from '../phase4/limiter';
 import { assets } from '../systems/AssetManager';
 import { mountChestBay } from '../characters/ChestBay';
 
@@ -48,6 +48,13 @@ float a=core*pow(1.-along,1.4)*uPower*flick;
 vec3 c=mix(vec3(1.,.36,.12),vec3(1.,.93,.78),pow(1.-along,3.));
 gl_FragColor=vec4(c*a*1.6,a);}`;
 
+/**
+ * His size in Phase 6. Armoured and standing, the model is about 4.4 m at scale 1 (measured from the
+ * skinned vertices, helmet to boots), which made him tower over Hiro (1.65 m) and pushed his legs out of
+ * frame in every close shot. At this scale he stands about 3.5 m, with his whole body readable at medium distance.
+ */
+export const BAYMAX_SCALE = .79;
+
 export async function createBaymax() {
   const model = await assets.cloneBaymax();
   const meshes: T.Mesh[] = []; model.traverse(n => { if (n instanceof T.Mesh) meshes.push(n); });
@@ -84,10 +91,46 @@ export async function createBaymax() {
   mountArmour(armoured, model, { y: .55, z: .28 }, 2.42);
   // The limiter Hiro fitted in Phase 5 stays on his chest plate (tracker N-04); Hiro's remote drives its lamp.
   // Smaller and centred on the plate, so it lies inside his outline from every angle, even lying on his back (tracker R-08).
-  const limiter = createLimiter(); limiter.scale.setScalar(.46 / armoured.root.scale.x); armoured.root.add(limiter);
+  const limiter = createLimiter(); limiter.scale.setScalar(.52 / armoured.root.scale.x); armoured.root.add(limiter);
   armoured.drive({}); armoured.mountOnChest(limiter, -.3, .24);
+  // Fitted, not stuck on: the loose trailing leads go, and one heavy feed runs from the unit's main
+  // gland into the rim of his chest bay, so it reads as wired into his power system. Built once the
+  // bay is seated (both ends ride the chest bone, so it holds in any pose).
+  limiter.cables.visible = false;
+  const feedMat = new T.MeshStandardMaterial({ color: '#15171a', roughness: .62, metalness: .15 });
+  const collarMat = new T.MeshStandardMaterial({ color: '#c9762e', roughness: .45, metalness: .4 });
+  let feed: T.Group | null = null;
+  const buildFeed = () => {
+    const bone = limiter.parent!; bone.updateWorldMatrix(true, true);
+    const n = new T.Vector3(0, 1, 0).transformDirection(limiter.matrixWorld);
+    const along = new T.Vector3(1, 0, 0).transformDirection(limiter.matrixWorld);
+    const a = limiter.localToWorld(LIMITER_FEED.clone()), c = dock.getWorldPosition(new T.Vector3());
+    const rim = bay.root.getWorldScale(new T.Vector3()).x * .235;
+    const to = a.clone().sub(c); to.addScaledVector(n, -to.dot(n)).normalize();
+    const b = c.clone().addScaledVector(to, rim * .98).addScaledVector(n, .006);
+    const lift = Math.max(.03, a.distanceTo(b) * .22);
+    const pts = [a, a.clone().addScaledVector(along, .03).addScaledVector(n, lift * .5), a.clone().lerp(b, .5).addScaledVector(n, lift), b.clone().addScaledVector(n, lift * .4), b]
+      .map(p => bone.worldToLocal(p.clone()));
+    const s = bone.getWorldScale(new T.Vector3()).x;
+    const g = new T.Group(); g.name = 'regulator-feed';
+    g.add(new T.Mesh(new T.TubeGeometry(new T.CatmullRomCurve3(pts), 24, .0095 / s, 8), feedMat));
+    // A plug collar where it goes into the bay.
+    const plug = new T.Mesh(new T.CylinderGeometry(.015 / s, .013 / s, .03 / s, 12), collarMat);
+    plug.position.copy(pts[4]); plug.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), pts[4].clone().sub(pts[3]).normalize()); g.add(plug);
+    bone.add(g); feed = g;
+  };
   // Phase 6 opens armoured: start fully on, so the warm-up draw compiles the opaque plates it will really use (tracker R-05).
   armoured.set(1);
+  // Phase 6 finish: the suit's clear coat made the plates read as glossy toy plastic under the street
+  // lights. Painted, worn armour instead: a thin, rougher coat and a little more grain in the paint.
+  // (These materials belong to this suit instance, so earlier phases keep their own.)
+  armoured.root.traverse(o => {
+    if (!(o instanceof T.Mesh)) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) if (m instanceof T.MeshPhysicalMaterial && !m.transparent) {
+      m.clearcoat = Math.min(m.clearcoat, .1); m.clearcoatRoughness = .55;
+      m.roughness = Math.max(m.roughness, m.metalness > .7 ? .36 : .5);
+    }
+  });
   // While armoured the chest bay sits in the suit's chest plating (tracker N-03); it goes back on the white chest at the boot.
   let unseatBay: (() => void) | null = null;
   const under = (o: T.Object3D, roots: T.Object3D[]) => { for (let q: T.Object3D | null = o; q; q = q.parent) if (roots.includes(q)) return true; return false; };
@@ -120,14 +163,17 @@ export async function createBaymax() {
   const lowest = () => { model.updateMatrixWorld(true); return new T.Box3().setFromObject(model).min.y; };
   setLegs(0); const standDrop = -lowest();
   model.updateMatrixWorld(true);
-  const headHeight = (headNode ? headNode.getWorldPosition(new T.Vector3()).y : 3) + standDrop;
+  const headHeight = ((headNode ? headNode.getWorldPosition(new T.Vector3()).y : 3) + standDrop) * BAYMAX_SCALE;
   setLegs(1);
+  root.scale.setScalar(BAYMAX_SCALE);
 
   const pose = restPose();
   // Smoothed copies of the pose (springs) and the rig's own memory.
-  const cur: Record<string, number> = { guard: 0, punch: 0, lean: 0, hold: 0, dangle: 0, stride: 0, h0: 0, h1: 0, h2: 0, yaw: 0, squash: 0, pitch: 0, bank: 0, flail: 0, flop: 0, wob: 0 };
+  const cur: Record<string, number> = { guard: 0, punch: 0, lean: 0, hold: 0, dangle: 0, stride: 0, h0: 0, h1: 0, h2: 0, yaw: 0, squash: 0, pitch: 0, bank: 0, flail: 0, flop: 0, wob: 0, land: 0, choke: 0, lunge: 0 };
   const vel: Record<string, number> = Object.fromEntries(Object.keys(cur).map(k => [k, 0]));
   let last = -1, lastDt = 1 / 60, first = true, shuffle = 0, lastStep = 0, stoodUp = false, braced = false, prevVy = 0;
+  // Regulator reactions: the switch-on edge, and the jets coughing out under the limit.
+  let prevLimiter = -1, prevThrust = 0, coughAt = -9;
   // His own motion, measured from where the director put him: flight posture and falls read it.
   const prevPos = new T.Vector3(), rawV = new T.Vector3(), velS = new T.Vector3(), accS = new T.Vector3(), rawA = new T.Vector3(), wp = new T.Vector3();
   const spring = (key: string, target: number, k: number, zeta: number, snap: boolean) => {
@@ -165,10 +211,26 @@ export async function createBaymax() {
     boot: (side: 'L' | 'R') => boots[side],
     /** His current (smoothed) facing. */
     facing: () => cur.yaw,
+    /**
+     * Motion beats a director can fire on top of the pose (each is an impulse that plays out and
+     * settles by itself; strength about 0..1.5):
+     * jolt: the regulator biting (body snaps back, arms drop, eyes stutter, the gauge slams into the red).
+     * Fired automatically when limiterOn switches on and when the jets cough out under the limit.
+     * impact: a heavy touchdown (knees take it, he sinks and rises). Fired automatically when his root
+     * stops falling faster than about 2 m/s; call it for landings the director places without a fall.
+     * lunge: a committed surge forward (torso pitches in, both arms drive forward).
+     */
+    jolt: (k = 1) => { vel.choke += 10 * k; kick(.5 * k); },
+    impact: (k = 1) => { vel.land += 9 * k; kick(.8 * k); },
+    lunge: (k = 1) => { vel.lunge += 8 * k; },
     update(t: number) {
       armoured.set(pose.armour);
       limiter.visible = pose.armour > .5;
-      limiter.led.color.set(pose.limiterOn > .5 ? '#ffb15a' : '#2a3a33'); limiter.setGauge(pose.limiterOn > .5 ? .35 + Math.sin(t * 9) * .006 : .05);
+      // The regulator reads his load: the needle rides just under its limit while he pushes against it,
+      // and when it bites (cur.choke, last frame's) it slams into the red and the lamp flares white.
+      const bite = Math.max(0, cur.choke);
+      limiter.led.color.set(bite > .25 ? '#fff1c4' : pose.limiterOn > .5 ? '#ffb15a' : '#2a3a33');
+      limiter.setGauge(pose.limiterOn > .5 ? .33 + Math.min(.06, pose.thrust * .05 + pose.stride * .03) + Math.min(.5, bite * .7) + Math.sin(t * 9) * .006 + Math.sin(t * 61) * .01 * bite : .05);
       const covered = armoured.covers(pose.armour); whiteParts.forEach(m => { m.visible = !covered; });
       const p = pose;
       const gap = last < 0 ? 1 : t - last; last = t;
@@ -206,8 +268,18 @@ export async function createBaymax() {
       const dropping = T.MathUtils.clamp((-rawV.y - 2) / 4, 0, 1) * (1 - Math.min(1, p.thrust * 2));
       spring('flail', dropping, 8, .6, snap);
       if (!snap && prevVy < -4 && rawV.y > -1.2) { kick(1.6); vel.flop += 7; vel.wob += 2.6 * (Math.sin(t * 13) > 0 ? 1 : -1); }
+      // Any real touchdown (a burst ending, a drop onto his feet): the knees take it and he sinks, then rises.
+      if (!snap && prevVy < -2.2 && rawV.y > -.8 && p.lie < .5) vel.land += T.MathUtils.clamp((-prevVy - 1.5) / 5, .25, 1) * 9;
+      // The regulator biting: switched on under him, or the jets coughing out mid-flight.
+      if (!snap && prevLimiter >= 0 && prevLimiter <= .5 && p.limiterOn > .5) vel.choke += 10;
+      if (!snap && p.sputter > 0 && prevThrust > .45 && p.thrust < .3 && t - coughAt > .5) { coughAt = t; vel.choke += 4.5; kick(.4); }
+      prevLimiter = p.limiterOn; prevThrust = p.thrust;
       prevVy = snap ? 0 : rawV.y;
       spring('flop', 0, 6, .3, false); spring('wob', 0, 4, .32, false);
+      spring('land', 0, 5, .55, false); spring('choke', 0, 6, .42, false); spring('lunge', 0, 4.5, .6, false);
+      const landK = Math.max(0, cur.land), choke = Math.max(0, cur.choke), lungeK = cur.lunge;
+      // Hovering on the jets: never frozen. A slow bob on two rhythms, the legs drifting under him.
+      const hover = cur.dangle * Math.min(1, p.thrust * 1.6) * (1 - p.lie);
       // How quickly he answers: snappy when fighting, syrupy when the limit is on.
       const rate = T.MathUtils.lerp(1, 1.8, tense) * T.MathUtils.lerp(1, .38, slug);
 
@@ -228,11 +300,16 @@ export async function createBaymax() {
         if (g > .86 && !stoodUp) { stoodUp = true; kick(.9); vel.wob += 1.8; }
         if (g < .5) { stoodUp = false; braced = false; }
       }
+      // Upright in the suit, a `sit` is a crouch: knees bend and the hips sink over the feet (the
+      // landing, the wind-up before a burst), not the authored seat that swings the legs out in front.
+      let crouch = 0;
+      if (p.getUp <= 0 && p.armour > .5 && lie < .5) { crouch = sit; sit = 0; }
+      crouch = Math.min(1, crouch + landK * .55);
 
       // ── Springs: what the director asks for, with weight. Arms overshoot a little.
       spring('guard', p.guard, 9 * rate, .75, snap);
       spring('punch', p.punch, (p.punch > cur.punch ? 11 : 6) * rate, .62, snap);
-      spring('lean', lean + tense * .07 + slug * .06, 6 * rate, .8, snap);
+      spring('lean', lean + tense * .07 + slug * .06 + crouch * .38, 6 * rate, .8, snap);
       spring('hold', p.hold, 5 * rate, .85, snap);
       spring('dangle', p.dangle, 4.5, .7, snap);
       spring('stride', p.stride, 5 * rate, 1, snap);
@@ -256,13 +333,14 @@ export async function createBaymax() {
       const heavy = 1 + slug * .7;
 
       // Suit knees: soft at rest, folding through the swing (the leg moving forward), hanging when airborne.
-      const knee = (s: number) => (1 - sit) * (1 - lie) * (.1 + stride * .85 * Math.max(0, -s * Math.cos(gait)) + cur.dangle * .35);
+      const knee = (s: number) => (1 - sit) * (1 - lie) * (.1 + stride * .85 * Math.max(0, -s * Math.cos(gait)) + cur.dangle * .35 + crouch * 1.45 + hover * (.12 + .06 * Math.sin(t * 1.3 + s)));
       // Legs: sitting ↔ standing, the stride, the dangle when airborne; kept vertical under a lean.
       const legLean = cur.lean * (1 - sit) * (1 - lie) * .85;
       hips.forEach((h, i) => {
         const s = i === 0 ? 1 : -1;
         h.rotation.x = (1 - sit) * (1.42 + s * swing * .45 - cur.dangle * .18) - legLean - tuck * .6 * sit
-          + sweep * .35 + cur.flail * Math.sin(t * 8 + i * Math.PI) * .32 + cur.flop * .12;
+          + sweep * .35 + cur.flail * Math.sin(t * 8 + i * Math.PI) * .32 + cur.flop * .12
+          - crouch * (1 - lie) * .95 + hover * (Math.sin(t * 1.3 + i * 1.9) * .06 - .08) + choke * .18;
         // Heavy steps swing out round the hip a little (more under the limit).
         h.rotation.z = -s * cur.dangle * .06 - s * brace * .05 - s * Math.max(0, s * Math.cos(gait)) * stride * .05 * heavy;
       });
@@ -277,16 +355,17 @@ export async function createBaymax() {
         const fwd = guard * (.55 + tense * .1) + (right ? cur.punch * 1.05 : -cur.punch * .25) + (!right ? cur.hold * .5 : 0)
           + Math.sin(gait - .5 + (right ? 0 : Math.PI)) * stride * .24 * heavy - sag * (1 - guard) + tremor
           + cur.flail * (.9 + .4 * Math.sin(t * 9 + i * 2))
-          - push * .9 + brace * .25 + p.overhead * 2.7;
+          - push * .9 + brace * .25 + p.overhead * 2.7
+          - choke * .75 + lungeK * (right ? .5 : .3) + crouch * .3 * (1 - guard);
         // Lying, the arms rest back along the ground.
         sh.rotation.x = -fwd + lie * (1 - cur.hold) * .35 + sweep * .6 + cur.flop * .28;
-        sh.rotation.z = s * (sweep * .12 + cur.flail * (.35 + .3 * Math.sin(t * 7 + i)) + guard * .2 + cur.dangle * .32 + (!right ? cur.hold * .55 : 0) + push * .2 + brace * .32 - sag * .05 + tense * .04);
+        sh.rotation.z = s * (sweep * .12 + cur.flail * (.35 + .3 * Math.sin(t * 7 + i)) + guard * .2 + cur.dangle * .32 + (!right ? cur.hold * .55 : 0) + push * .2 + brace * .32 - sag * .05 + tense * .04 + choke * .32 + hover * (.08 + .05 * Math.sin(t * 1.1 + i)));
         sh.rotation.y = -s * guard * .2;
       });
 
       // Body: lean, the weight shift and roll over the stance foot, the jiggle.
       const shift = Math.sin(gait) * stride * .075 * heavy;
-      body.rotation.set(cur.lean * (1 - lie) - lie * Math.PI / 2 + cur.pitch + Math.abs(Math.sin(gait)) * stride * .03 * heavy, 0,
+      body.rotation.set(cur.lean * (1 - lie) - lie * Math.PI / 2 + cur.pitch + Math.abs(Math.sin(gait)) * stride * .03 * heavy + (lungeK * .3 - choke * .22) * (1 - lie), 0,
         (Math.sin(gait) * stride * .07 * heavy + Math.sin(shuffle) * shuffleAmp * .04 + cur.wob * .09) * (1 - lie) + cur.bank);
       body.position.set(shift * (1 - lie), 0, lie * .9);
       // Combat: a coiled, ready bounce, sunk a little lower. Sluggish: a periodic hitch.
@@ -314,17 +393,21 @@ export async function createBaymax() {
         });
       }
       if (pose.armour > .5 && !unseatBay) unseatBay = armoured.seatOnPlate(bay.root, .2, .2, .235, 1.2);
+      if (unseatBay && !feed) buildFeed();
+      if (feed) feed.visible = limiter.visible;
       else if (pose.armour <= .5 && unseatBay) { unseatBay(); unseatBay = null; }
       let low = Infinity;
       if (pose.armour > .5) { for (const m of whiteTorso) { box.copy(m.geometry.boundingBox!).applyMatrix4(m.matrixWorld); low = Math.min(low, box.min.y); } low = Math.min(low, armoured.footLow()); }
       else for (const m of shell) { box.copy(m.geometry.boundingBox!).applyMatrix4(m.matrixWorld); low = Math.min(low, box.min.y); }
       const parentY = root.parent ? root.parent.matrixWorld.elements[13] : 0;
-      body.position.y = root.position.y + parentY - low + bounce + hitch;
+      // low is in world units; the body moves in the scaled root's units.
+      body.position.y = (root.position.y + parentY - low) / root.scale.y + bounce + hitch
+        + (hover * (Math.sin(t * 2.4) * .07 + Math.sin(t * 1.05 + 1) * .05) - choke * .06 * (1 - lie)) / root.scale.y;
       if (headNode) {
         const lead = T.MathUtils.clamp(yawErr * .55, -.5, .5);
-        headNode.rotation.set(headBase.x + cur.h0 + tense * .1 + slug * .1 + tuck * .3 - push * .1 + Math.sin(gait * 2 - .8) * stride * .035 - cur.flail * .25 - cur.pitch * .4, headBase.y + cur.h1 + lead, headBase.z * (1 - cur.guard) + cur.h2);
+        headNode.rotation.set(headBase.x + cur.h0 + tense * .1 + slug * .1 + tuck * .3 - push * .1 + Math.sin(gait * 2 - .8) * stride * .035 - cur.flail * .25 - cur.pitch * .4 - choke * .3 + Math.sin(t * 47) * choke * .05 + crouch * .12, headBase.y + cur.h1 + lead, headBase.z * (1 - cur.guard) + cur.h2);
       }
-      eyeMat.color.copy(p.eyes).multiplyScalar(1 + p.eyeGlow * (.8 + tense * .25 * (.5 + .5 * Math.sin(t * 6))));
+      eyeMat.color.copy(p.eyes).multiplyScalar((1 + p.eyeGlow * (.8 + tense * .25 * (.5 + .5 * Math.sin(t * 6)))) * (1 - Math.min(.7, choke) * (Math.sin(t * 53) > 0 ? .8 : 0)));
       p.getUp = 0; p.tension = 0; p.sluggish = 0;
       // Jets: power, with a broken stutter when the limit starves them.
       const stutter = p.sputter > 0 ? (Math.sin(t * 41) * Math.sin(t * 13.7) > .1 ? 1 : .15) : 1;
@@ -338,6 +421,7 @@ export async function createBaymax() {
       combatChip.visible = p.chipInBay && p.open > .4;
     },
     dispose() {
+      feed?.traverse(o => { if (o instanceof T.Mesh) o.geometry.dispose(); }); feedMat.dispose(); collarMat.dispose();
       limiter.dispose(); armoured.dispose(); bay.dispose(); flameGeo.dispose(); flameMat.dispose(); eyeMat.dispose();
       root.removeFromParent();
     },

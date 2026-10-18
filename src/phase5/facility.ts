@@ -2,6 +2,7 @@ import * as T from 'three';
 import { SceneKit, seeded } from '../phase2/SceneKit';
 import { createCityBackdrop } from '../presentation/Backdrop';
 import { concreteTexture } from '../presentation/Surfaces';
+import { Dressing, buildingFrame, cityMaterials, dressFacade, dressRoof, skinMergedBoxes } from '../environment/CityDressing';
 import { batchSolids, createReceiver, link } from './receiverModel';
 
 /** Four recorded fixes, in chronological order, on the actual outgoing bearing. */
@@ -204,19 +205,28 @@ export function createFacility() {
   // Adjacent occupied blocks surround the terrace in every direction, including behind the dish.
   const neighborhood=new T.Group(); k.root.add(neighborhood);
   k.box({p:[0,-14.1,10],s:[90,.5,110]},inset,neighborhood);
-  const glass=k.standard('#25414b',.32,.55);
-  for(const [x,z,w,h,d] of [[-21,1,14,24,19],[23,6,15,31,22],[-20,30,17,35,15],[5,38,16,24,16],[29,37,17,42,19],[-34,59,22,44,22],[0,68,21,52,19],[34,69,19,38,22]]) {
-    const top=h-14;
-    k.box({p:[x,h/2-14,z],s:[w,h,d]},wall,neighborhood);
-    k.box({p:[x,top+.25,z],s:[w+.5,.5,d+.5]},aluminium,neighborhood);
-    k.box({p:[x,top+1,z],s:[w*.4,1.5,d*.35]},inset,neighborhood);
-    for(let y=-11;y<top-1;y+=3.1) {
-      for(let xx=-w/2+1.3;xx<w/2;xx+=2.5) for(const side of [-1,1]) k.box({p:[x+xx,y,z+side*(d/2+.04)],s:[1.4,1.65,.08]},glass,neighborhood);
-      for(let zz=-d/2+1.4;zz<d/2;zz+=2.8) for(const side of [-1,1]) k.box({p:[x+side*(w/2+.04),y,z+zz],s:[.08,1.65,1.5]},glass,neighborhood);
-    }
-    for(const y of [-9,0,top-1]) k.box({p:[x,y,z],s:[w+.2,.15,d+.2]},aluminium,neighborhood);
+  // Storey-scaled facades, roof plant and tiered caps from the city dressing kit (instanced), in
+  // a mix of tones so the blocks round the terrace don't read as one box repeated.
+  const dress=new Dressing(k),cm=cityMaterials(k),nRandom=seeded(5151);
+  const tones=[k.standard('#4a5862',.9,.08),k.standard('#6d6a66',.9,.06),k.standard('#3b4852',.9,.1),k.standard('#7a6354',.9,.05)];
+  // The first eight surround the back of the building; the last five stand out past the yard,
+  // either side of the outbound trace and below it, so the exterior shots look into a district.
+  for(const [x,z,w,h,d] of [[-21,1,14,24,19],[23,6,15,31,22],[-20,30,17,35,15],[5,38,16,24,16],[29,37,17,42,19],[-34,59,22,44,22],[0,68,21,52,19],[34,69,19,38,22],
+    [24,-30,14,30,14],[-30,-34,14,30,16],[32,-58,16,40,16],[-38,-68,18,42,18],[12,-90,16,28,14]]) {
+    const frame=buildingFrame(x,z,0,0,-14),i=Math.floor(nRandom()*tones.length);
+    k.box({p:[x,h/2-14,z],s:[w,h,d]},tones[i],neighborhood);
+    // The lower storeys sit below the terrace; the facades start a storey under its edge.
+    dressFacade(dress,cm,frame,w,h,d,['+x','-x','+z','-z'],nRandom,{from:8,lit:.12});
+    dressRoof(dress,cm,frame,w,h,d,nRandom,{tower:h>40,sign:h<30});
   }
   batchSolids(neighborhood,k);
+  dress.build(neighborhood);
+  // The backdrop's towers only have windows on the face its first chapter looks at; from the
+  // terrace their sides read as blank slabs. Give those faces storeys too, in this scene only.
+  const skin=new Dressing(k);
+  city.group.updateMatrixWorld(true);
+  city.group.traverse(o=>{ if(o instanceof T.Mesh&&o.name==='static-merged'&&(o.material as T.MeshBasicMaterial).map) skinMergedBoxes(skin,cm,o,city.group,nRandom,{storey:1.5,from:1.1,minHeight:10}); });
+  skin.build(city.group);
 
   const receiver = createReceiver(k, k.root);
   const apron = new T.Group(); k.root.add(apron);

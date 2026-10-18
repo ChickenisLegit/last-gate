@@ -3,7 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as T from 'three';
 import { createRedChip } from '../characters/RedChip.js';
 import { reducedMotion } from '../config/experience';
-import { createBaymax, type Baymax } from './baymax';
+import { createBaymax, BAYMAX_SCALE as BS, type Baymax } from './baymax';
 import { createHiro } from './hiro';
 import { createFirstPersonHands, createLimiterController, type FirstPersonHands } from '../characters/RegulatorController';
 import { FirstPerson } from './fp';
@@ -40,7 +40,12 @@ const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 const backOut = (x: number) => { x = clamp01(x); const c = 2.2; return 1 + (c + 1) * Math.pow(x - 1, 3) + c * Math.pow(x - 1, 2); };
 const RED = new T.Color('#ff2414'), DARK = new T.Color('#0b0f11'), CARE = new T.Color('#f4f8ff');
 const v3 = (x: number, y: number, z: number) => new T.Vector3(x, y, z);
-const HOVER_Y = 1.15;
+/** Hovering at the deck: root height that puts his eyes level with Hiro's on it. */
+const HOVER_Y = 1.45;
+/** The wake's last step brings him this far in from where he lands, and the limited walk carries on from there. */
+const WAKE_STEP = .5;
+/** He hovers this far back from where he falls; the lurch and the slide carry him onto LANDING. */
+const HOVER_BACK = 1.2;
 const CHASE_SKY = new T.Color('#05090e'), CITY_SKY = new T.Color('#0a1622');
 
 /** Where Hiro stands for each piece of the gate site. */
@@ -50,10 +55,10 @@ const READER_SPOT = v3(PEDESTAL.x - .1, 0, PEDESTAL.z + 1.02);
 const RELAY_SPOT = v3(1.5, 0, -3.3);
 /** The wake's dive: high behind the relay, down west of the receiver tower, then low under the dish into the yard. */
 const WAKE_PATH = new T.CubicBezierCurve3(v3(BAYMAX_YARD.x - 9, 17, BAYMAX_YARD.z - 26), v3(BAYMAX_YARD.x - 8.1, 12, BAYMAX_YARD.z - 6.5), v3(BAYMAX_YARD.x - 5.1, 1.6, BAYMAX_YARD.z - .1), BAYMAX_YARD.clone());
-/** Lying on his back (yaw π) his feet are 1.81 m toward the gate from his root, his head 2.76 m back. */
-const FEET = 1.81, LIE_CENTRE = .47, LIE_LENGTH = 4.57;
+/** Lying on his back (yaw π) his feet are 1.81 m toward the gate from his root, his head 2.76 m back (at full shell size). */
+const FEET = 1.81 * BS, LIE_CENTRE = .47 * BS, LIE_LENGTH = 4.57 * BS;
 /** Hauling: how far ahead of his feet Hiro walks, and the root position at which Hiro's eye crosses the surface. */
-const LEAD = .95, CROSS_ROOT_Z = FRAME.z + FEET + LEAD;
+const LEAD = .95 * BS, CROSS_ROOT_Z = FRAME.z + FEET + LEAD;
 /** Home: seconds of first person after the crossing (Baymax comes through, the gate closes) before the wide shot. */
 export const EMERGE = 5.2;
 /** Carry: up on Baymax, Hiro looks back at the gate beating with the chip, then the chip can come out. */
@@ -163,7 +168,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
   const home = useMemo<Home>(createHome, []);
   const chipProxy = useMemo(() => { const c = createRedChip(); c.chip.visible = false; return c; }, []);
   const env = useRef<{ name: SetName; relay?: ReturnType<typeof createRelay>; street?: Street } | null>(null);
-  const homeScene = useMemo(() => { const s = new T.Scene(); s.background = home.background; return s; }, [home]);
+  const homeScene = useMemo(() => { const s = new T.Scene(); s.background = home.background; s.fog = home.fog; return s; }, [home]);
   const target = useMemo(() => new T.WebGLRenderTarget(4, 4, { colorSpace: T.SRGBColorSpace }), []);
   const homeCam = useMemo(() => new T.PerspectiveCamera(), []);
   // His eyes light what he looks at: a red spot from the head, and a soft glow on the head itself.
@@ -173,7 +178,14 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
     const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(255,60,40,1)'); g.addColorStop(.35, 'rgba(255,30,20,.35)'); g.addColorStop(1, 'rgba(255,0,0,0)');
     x.fillStyle = g; x.fillRect(0, 0, 64, 64);
     const s = new T.Sprite(new T.SpriteMaterial({ map: new T.CanvasTexture(c), color: '#ff3a24', transparent: true, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false }));
-    s.scale.setScalar(1.6); s.renderOrder = 6; return s;
+    s.scale.setScalar(1.6 * BS); s.renderOrder = 6; return s;
+  }, []);
+  // The reader's lock, made visible: a thin red trace from the gate's hub to whatever it has locked onto
+  // (his combat chip). It reaches out when the gate powers, and beats with the chip while his bay is open.
+  const lockBeam = useMemo(() => {
+    const geo = new T.CylinderGeometry(.018, .018, 1, 6, 1, true); geo.translate(0, .5, 0); geo.rotateX(Math.PI / 2);
+    const mat = new T.MeshBasicMaterial({ color: '#ff3a2c', transparent: true, opacity: 0, depthWrite: false, blending: T.AdditiveBlending, toneMapped: false });
+    const b = new T.Mesh(geo, mat); b.frustumCulled = false; b.visible = false; b.renderOrder = 4; return b;
   }, []);
   // Coming through the far side: only the part of him already through is drawn.
   const crossing = useMemo(() => new T.Plane(new T.Vector3(0, 0, -1), 1e4), []);
@@ -214,16 +226,16 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       scene.add(b.root); warmStreet(b.root); setBaymax(b); mem.current.readyIn = 3;
     });
     gl.localClippingEnabled = true;
-    scene.add(camera, hiro.root, chipProxy.chip, eyeLight, eyeLight.target, eyeGlow);
+    scene.add(camera, hiro.root, chipProxy.chip, eyeLight, eyeLight.target, eyeGlow, lockBeam);
     camera.add(hands.root, cart.root);
     return () => {
       alive = false; if (made) made.dispose();
       hiro.dispose(); hands.dispose(); cart.dispose(); home.dispose(); target.dispose();
-      scene.remove(camera, eyeLight, eyeLight.target, eyeGlow); eyeGlow.material.map?.dispose(); eyeGlow.material.dispose();
+      scene.remove(camera, eyeLight, eyeLight.target, eyeGlow, lockBeam); eyeGlow.material.map?.dispose(); eyeGlow.material.dispose(); lockBeam.geometry.dispose(); (lockBeam.material as T.Material).dispose();
       chipProxy.chip.removeFromParent();
       chipProxy.chip.traverse(o => { if (o instanceof T.Mesh) { o.geometry.dispose(); (o.material as T.Material).dispose(); } });
     };
-  }, [scene, camera, gl, hiro, hands, cart, home, chipProxy, target, eyeLight, eyeGlow, crossing, onReady]);
+  }, [scene, camera, gl, hiro, hands, cart, home, chipProxy, target, eyeLight, eyeGlow, lockBeam, crossing, onReady]);
 
   // Sets: build the one in use, drop the last one. The home group lives in its own scene (seen
   // through the gate) until the crossing, then joins the main scene.
@@ -238,7 +250,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       if (!preStreet.current) preStreet.current = createStreet();
     }
     if (set === 'street') { e.street = preStreet.current ?? createStreet(); preStreet.current = null; scene.add(e.street.root); homeScene.add(home.root); scene.background = new T.Color('#0a1622'); scene.fog = new T.Fog('#1a3146', 18, 190); }
-    if (set === 'home') { scene.add(home.root); scene.background = home.background; scene.fog = null; }
+    if (set === 'home') { scene.add(home.root); scene.background = home.background; scene.fog = home.fog; }
     env.current = e;
     return () => { e.relay?.dispose(); e.street?.dispose(); home.root.removeFromParent(); env.current = null; };
   }, [set, scene, home, homeScene]);
@@ -338,7 +350,8 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
   }, [gl, cam, baymax, home, audio]);
 
   // Memory that outlives a stage: where Baymax has got to on the street, step timing, shake, chase events.
-  const mem = useRef({ trail: .28, stepAt: 0, shake: 0, landed: false, lastStage: '' as Stage | '', bayAt: new T.Vector3(), lift: 0, glance: 0, headH: 3.1, swingAt: -9, swung: false, wakeFx: 0, wakeSince: -1, readyIn: 0, falls: 0, warped: false, thirdShot: '', pressed: '' as Stage | '', idle: 0, escSince: -1 });
+  const mem = useRef({ trail: .28, stepAt: 0, shake: 0, landed: false, lastStage: '' as Stage | '', bayAt: new T.Vector3(), lift: 0, glance: 0, headH: 3.1, swingAt: -9, swung: false, wakeFx: 0, wakeSince: -1, readyIn: 0, falls: 0, warped: false, thirdShot: '', pressed: '' as Stage | '', idle: 0, escSince: -1, lat: 0,
+    chase: { mode: 'stalk' as 'stalk' | 'burst' | 'lunge' | 'stutter', at: 0, dur: 1.2, from: 0, to: 0, side: 1, n: 0, scrape: false, done: false, landed: false } });
   const look = useMemo(() => new T.Vector3(), []);
   const feet = useMemo(() => new T.Vector3(), []);
   const camPos = useMemo(() => new T.Vector3(), []);
@@ -362,7 +375,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
     const enter = m.lastStage !== s.stage;
     // Each start of the run (and each retry after he catches Hiro) begins it from the top.
     if (s.stage === 'wake' && m.wakeSince !== s.since) { m.wakeSince = s.since; m.wakeFx = 0; }
-    if (s.stage === 'escape' && m.escSince !== s.since) { m.escSince = s.since; r.p = 0; r.speed = 0; m.trail = -.05; m.falls = 0; m.swingAt = -9; r.misses = 0; m.idle = 0; }
+    if (s.stage === 'escape' && m.escSince !== s.since) { m.escSince = s.since; r.p = 0; r.speed = 0; m.trail = -.05; m.falls = 0; m.swingAt = -9; r.misses = 0; m.idle = 0; m.lat = 0; Object.assign(m.chase, { mode: 'stalk', at: t, dur: 1.4, n: 0, side: 1, landed: false, done: false }); }
     if (enter) {
       hands.controller.setOn(s.regulator);
       if (s.stage === 'drop') m.landed = false;
@@ -385,7 +398,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
     P.eyes.copy(RED); P.head[0] = P.head[1] = P.head[2] = 0;
     baymax.root.rotation.x = 0; crossing.constant = 1e4;
     Object.assign(H, { walk: 0, stride: 0, lean: 0, haul: 0, kneel: 0, reach: 0, look: 0 });
-    hiro.root.visible = false;
+    hiro.root.visible = false; lockBeam.visible = false;
     let first = true, eye = 1.56, fov = 62, raise = .3, reach = 0, freeLook = .12, lookRate = 5, place = false;
     let jet = 0, hum = 0, dread = 0, near = 0, warp = 0, cartShown = false, grip = 0;
     const head = () => baymax.headWorld(tmp).clone();
@@ -395,8 +408,11 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
       baymax.root.position.copy(BAYMAX_YARD); P.yaw = 0;
       feet.copy(RELAY_SPOT); look.copy(head());
       if (s.stage === 'wake') {
-        // Tracker R-03/S-05: he comes in hunting (the clock restarts as the cover lifts, so this is seen). A red glow over the dish, then he drops out of the sky,
-        // jets roaring and eyes burning, slams down in the yard, and rises into the stance. Hiro steps back.
+        // Tracker R-03/S-05: he comes in hunting (the clock restarts as the cover lifts, so this is seen).
+        // A red glow over the dish, then he drops out of the sky, jets roaring and eyes burning, and
+        // slams down in the yard: a deep crouch with a fist to the ground, a held beat, then he
+        // rises heavily, eyes flaring, and takes a step at Hiro. Hiro backs off. The camera keeps
+        // his whole body in frame from the landing on, feet included.
         const fly = span(e, 1, 3.3), land = e >= 3.3;
         // The receiver's dish hangs over the yard (y 5.7–9.8, just west of the landing), so a straight
         // dive put him through it and the tower's front leg. He drops steeply west of the tower
@@ -406,24 +422,34 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
           WAKE_PATH.getPoint(arc, baymax.root.position);
           const heading = WAKE_PATH.getTangent(Math.min(arc, .999), tmp);
           P.yaw = Math.atan2(heading.x, heading.z) * (1 - arc);
-          P.thrust = 1; jet = .9; P.dangle = .55 * (1 - span(e, 2.8, 3.25)); P.lean = .55 - span(e, 2.6, 3.25) * .4; P.guard = .25;
+          // Thrust flares as he pulls out of the dive, so he decelerates into the landing.
+          P.thrust = .85 + .15 * span(e, 2.5, 3.2); jet = .9; P.dangle = .7 * (1 - span(e, 2.9, 3.28)); P.lean = .6 - span(e, 2.5, 3.25) * .55; P.guard = .3;
           if (e > 2.3 && m.wakeFx < 1) { m.wakeFx = 1; audio.whoosh(); }
         } else {
-          // The landing: a hard crouch that he pushes up out of; the stance locks at 4.4 as before.
-          const rise = span(e, 3.4, 5.1);
-          P.sit = .55 * (1 - rise) * span(e, 3.3, 3.42); P.lean = .3 * (1 - rise) + .08 * P.guard;
-          P.guard = Math.max(.25 * (1 - span(e, 3.4, 3.8)), backOut((e - 5.2) / .55));
-          if (m.wakeFx < 2) { m.wakeFx = 2; m.shake = Math.max(m.shake, reducedMotion ? 0 : .7); audio.impact(); }
+          // The landing: a hard crouch, fist down; the hold; the rise; the stance locks; one step in.
+          const hold = span(e, 3.3, 3.45), rise = span(e, 4.05, 5.5), step = span(e, 5.7, 6.5);
+          if (e - dt < 3.3) baymax.impact(1.2);
+          P.sit = .72 * hold * (1 - rise); P.lean = (.42 * (1 - rise) + .08) * hold + .06 * step;
+          P.punch = -.45 * hold * (1 - span(e, 3.9, 4.5));
+          P.guard = Math.max(.2 * (1 - span(e, 3.4, 3.8)), backOut((e - 5.1) / .6));
+          // The step: one heavy stride at Hiro, stopping well short.
+          if (e > 5.7 && e < 6.5) { P.stride = .9; P.gait = step * Math.PI; }
+          baymax.root.position.z = BAYMAX_YARD.z + ease(step) * WAKE_STEP;
+          if (m.wakeFx < 2) { m.wakeFx = 2; m.shake = Math.max(m.shake, reducedMotion ? 0 : .8); audio.impact(); }
+          if (m.wakeFx < 3 && e > 6.35) { m.wakeFx = 3; m.shake = Math.max(m.shake, reducedMotion ? 0 : .3); audio.step(.9); }
         }
-        P.eyes.copy(RED); P.eyeGlow = .6 + .4 * fly;
-        P.head[0] = (1 - P.guard) * .2; P.head[1] = span(e, 3.6, 4.4) * .15;
-        feet.z = RELAY_SPOT.z + span(e, 5.25, 6) * .7;
-        // Eyes up to the sky and the glow, then down with him to the yard.
-        look.copy(head()).lerp(v3(BAYMAX_YARD.x, 1.6, BAYMAX_YARD.z), span(e, 3.4, 4.2)); lookRate = 4;
-        if (e > 5.22 && e < 5.3) { m.shake = Math.max(m.shake, .35); audio.step(.7); }
-        dread = .3 + span(e, 1, 3.4) * .35;
+        // Eyes: burning on the way down, dim in the crouch, then flaring as he looks up at Hiro.
+        const flare = Math.sin(Math.PI * span(e, 4.4, 5.3));
+        P.eyes.copy(RED); P.eyeGlow = land ? .55 + .45 * span(e, 4.2, 4.7) + flare * .5 : .6 + .4 * fly;
+        // Head: down in the crouch, coming up last, onto Hiro.
+        P.head[0] = land ? .38 * (1 - span(e, 4.3, 5.2)) : (1 - P.guard) * .2; P.head[1] = span(e, 4.6, 5.4) * .1;
+        feet.z = RELAY_SPOT.z + span(e, 5.2, 6) * .7 + span(e, 6.2, 7) * .55;
+        // Eyes up to the sky and the glow, then down with him to the yard; framed on his middle so his legs and feet stay in shot.
+        look.copy(head()).lerp(v3(baymax.root.position.x, 1.15, baymax.root.position.z), span(e, 3.2, 3.9) * (1 - span(e, 4.6, 5.6) * .45)); lookRate = 4.5;
+        if (e > 5.12 && e < 5.2) { m.shake = Math.max(m.shake, .35); audio.servo(); }
+        dread = .3 + span(e, 1, 3.4) * .35 + span(e, 5.6, 6.5) * .15;
       } else if (s.stage === 'limited') {
-        feet.z = RELAY_SPOT.z + .7;
+        feet.z = RELAY_SPOT.z + 1.25;
         // Each full move falls short. Thrusters starve, the walk is heavy, the punch stops early.
         const fly = span(e, .8, 2.2) * (1 - span(e, 2.6, 3.2));
         P.thrust = e > .8 && e < 3.2 ? .75 : 0; P.sputter = 1; jet = P.thrust * .7;
@@ -431,7 +457,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         if (e > 3.2 && e < 3.26) { m.shake = .35; audio.step(1); }
         // A few heavy steps toward the relay, stopping in the yard, short of the back wall.
         const walk = clamp01((e - 3.6) / 3.4);
-        baymax.root.position.z = BAYMAX_YARD.z + ease(walk) * (BAYMAX_REACH_Z - BAYMAX_YARD.z);
+        baymax.root.position.z = BAYMAX_YARD.z + WAKE_STEP + ease(walk) * (BAYMAX_REACH_Z - BAYMAX_YARD.z - WAKE_STEP);
         if (e > 3.6 && e < 7) { P.stride = .9; P.lean = .16; const ph = (e - 3.6) / .85 * Math.PI; P.gait = ph; if (Math.floor(ph / Math.PI) !== Math.floor(m.stepAt)) { audio.step(.85); m.shake = Math.max(m.shake, .16); } m.stepAt = ph / Math.PI; }
         // Wind up, a slow drive, stop short with the arm shaking, then pull back.
         P.punch = e < 7 ? 0 : e < 7.6 ? -.3 * span(e, 7, 7.6) : e < 8.7 ? -.3 + 1.05 * Math.sin(Math.PI / 2 * clamp01((e - 7.6) / 1.1)) : .75 * (1 - span(e, 8.9, 9.7));
@@ -441,7 +467,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         dread = .45 + span(e, 3.6, 8.4) * .3; near = .3;
         // Before he goes: the capture, still in the recorder beside him.
         if (e > 9.6 && !s.took) { look.set(RECORDER.x, 1.05, RECORDER.z); lookRate = 3; reach = .45; }
-      } else { feet.z = RELAY_SPOT.z + .7; P.guard = 1; dread = .4; }
+      } else { feet.z = RELAY_SPOT.z + 1.25; baymax.root.position.z = BAYMAX_YARD.z + WAKE_STEP; P.guard = 1; dread = .4; }
       P.head[1] += .12;
       raise = s.stage === 'wake' ? .2 + span(e, 3.4, 5) * .2 : .4;
     }
@@ -466,23 +492,78 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         const goal = r.forward ? 4.2 : 0;
         r.speed = T.MathUtils.damp(r.speed, goal + r.impulse * 3.5, 3, dt); r.impulse = Math.max(0, r.impulse - dt * 2.2);
         r.p = clamp01(r.p + r.speed * dt / ROUTE_LENGTH);
-        // He gains when Hiro stops and only just loses ground while Hiro runs. Never quite reaching him.
-        const gap = (r.p - m.trail) * ROUTE_LENGTH;
-        const bSpeed = gap > 11 ? 4.7 : gap > 4.4 ? 3.8 : 0;
-        m.trail = Math.min(r.p - 4.4 / ROUTE_LENGTH, m.trail + bSpeed * dt / ROUTE_LENGTH);
-        onTrail(Math.max(0, m.trail)); if (m.trail < 0) baymax.root.position.z = ROUTE.getPointAt(0).z - m.trail * ROUTE_LENGTH;
-        if (bSpeed > 0) trudge(bSpeed / 2.2); else P.stride = .25;
-        P.lean = .22; P.guard = .8;
+        // The pursuit runs in beats rather than one flat follow: a heavy stalk, a short thruster
+        // burst that eats the gap (sometimes clipping a building on the way), a lunge that only just
+        // misses, and the regulator catching him: jets cough, he sags and loses a second. He gains
+        // when Hiro stops; he never quite reaches him while Hiro keeps running.
+        const L = ROUTE_LENGTH, ch = m.chase, MIN_GAP = 3.2;
+        let gap = (r.p - m.trail) * L;
+        const ce = t - ch.at;
+        const begin = (mode: typeof ch.mode, dur: number) => { ch.mode = mode; ch.at = t; ch.dur = dur; ch.from = m.trail; ch.done = false; };
+        if (!s.caught && ce > ch.dur) {
+          if (ch.mode === 'burst' || ch.mode === 'lunge') { ch.n++; if (ch.n % 2 === 0) { begin('stutter', 1); baymax.jolt(.8); audio.falter(); m.shake = Math.max(m.shake, .15); } else begin('stalk', .7); }
+          else if (gap < 5 && t - m.swingAt > 2.2) { begin('lunge', 1.1); baymax.lunge(1); m.swingAt = t; m.swung = false; audio.servo(); }
+          else if (gap > 8 || (gap > 5.5 && ch.mode === 'stalk' && ch.n % 3 !== 2)) {
+            begin('burst', T.MathUtils.clamp(.9 + gap * .04, 1, 1.5)); ch.side = -ch.side; ch.scrape = ch.n % 3 === 1;
+            ch.to = Math.min(r.p - (MIN_GAP + .6) / L, m.trail + Math.max(3, gap - MIN_GAP - 1.2 + r.speed * .5) / L);
+            audio.ignite();
+          } else begin('stalk', .8 + (ch.n % 3) * .3);
+          if (ch.mode === 'stalk') ch.n++;
+        }
+        const k = clamp01((t - ch.at) / ch.dur);
+        let lift = 0, lat = 0;
+        if (ch.mode === 'stalk' || s.caught) {
+          const bSpeed = gap > 11 ? 4.4 : gap > MIN_GAP + .4 ? 3.3 : 0;
+          m.trail = Math.min(r.p - MIN_GAP / L, m.trail + bSpeed * dt / L);
+          if (bSpeed > 0) trudge(bSpeed / 2); else P.stride = .25;
+          P.lean = .22; P.guard = .8; lat = T.MathUtils.damp(m.lat, 0, 2.5, dt);
+        } else if (ch.mode === 'burst') {
+          // Crouch and lean into it, then a low arc on the jets: slow off the ground, fast through
+          // the middle, braking hard into the landing. An arc out to one side reads as a chase, not a slide.
+          const wind = .2, f = clamp01((k - wind) / (1 - wind)), arc = Math.sin(Math.PI * f);
+          m.trail = Math.min(r.p - MIN_GAP / L, T.MathUtils.lerp(ch.from, ch.to, T.MathUtils.smootherstep(f, 0, 1)));
+          lift = arc * 1.25; lat = ch.side * (ch.scrape ? 3.9 : 1.5) * arc;
+          P.sit = .32 * Math.sin(Math.PI * clamp01(k / wind)) * (f > 0 ? 0 : 1);
+          P.dangle = arc * .9; P.lean = .18 + arc * .38; P.guard = .6 + .3 * (1 - arc);
+          // The regulator starves the jets halfway: a cough and a dip, then they catch again.
+          const cough = f > .48 && f < .6 ? 1 : 0;
+          P.thrust = f > 0 && f < .92 ? (cough ? .18 : .9) : .15; P.sputter = 1; jet = P.thrust; lift -= cough * .25;
+          if (ch.scrape && !ch.done && f > .45) {
+            // Clipping the facade: chunks come off where his shoulder meets the wall, sparks of dust at its foot.
+            ch.done = true;
+            const at = baymax.root.position.clone(), wall = v3(ch.side * 6.4, 3.4 + lift, at.z);
+            st.debris(wall, v3(-ch.side * 2.2, 1.2, -1.2), .42, hit => { const d = hit.distanceTo(camera.position); audio.crash(Math.min(1, 7 / d)); m.shake = Math.max(m.shake, Math.min(.7, 5 / d)); });
+            st.debris(wall.clone().add(v3(0, .8, .5)), v3(-ch.side * 1.6, .6, -.6), .2);
+            st.kickDust(wall.clone().setY(0), .6, .3); audio.crash(.6); m.shake = Math.max(m.shake, .3); r.misses++;
+          }
+          if (f >= 1 && !ch.landed) { ch.landed = true; const d = baymax.root.position.distanceTo(camera.position); audio.step(Math.min(1, 9 / d)); m.shake = Math.max(m.shake, .45 * Math.min(1, 10 / d)); st.kickDust(baymax.root.position.clone().setY(0), .7); }
+          if (f < 1) ch.landed = false;
+        } else if (ch.mode === 'lunge') {
+          // A surge forward with the swing, passing just off Hiro's shoulder.
+          m.trail = Math.min(r.p - (MIN_GAP - .9) / L, ch.from + 1.4 * Math.sin(Math.PI / 2 * clamp01(k / .55)) / L);
+          lat = T.MathUtils.damp(m.lat, ch.side * .7, 4, dt); P.stride = .6; P.gait += dt * 4;
+          P.thrust = k > .15 && k < .5 ? .6 : 0; jet = P.thrust;
+        } else {
+          // Stutter: the limit bites. The jets choke, the arms drop, he rocks back and twitches, losing ground.
+          P.sputter = 1; P.thrust = Math.sin(t * 37) > .6 ? .25 : 0; jet = P.thrust;
+          P.guard = .3 + .25 * k; P.lean = -.06 + .2 * k; P.stride = 0;
+          P.head[2] = Math.sin(t * 23) * .07 * (1 - k); P.eyeGlow = .45 + (Math.sin(t * 31) > 0 ? .55 : .1) * (1 - k * .5);
+          lat = T.MathUtils.damp(m.lat, 0, 2, dt);
+        }
+        m.lat = lat; gap = (r.p - m.trail) * L;
+        onTrail(Math.max(0, m.trail)); if (m.trail < 0) baymax.root.position.z = ROUTE.getPointAt(0).z - m.trail * L;
+        baymax.root.position.x += lat; baymax.root.position.y = lift;
+        // He faces Hiro, not the road: the body turns, the head leads.
+        { const hp = ROUTE.getPointAt(r.p); P.yaw = Math.atan2(hp.x - baymax.root.position.x, hp.z - baymax.root.position.z); }
         // Close enough, he swings. It always just misses: Hiro is already moving or the arm stops short.
-        if (gap < 6.2 && t - m.swingAt > 2.6) { m.swingAt = t; m.swung = false; audio.servo(); }
         const sw = t - m.swingAt;
         if (sw < 1.1) {
           P.punch = sw < .35 ? -.35 * span(sw, 0, .35) : sw < .6 ? -.35 + 1.4 * span(sw, .35, .6) : 1.05 * (1 - span(sw, .6, 1.1));
           P.lean = .3;
           if (!m.swung && sw > .5) { m.swung = true; audio.whoosh(); m.shake = Math.max(m.shake, .55); r.misses++; if (fx.hurt.current && !reducedMotion) { fx.hurt.current.classList.remove('on'); void fx.hurt.current.offsetWidth; fx.hurt.current.classList.add('on'); } }
         }
-        // Debris: chunks come off the blocks ahead and land just off Hiro's line as he gets there.
-        const FALLS = [.16, .33, .5, .66, .82];
+        // Debris: two chunks come off the blocks ahead and land just off Hiro's line as he gets there.
+        const FALLS = [.24, .62];
         if (m.falls < FALLS.length && r.p > FALLS[m.falls]) {
           const side = m.falls % 2 ? 1 : -1, lead = 5.6 + r.speed * .4;
           const land = ROUTE.getPointAt(Math.min(1, r.p + lead / ROUTE_LENGTH)).setY(0).add(v3(side * (1.5 + (m.falls % 3) * .45), 0, 0));
@@ -501,11 +582,11 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         m.glance = T.MathUtils.damp(m.glance, g, 5, dt);
         if (m.glance > .01) look.copy(FirstPerson.blend(fp.eyeAt(), look.clone(), baymax.headWorld(tmp).clone().setY(2.5), m.glance));
         freeLook = .9 * (1 - m.glance); lookRate = 7; fov = 66; raise = 0;
-        dread = clamp01(1 - (gap - 4.4) / 12); near = dread;
+        dread = clamp01(1 - (gap - MIN_GAP) / 12); near = dread;
         r.gap = gap;
         // Stand still with him on your back and he gets you: the run stops and offers a retry.
         if (!s.caught) {
-          m.idle = gap < 4.8 && r.speed < .8 ? m.idle + dt : Math.max(0, m.idle - dt * 2);
+          m.idle = gap < MIN_GAP + .5 && r.speed < .8 ? m.idle + dt : Math.max(0, m.idle - dt * 2);
           if (m.idle > 1.8) {
             useP6.setState({ caught: true }); m.shake = reducedMotion ? 0 : 1; audio.crash(1);
             if (fx.hurt.current && !reducedMotion) { fx.hurt.current.classList.remove('on'); void fx.hurt.current.offsetWidth; fx.hurt.current.classList.add('on'); }
@@ -541,7 +622,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         raise = s.stage === 'switchOff' ? 1 : .35 + span(e, 2.4, 3) * .3; dread = .3;
       } else if (s.stage === 'flyin' || s.stage === 'faceoff' || s.stage === 'switchOn2') {
         // Full power: up above the roofs, down the street, and stop face to face with Hiro.
-        const hover = v3(LANDING.x, HOVER_Y, LANDING.z);
+        const hover = v3(LANDING.x, HOVER_Y, LANDING.z + HOVER_BACK);
         feet.copy(DECK_SPOT);
         const start = ROUTE.getPointAt(clamp01(m.trail)).setY(0);
         if (s.stage === 'flyin') {
@@ -561,22 +642,38 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
           dread = .5 + travel * .5; near = travel;
           if (e > 6.2) go('faceoff');
         } else {
-          baymax.root.position.copy(hover).add(v3(Math.sin(t * .9) * .12, Math.sin(t * 2.2) * .06, 0));
-          // Hovering on full thrust: fists up, a slow drift and sway, never quite still.
-          P.yaw = Math.PI + Math.sin(t * .7) * .07; P.dangle = .3; P.lean = .05 + Math.sin(t * 1.3) * .04; P.guard = .45; P.thrust = 1; jet = 1; m.lift = 1;
+          // Hovering on full thrust, never still: a slow drift on two rhythms, the jets pulsing him up
+          // and down, and every few seconds a feint at the deck (a surge in, fists tight, then back).
+          const cyc = (e % 3.4) / 3.4, feint = Math.sin(Math.PI * clamp01((cyc - .55) / .3)) ** 2;
+          const pulseY = Math.sin(t * 2.2) * .06 + Math.max(0, Math.sin(t * 5.3)) * .03;
+          baymax.root.position.copy(hover).add(v3(Math.sin(t * .9) * .12 + Math.sin(t * .37) * .07, pulseY - feint * .05, -feint * .55));
+          const toHiro = Math.atan2(DECK_SPOT.x - baymax.root.position.x, DECK_SPOT.z - baymax.root.position.z);
+          P.yaw = toHiro + Math.sin(t * .7) * .05; P.dangle = .3 + feint * .15; P.lean = .05 + Math.sin(t * 1.3) * .04 + feint * .22;
+          P.guard = .45 + feint * .45; P.head[0] = feint * .1; P.thrust = .92 + .08 * Math.sin(t * 7) + feint * .1; jet = P.thrust; m.lift = 1;
+          if (feint > .9 && m.wakeFx !== 9) { m.wakeFx = 9; audio.servo(); m.shake = Math.max(m.shake, .12); }
+          if (feint < .1 && m.wakeFx === 9) m.wakeFx = 8;
+          // The limit bites (switchOn2, once the bat lands): the jets choke and he jolts.
+          if (s.stage === 'switchOn2' && s.regulator) { P.sputter = 1; P.thrust = Math.sin(t * 41) > .2 ? .5 : .1; jet = P.thrust; P.guard = .3; P.lean = -.08; baymax.root.position.y -= .12; }
           feet.z = DECK_SPOT.z - .35;
-          look.copy(head()); raise = s.stage === 'switchOn2' ? 1 : .55; dread = .9; near = 1;
+          // Aim at his chest, not his eyes, so his legs and jets stay in frame below the subtitle.
+          look.copy(head()); look.y -= 1.35 * BS; raise = s.stage === 'switchOn2' ? 1 : .55; dread = .9; near = 1;
         }
         fov = 68;
       } else if (s.stage === 'drop') {
-        // Thrusters out. He hangs, falls back, and hits the paving.
-        const hoverY = HOVER_Y, g = 11.5, hang = .14;
-        const tLand = hang + Math.sqrt(2 * Math.max(.3, hoverY) / g);
-        const fall = e < hang ? 0 : Math.min(1, ((e - hang) / (tLand - hang)) ** 2);
-        const y = e < tLand ? hoverY * (1 - fall) : Math.max(0, Math.sin(Math.min(1, (e - tLand) / .3) * Math.PI) * .07);
-        baymax.root.position.set(LANDING.x, y, LANDING.z);
-        P.yaw = Math.PI; P.dangle = 1 - fall; P.lie = e < tLand ? fall * .92 : 1; P.guard = .4 * (1 - fall);
-        P.thrust = e < .1 ? .6 : 0; P.sputter = 1;
+        // Thrusters out. The jets choke, he lurches at the deck one last time and his reach falls
+        // short; then he drops, tipping onto his back as he falls, hits the paving hard, bounces and
+        // slides to a stop where he lies for the rest of the gate site.
+        const CHOKE = .35, g = 11.5, y0 = HOVER_Y - .12 + .12, vy0 = .7;
+        const tLand = CHOKE + (vy0 + Math.sqrt(vy0 * vy0 + 2 * g * y0)) / g;
+        const fe = Math.max(0, e - CHOKE);
+        const y = e < CHOKE ? HOVER_Y - .12 + .12 * span(e, 0, CHOKE) : e < tLand ? Math.max(0, y0 + vy0 * fe - .5 * g * fe * fe) : Math.max(0, Math.sin(Math.min(1, (e - tLand) / .28) * Math.PI) * .09);
+        const fall = clamp01((e - CHOKE) / (tLand - CHOKE));
+        const lurch = span(e, 0, CHOKE + .2), slide = e > tLand ? 1 - Math.exp(-(e - tLand) * 5) : 0;
+        baymax.root.position.set(LANDING.x, y, LANDING.z + HOVER_BACK * (1 - lurch * .55) - HOVER_BACK * .45 * slide);
+        P.yaw = Math.PI; P.dangle = (1 - fall) * (e < CHOKE ? .4 : 1); P.lie = e < tLand ? T.MathUtils.smoothstep(fall, .1, 1) * .9 : 1;
+        P.guard = .4 * (1 - fall); P.punch = .7 * Math.sin(Math.PI * clamp01(e / (CHOKE + .25)));
+        P.thrust = e < CHOKE ? (Math.sin(t * 47) > 0 ? .55 : .12) * (1 - e / CHOKE) : 0; P.sputter = 1; jet = P.thrust;
+        if (e > .02 && e - dt <= .02) audio.falter();
         P.eyes.copy(RED).lerp(DARK, span(e, 1.2, 3)); P.eyeGlow = 1 - span(e, 1.2, 3);
         P.open = clamp01((e - 4) / 2.5) * 4.6; P.chipGlow = span(e, 5.8, 7.4);
         // The landing shakes the gate's field: a flare and a flicker across the ring.
@@ -585,21 +682,22 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         feet.copy(DECK_SPOT); feet.z -= .35;
         // Leaning over the deck rail to see him, then down to his chest as it opens.
         feet.z += span(e, 2, 3.5) * .35;
-        look.copy(baymax.root.position).setY(e < tLand ? y + 2.6 : 1.1).lerp(baymax.chestWorld(tmp), span(e, 3.2, 5.2));
+        look.copy(baymax.root.position).setY(e < tLand ? y + 2.6 * BS : .7).lerp(baymax.chestWorld(tmp), span(e, 3.2, 5.2));
         lookRate = 3; raise = .2;
         if (e > 7.4) go('carry');
       } else if (s.stage === 'carry') {
         baymax.root.position.copy(LANDING); P.yaw = Math.PI; P.lie = 1; P.guard = 0; P.eyes.copy(DARK); P.eyeGlow = 0;
         P.open = 4.6; P.chipGlow = s.chip === 'bay' ? 1 : 0;
-        const R0 = LANDING, onHim = v3(R0.x + .1, 1.0, R0.z - 1.45);
+        // Hiro kneels at his left side, level with the chest bay, rather than standing on him.
+        const R0 = LANDING, chest = baymax.chestWorld(tmp).clone(), onHim = v3(chest.x - .62, 0, chest.z), approach = v3(chest.x - 1.5, 0, chest.z - 1.1);
         raise = 0; freeLook = 0;
         if (s.chip !== 'out') {
           // Down the ladder, across to him, and up onto him to get at the bay.
-          const path = [DECK_SPOT, v3(LADDER_X + .4, DECK.y, -89.7), v3(LADDER_X, DECK.y, -88.85), v3(LADDER_X, 0, -88.85), v3(R0.x, 0, R0.z - 2.6), v3(R0.x + .1, .85, R0.z - 1.75), onHim];
+          const path = [DECK_SPOT, v3(LADDER_X + .4, DECK.y, -89.7), v3(LADDER_X, DECK.y, -88.85), v3(LADDER_X, 0, -88.85), approach, onHim];
           const k = e < .8 ? span(e, 0, .8) * .14 : e < 2.3 ? .14 + span(e, .8, 2.3) * .2 : e < 4.3 ? .34 + span(e, 2.3, 4.3) * .52 : .86 + span(e, 4.3, 5.2) * .14;
           along(path, k, feet);
           look.copy(e < .8 ? v3(LADDER_X, DECK.y, -88) : e < 2.3 ? v3(LADDER_X, .4, -87.6) : baymax.dockWorld(tmp));
-          eye = e > 4.6 ? 1.42 : 1.56; lookRate = 3.5; reach = s.chip === 'held' ? 1 : e > CLUE_END ? .4 : 0;
+          eye = 1.56 - span(e, 4.4, 5.2) * .5; lookRate = 3.5; reach = s.chip === 'held' ? 1 : e > CLUE_END ? .4 : 0;
           if (e > 5.2) look.copy(baymax.dockWorld(tmp)).add(v3(0, .15, 0));
           // The clue: up on him, a look back at the gate, its hub and reader beating red in the
           // chip's rhythm, then back down to the chip.
@@ -608,9 +706,9 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         } else {
           // Off him, over to the reader, the cartridge out of his pocket.
           const k2 = now() - s.pulledAt;
-          const path = [onHim, v3(R0.x + .1, .85, R0.z - 1.75), v3(R0.x + .3, 0, R0.z - 2.6), READER_SPOT];
+          const path = [onHim, approach, v3(R0.x + .3, 0, R0.z - 2.6), READER_SPOT];
           along(path, k2 < .7 ? 0 : k2 < 1.5 ? span(k2, .7, 1.5) * .3 : .3 + span(k2, 1.5, 4.2) * .7, feet);
-          eye = k2 < .9 ? 1.42 : 1.56; lookRate = 3;
+          eye = 1.06 + span(k2, .5, 1.3) * .5; lookRate = 3;
           look.copy(k2 < 1.5 ? baymax.dockWorld(tmp) : st.readerWorld()).lerp(st.readerWorld().add(v3(0, .05, 0)), span(k2, 1.6, 4));
           if (k2 > 4.2) look.set(PEDESTAL.x - .25, .95, PEDESTAL.z - 1.6);
           reach = s.cart === 'held' ? 1 : k2 > 2.4 ? .55 : 0;
@@ -690,6 +788,19 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
         : s.stage === 'carry' ? (s.chip === 'bay' ? 1 : s.chip === 'held' ? .5 : 0)
         : s.stage === 'flyin' || s.stage === 'faceoff' || s.stage === 'switchOn2' ? .45
         : s.stage === 'powered' ? span(e, 1.2, 2.2) * .3 : .3;
+      // The trace: out from the hub to his chest as it locks (powered), then beating with the chip.
+      {
+        const reach = s.stage === 'powered' ? span(e, .9, 1.5) * (1 - span(e, 2.1, 2.5)) : s.stage === 'drop' || s.stage === 'carry' ? lock : 0;
+        const beat = .55 + .45 * Math.sin(t * 4);
+        lockBeam.visible = reach > .01 && !socket;
+        if (lockBeam.visible) {
+          const from = st.hub.getWorldPosition(new T.Vector3()), to = baymax.chestWorld(new T.Vector3());
+          lockBeam.position.copy(from); lockBeam.lookAt(to);
+          lockBeam.scale.set(1, 1, from.distanceTo(to) * (s.stage === 'powered' ? T.MathUtils.smootherstep(span(e, .9, 1.5), 0, 1) : 1));
+          (lockBeam.material as T.MeshBasicMaterial).opacity = reach * (s.stage === 'powered' ? .9 : .35 * beat);
+          if (s.stage === 'powered' && e > 1.5 && e - dt <= 1.5) { audio.contact(); m.shake = Math.max(m.shake, .2); }
+        }
+      }
       st.update(t, dt, { angles: s.angles, live, powered, open, flash, cracked: atLeast(s.stage, 'carry') || (s.stage === 'drop' && m.landed) ? 1 : 0, socket, lock, eye: camera.position, dread });
       if (s.stage !== 'flyin') m.lift = s.stage === 'faceoff' || s.stage === 'switchOn2' ? 1 : 0;
       if (s.stage !== 'escape') r.gap = baymax.root.position.distanceTo(fp.feet);
@@ -786,7 +897,7 @@ export function World({ audio, hints, fx, run, onReady }: { audio: PhaseSixAudio
     baymax.update(t); hiro.update();
     // His eyes: a red spot thrown where he faces, and a glow on the head, while they burn red.
     const red = P.eyeGlow * (P.eyes.r > .5 && P.eyes.g < .4 ? 1 : 0) * (set === 'home' ? 0 : 1);
-    baymax.headWorld(tmp); eyeGlow.position.copy(tmp).add(v3(Math.sin(P.yaw) * .55, 0, Math.cos(P.yaw) * .55)); eyeGlow.visible = red > .02;
+    baymax.headWorld(tmp); eyeGlow.position.copy(tmp).add(v3(Math.sin(P.yaw) * .55 * BS, 0, Math.cos(P.yaw) * .55 * BS)); eyeGlow.visible = red > .02;
     (eyeGlow.material as T.SpriteMaterial).opacity = red * (.55 + .2 * Math.sin(t * 9)) * (.6 + dread * .6);
     eyeLight.position.copy(eyeGlow.position); eyeLight.target.position.copy(set === 'street' || set === 'relay' ? camera.position : tmp);
     eyeLight.intensity = red * (set === 'street' && s.stage === 'escape' ? 70 : 28);

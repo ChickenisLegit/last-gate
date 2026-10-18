@@ -5,7 +5,7 @@ is stuck on a combat chip on the far side of a broken portal; Hiro has to bring 
 him from hurting anyone, find out where his healthcare chip went, and get them both home.
 
 Built with React, TypeScript, Vite, Three.js, React Three Fiber, Zustand and GSAP. Art direction
-targets 1920×1080; viewports narrower than 1280px get a desktop-required screen and never mount WebGL.
+targets 1920×1080, and it opens at any window size.
 
 ## Run
 

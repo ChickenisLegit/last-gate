@@ -15,6 +15,7 @@ import { transitionChapter } from '../presentation/chapterTransition';
 import { sfx, useSfxBed, useUiSfx } from '../audio/sfx';
 import { SoundToggle } from '../audio/SoundToggle';
 import './phase-five.css';
+import { AdaptiveDpr } from '../performance/AdaptiveDpr';
 
 /**
  * Phase 5. The limiter goes onto Baymax and is tested: he comes back up, still hostile, held to
@@ -345,7 +346,7 @@ export function PhaseFive({ initial: from }: { initial: PhaseFiveStep }) {
   const task = TASKS[s.task];
   return <main className={`p5 p5-stage-${s.stage}`} aria-label="Phase 5: limiter test and telemetry trace">
     <div className="p5-world">
-      <Canvas shadows={false} dpr={[1, 1.4]} camera={{ fov: 46, near: .1, far: 400, position: [0, 3, 8] }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
+      <Canvas shadows={false} dpr={[1, 1.4]} camera={{ fov: 46, near: .1, far: 400, position: [0, 3, 8] }} gl={{ antialias: true, powerPreference: 'high-performance' }}><AdaptiveDpr />
         {atBay || s.stage === 'transit' ? <BayScene /> : <FacilityScene />}
       </Canvas>
     </div>
@@ -355,9 +356,9 @@ export function PhaseFive({ initial: from }: { initial: PhaseFiveStep }) {
     {atBay && <aside className="p5-panel" aria-live="polite">
       {(s.stage === 'fit' || s.stage === 'fitting') && <>
         <p className="p5-kicker">BACK AT THE BAY <span>01 / 02</span></p>
-        <h1>Fit the limiter.</h1>
+        <h1>Fit the regulator.</h1>
         <p className="p5-body">The regulator from Bay 6 goes on his chest plate, in line with his main feed.</p>
-        <button className="p5-primary" disabled={s.stage === 'fitting'} onClick={() => useP5.setState({ stage: 'fitting' })}>{s.stage === 'fitting' ? 'SEATING…' : 'FIT THE LIMITER'}</button>
+        <button className="p5-primary" disabled={s.stage === 'fitting'} onClick={() => useP5.setState({ stage: 'fitting' })}>{s.stage === 'fitting' ? 'SEATING…' : 'FIT THE REGULATOR'}</button>
       </>}
       {(s.stage === 'test' || s.stage === 'testing' || s.stage === 'held') && <>
         <p className="p5-kicker">OUTPUT TEST <span>02 / 02</span></p>

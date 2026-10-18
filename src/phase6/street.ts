@@ -2,6 +2,7 @@ import * as T from 'three';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SceneKit, seeded, type Pose } from '../phase2/SceneKit';
 import { createPortalDimension } from '../environment/PortalDimension.js';
+import { Dressing, cityMaterials, buildingFrame, dressFacade, dressRoof, roadBreakup, skyline as farSkyline, utilityLines } from '../environment/CityDressing';
 
 /**
  * Deeper into the same city: a service street running from the relay's yard to the old portal
@@ -107,19 +108,21 @@ export function createStreet() {
 
   // --- The street: lane, heaved slabs, kerbs, the same slate blocks with window rows.
   const streetFrom = k.root.children.length;
+  // Storey-scaled facades, roofs, wires, broken asphalt and the far skyline are instanced by the
+  // city dressing kit (one draw per piece and material), built once at the end of this function.
+  const dress = new Dressing(k), cm = cityMaterials(k);
   k.box({ p: [0, -.3, -34], s: [13, .6, 92] }, k.edge);
-  k.box({ p: [0, .01, -34], s: [12.4, .04, 91.4] }, k.concrete);
+  k.box({ p: [0, .01, -34], s: [12.4, .04, 91.4] }, cm.asphalt);
   const marks: Pose[] = []; for (let i = 0; i < 24; i++) marks.push({ p: [.1, .04, 6 - i * 3.3], s: [.1, .02, 1.4] });
   k.instances(marks, k.metal);
   for (const [x, z, rx, rz] of [[-3.9, -10, .12, .1], [4, -24, -.12, -.15], [-4.3, -39, .1, -.08], [3.7, -52, -.15, .12], [-3.6, -63, .08, .1]]) k.box({ p: [x, .1, z], s: [3.2, .22, 3.6], r: [rx, rand(-.3, .3), rz] }, k.concrete);
   for (const side of [-1, 1]) for (let z = 4; z > -72; z -= 5.5) if (random() > .25) k.box({ p: [side * 5.9, .32, z], s: [.45, .65, rand(2.2, 4)], r: [0, 0, side * rand(0, .05)] }, k.ivory);
-  const allWin: Pose[] = [], lit: Pose[] = [], cracks: { x: number; y: number; z: number; side: number }[] = [];
+  const cracks: { x: number; y: number; z: number; side: number }[] = [];
   // Tracker Q-07: more facade colours than ivory and slate, darker trim, warm awnings and neon.
-  const tones = [k.concrete, k.ivory, k.standard('#5b6f7c', .88, .1), k.standard('#7d8b92', .85, .08), k.standard('#6f625e', .9, .06), k.standard('#3f5566', .9, .1)];
+  const tones = [k.standard('#4a5a66', .9, .08), k.standard('#8a9294', .85, .06), k.standard('#5b6670', .88, .1), k.standard('#6f6964', .9, .06), k.standard('#3c4a55', .9, .1), k.standard('#776154', .9, .05)];
   const trim = k.standard('#26343e', .8, .3);
   const awnings = [k.standard('#9c3f2c', .85, .05), k.standard('#2f6c78', .85, .05), k.standard('#b08436', .85, .05)];
   const neon = [k.basic('#ff5a8a', 1.5), k.basic('#7fe6ff', 1.3), k.basic('#ffc062', 1.4)];
-  const tank = new T.CylinderGeometry(.55, .55, 1.3, 10);
   const block = (x: number, z: number, w: number, h: number, d: number, side: number, back = false) => {
     // Every piece is placed in the block's own frame, so a leaning building carries its windows with it.
     const ry = side * rand(-.06, .06), tilt = side * rand(-.05, .07), r: [number, number, number] = [0, ry, tilt];
@@ -127,22 +130,14 @@ export function createStreet() {
     const L = (lx: number, ly: number, lz: number) => new T.Vector3(lx, ly, lz).applyMatrix4(frame.matrix).toArray() as [number, number, number];
     const tone = tones[Math.floor(random() * tones.length)];
     k.box({ p: L(0, h / 2 - .05, 0), s: [w, h, d], r }, tone);
-    const sx = -side * (w / 2 + .02), rows = Math.floor(h / 1.7) - 1, cols = Math.max(2, Math.round(w / 1.7));
-    // Street face: three bays of windows between pilasters; the ends get their own grid, so no wall reads blank.
-    for (let row = 1; row < rows; row++) for (let c = 0; c < 3; c++) {
-      allWin.push({ p: L(sx, row * 1.7, -d / 3 + c * d / 3), s: [.03, .9, 1], r });
-      if (random() > .9) lit.push({ p: L(sx - side * .01, row * 1.7, -d / 3 + c * d / 3), s: [.02, .85, .95], r });
-    }
-    for (const ez of [d / 2 + .02, -d / 2 - .02]) for (let row = 1; row < rows; row++) for (let c = 0; c < cols; c++) {
-      allWin.push({ p: L(-w / 2 + (c + .5) * w / cols, row * 1.7, ez), s: [.8, .9, .03], r });
-      if (random() > .93) lit.push({ p: L(-w / 2 + (c + .5) * w / cols, row * 1.7, ez + Math.sign(ez) * .01), s: [.75, .85, .02], r });
-    }
-    // Cornice round the roof; pilasters between the bays.
-    k.box({ p: L(0, h + .1, 0), s: [w + .3, .22, d + .3], r }, trim);
+    const sx = -side * (w / 2 + .02);
+    // Storey-height windows, floor bands, AC units and balconies on the street face and both ends;
+    // roofs carry a parapet, tanks, plant, a mast or a sign. The tallest back blocks get tiered caps.
+    const bf = buildingFrame(x, z, ry, tilt);
+    dressFacade(dress, cm, bf, w, h, d, [side > 0 ? '-x' : '+x', '+z', '-z'], random, { from: back ? 1.2 : 4.2 });
+    dressRoof(dress, cm, bf, w, h, d, random, { tower: back && h > 26, sign: !back && random() > .7 });
+    // Pilasters between the bays.
     for (const c of [-.5, -1 / 6, 1 / 6, .5]) k.box({ p: L(sx - side * .08, h / 2, c * d * .97), s: [.14, h, .2], r }, trim);
-    if (random() > .5) k.mesh(tank, k.metal, { p: L(rand(-w / 4, w / 4), h + .85, rand(-d / 4, d / 4)), r });
-    if (random() > .55) k.box({ p: L(rand(-1, 1), h + .6, rand(-1.5, 1.5)), s: [1.1, 1.2, 1.1], r }, k.metal);
-    if (random() > .6) k.box({ p: L(0, h + 1.6, 0), s: [.06, 3.2, .06], r }, k.metal);
     if (back) return;
     // Shopfront: a dark band, ledges, sometimes an awning or a neon blade sign.
     k.box({ p: L(sx - side * .02, 1.6, 0), s: [.08, 3.2, d * .96], r }, k.dark);
@@ -156,7 +151,9 @@ export function createStreet() {
   for (const side of [-1, 1]) for (let z = 8; z > -74; z -= rand(6.5, 8.5)) { const w = rand(4, 6.5); block(side * (7.4 + w / 2 + rand(0, 1.2)), z, w, rand(8, 19), rand(5, 7), side); }
   // A taller back row, so the skyline steps up in layers instead of ending at one roofline.
   for (const side of [-1, 1]) for (let z = 4; z > -80; z -= rand(8, 11)) { const w = rand(5, 8); block(side * (17 + w / 2 + rand(0, 3)), z, w, rand(18, 32), rand(6, 8), side, true); }
-  k.instances(allWin, k.dim); k.instances(lit, k.basic('#ffc879', 1.1));
+  // Asphalt repairs, manholes, cracks and standing water down the lane; poles and wires on the left kerb.
+  roadBreakup(dress, cm, random, { x: [-5.2, 5.2], z: [-73, 7], y: .03, count: 46 });
+  utilityLines(dress, cm, random, [[-6.9, 2], [-6.9, -13], [-6.9, -26], [-6.9, -41], [-6.9, -52], [-6.9, -66]], { across: 7.4 });
   // Cyan cracks: jagged slivers on the facades, one shared material that pulses.
   const crackGlow = k.ownMaterial(new T.MeshBasicMaterial({ color: '#7fe6ff', transparent: true, opacity: .8, toneMapped: false, side: T.DoubleSide }));
   const slivers: T.BufferGeometry[] = [], at = new T.Object3D();
@@ -222,6 +219,14 @@ export function createStreet() {
   for (let x = -14; x <= 14; x += 7) block(x + rand(-1, 1), -114 - rand(0, 3), rand(5, 7), rand(12, 24), 6, 1);
   for (const [x, z, r] of [[-9, -80, .3], [9.5, -81, -.2], [-12, -98, .1], [12, -100, -.4]]) { k.box({ p: [x, .55, z], s: [2.6, 1.1, .5], r: [0, r, 0] }, k.ivory); k.box({ p: [x, 1.15, z], s: [2.6, .1, .55], r: [0, r, 0] }, k.basic('#b18b5d', .9)); }
   k.label('PORTAL RESEARCH SITE · 旧ゲート', { p: [-9, 1.6, -79.7] }, 4, '#e8cf9c');
+  roadBreakup(dress, cm, random, { x: [-15, 15], z: [-108, -80], y: .056, count: 26 });
+  // Far city: towers in bands past the plaza and behind the street's start, fading into the fog.
+  const far = [k.standard('#2b3945', .9, .1), k.standard('#34404a', .9, .1), k.standard('#3d3a40', .9, .08)];
+  farSkyline(dress, cm, random, { x: [-60, 60], z: [-150, -125], count: 14, h: [28, 58], tones: far });
+  farSkyline(dress, cm, random, { x: [-34, 34], z: [22, 46], count: 9, h: [18, 40], facing: -1, tones: far });
+  dress.build();
+  k.haze({ p: [0, 9, -122], s: [120, 30, 1] }, '#4a7a96', .16);
+  k.haze({ p: [0, 7, 18], s: [80, 24, 1] }, '#4a7a96', .12);
 
   // --- The frame: a heavy ring standing in a cradle, the feed cable climbing to its crown.
   const frame = new T.Group(); frame.position.copy(FRAME); k.root.add(frame);

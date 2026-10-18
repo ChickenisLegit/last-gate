@@ -15,6 +15,7 @@ import type { V3 } from './bayKit';
 import { createBayRender, type BayRender } from './bayRender';
 import './bay.css';
 import './bay-theme.css';
+import { AdaptiveDpr } from '../performance/AdaptiveDpr';
 
 /**
  * Phase 4, inside Bay 6. Hiro walks in from the gate, looks around the abandoned bay, reads a job
@@ -249,7 +250,8 @@ export function ServiceBay({ start }: { start: BayStart }) {
   useEffect(() => {
     const move = (e: PointerEvent) => cam.current.pointer.set((e.clientX / innerWidth - .5) * 2, (e.clientY / innerHeight - .5) * 2);
     const key = (e: KeyboardEvent) => { if (import.meta.env.DEV && e.ctrlKey && e.code === 'KeyM') { e.preventDefault(); advance.current(); } };
-    const wheel = (e: WheelEvent) => e.preventDefault();
+    // No page scroll over the bay, but the task rail and found card scroll on their own.
+    const wheel = (e: WheelEvent) => { if (!(e.target instanceof Element && e.target.closest('.lg-rail, .bay-found'))) e.preventDefault(); };
     window.addEventListener('pointermove', move); window.addEventListener('keydown', key); window.addEventListener('wheel', wheel, { passive: false });
     return () => { window.removeEventListener('pointermove', move); window.removeEventListener('keydown', key); window.removeEventListener('wheel', wheel); };
   }, []);
@@ -302,7 +304,7 @@ export function ServiceBay({ start }: { start: BayStart }) {
 
   return <main className={`bay ${ready ? 'bay-ready' : ''} ${leaving ? 'bay-leaving' : ''}`} aria-label="Phase 4: inside Bay 6">
     <div className="bay-world">
-      <Canvas shadows dpr={[1, 1.4]} camera={{ fov: 52, near: .05, far: 420, position: VIEWS.gate.pos }} gl={{ antialias: true, powerPreference: 'high-performance' }}>
+      <Canvas shadows dpr={[1, 1.4]} camera={{ fov: 52, near: .05, far: 420, position: VIEWS.gate.pos }} gl={{ antialias: true, powerPreference: 'high-performance' }}><AdaptiveDpr />
         <World bay={bay} cam={cam} state={state} pins={pins} pinEls={pinEls} hiro={hiro} onPick={onPick} onReady={() => { setReady(true); window.dispatchEvent(new Event('lastgate:scene-ready')); }} />
       </Canvas>
     </div>

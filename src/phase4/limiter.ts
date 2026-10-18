@@ -24,6 +24,8 @@ export type Limiter = T.Group & {
 };
 
 export const LIMITER_LENGTH = 1.12;
+/** Where the heavy black feed leaves the main cable gland (right-hand end), in the unit's own frame: x .56, y FOOT + .13. */
+export const LIMITER_FEED = new T.Vector3(.56, .146, 0);
 
 function gaugeFace() {
   return paint(512, 512, (x, w) => {

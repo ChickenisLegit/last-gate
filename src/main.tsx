@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react';
+import { Component, lazy, Suspense, useEffect, useRef, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { usePhaseTwoEntry } from './phase2/entry';
 import { PhaseTwoHost } from './phase2/PhaseTwoHost';
@@ -41,17 +41,10 @@ class AppBoundary extends Component<{ children: ReactNode }, { error: boolean }>
   }
 }
 
-function DesktopGate() {
-  const [supported, setSupported] = useState(innerWidth >= 1280);
+function ExperienceRoot() {
   const phase = useSceneState(state => state.phase);
   const phaseTwoEntry = usePhaseTwoEntry();
   const preloaded = useRef(false);
-
-  useEffect(() => {
-    const resize = () => setSupported(innerWidth >= 1280);
-    window.addEventListener('resize', resize);
-    return () => window.removeEventListener('resize', resize);
-  }, []);
 
   useEffect(() => {
     if (phase !== 'handoff') return;
@@ -96,10 +89,6 @@ function DesktopGate() {
     return () => window.removeEventListener('keydown', skipPhase);
   }, [phaseTwoEntry.active]);
 
-  if (!supported) {
-    return <main className="desktop-required"><p>LAST GATE</p><h1>DESKTOP EXPERIENCE</h1><span>1280PX+ DISPLAY REQUIRED</span></main>;
-  }
-
   return <AppBoundary>
     <Suspense fallback={<main className="boot" role="status">LOADING EXPERIENCE…</main>}>
       <PhaseSixHost><PhaseFiveHost><DistrictHost><PhaseTwoHost><Experience /></PhaseTwoHost></DistrictHost></PhaseFiveHost></PhaseSixHost>
@@ -111,7 +100,7 @@ function App() {
   if (!supportsWebGL()) {
     return <Failure message="WebGL is unavailable or disabled." detail="This experience needs WebGL 2. Enable hardware acceleration or try a recent browser." />;
   }
-  return <DesktopGate />;
+  return <ExperienceRoot />;
 }
 
 createRoot(document.getElementById('root')!).render(<App />);
