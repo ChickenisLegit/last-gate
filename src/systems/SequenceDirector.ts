@@ -9,7 +9,8 @@ export type SequenceEvent =
   | { type:'beat'; beat:BeatId }
   | { type:'impact'; position:Vector3; power:number; tear:boolean }
   | { type:'charge'; position:Vector3 }
-  | { type:'discharge'; from:Vector3; to:Vector3 };
+  | { type:'discharge'; from:Vector3; to:Vector3 }
+  | { type:'flyby'; position:Vector3 };
 
 /** Hiro's escape line: authored, never free-roam. Eye height sits ~1.6m above the asphalt. */
 export const CHASE_PATH = new CatmullRomCurve3([
@@ -18,22 +19,23 @@ export const CHASE_PATH = new CatmullRomCurve3([
   new Vector3(1.55,1.45,-25.4), new Vector3(1.3,1.45,-27.1)
 ], false, 'centripetal');
 export const CHASE_LENGTH = CHASE_PATH.getLength();
-/** Where the path crosses each authored attack. `stall` lets the moment land before Hiro can run on. */
-export const CHASE_BEATS:{id:BeatId;at:number;stall:number}[] = [
-  {id:'silhouette',at:.04,stall:1.15},{id:'overhead',at:.29,stall:.75},
-  {id:'rooftop',at:.56,stall:1.35},{id:'final',at:.84,stall:99}
+/** One continuous run. Distance markers no longer leave Baymax hovering between attacks. */
+export const CHASE_BEATS:{id:BeatId;at:number}[] = [
+  {id:'silhouette',at:0},{id:'overhead',at:.13},
+  {id:'rooftop',at:.42},{id:'final',at:.76}
 ];
+const RUN_SECONDS=9.5;
 /** The dimensional seam the final blast rips open (matches the anomaly in PortalDimension). */
 export const SEAM_POSITION = new Vector3(1.8,4.2,-34);
 /** Outer right shoulder meets this broken frame once, 1.45 seconds into displacement. */
 export const PULL_CONTACT_POSITION = new Vector3(2.7,6.2,-46.54);
-type Attack = {at:number;kind:'charge'|'discharge'|'impact';to?:[number,number,number];power?:number;tear?:boolean;slowmo?:number};
+type Attack = {at:number;kind:'charge'|'discharge'|'impact'|'flyby';to?:[number,number,number];power?:number;tear?:boolean;slowmo?:number};
 /** Every violent act is authored: when it charges, where it lands, and whether it tears the dimension. */
 const ATTACKS:Record<BeatId,Attack[]> = {
-  launch:[{at:.55,kind:'charge'},{at:1.6,kind:'discharge',to:[1.25,-.12,-8.3],power:1.05,tear:true}],
-  // The first shape is a threat and a near pass; the ranged shot is saved for the rooftop beat.
+  launch:[{at:.8,kind:'charge'}],
+  // Three attacks: close swipe past Hiro, ranged miss, then the landing.
   silhouette:[],
-  overhead:[],
+  overhead:[{at:1.3,kind:'flyby'}],
   rooftop:[{at:.75,kind:'charge'},{at:1.45,kind:'discharge',to:[-4.6,-.12,-21.2],power:.8,tear:false}],
   'tear-pass':[{at:0,kind:'impact',to:[5.6,2.3,-23.6],power:.42,tear:true},{at:.62,kind:'impact',to:[0,2,-21],power:.25,tear:false,slowmo:.28}],
   // The last attack is Baymax himself: a dive whose shockwave splits the seam behind him.
@@ -53,13 +55,14 @@ export class SequenceDirector {
   // Shell
   alignment=0; docked=false;
   // Chase
-  chase=0; chaseSpeed=0; beatIndex=-1; beatTime=0; stallUntil=0; finalFired=false;
+  chase=0; chaseSpeed=0; beatIndex=-1; beatTime=0; private runTime=0;
   // Camera impulses
   shake=0; kick=new Vector3(); fovKick=0; slowmo=1; lookBias=new Vector3(); lookWeight=0;
   // Grade and world response
   warp=0; warpCenter=new Vector2(.5,.5); flash=0; whiteout=0; red=0; tear=0; corridor=0; collapse=0;
   /** Baymax's arm muzzle in world space; BaymaxController writes it every frame. */
   muzzle=new Vector3(2.7,2.2,-11);
+  swipeTarget=new Vector3(-4,-.12,-16);
   private listeners=new Set<(event:SequenceEvent)=>void>();
   private replay=-1;private fired=0;private attackBeat:BeatId|null=null;private pending:{at:number;to:Vector3;power:number;tear:boolean}[]=[];
 
@@ -80,7 +83,7 @@ export class SequenceDirector {
     if(holdPhase&&this.holdProgress>=1){this.holdProgress=0;this.latch=false;state.interact();}
     if(state.phase==='chase')this.updateChase(dt);
     this.updateAttacks(state.phase==='ignition'?'launch':state.phase==='chase'?this.beat:null,state.phase==='ignition'?this.phaseTime:this.beatTime);
-    if(state.phase==='chase'&&this.beat==='final'&&this.beatTime>3.15)state.advance('chase');
+    if(state.phase==='chase'&&this.beat==='final'&&this.beatTime>3.55)state.advance('chase');
     this.updateSignals(state.phase,dt);
     // Impulses decay; the camera reads them as a damped spring.
     this.shake=Math.max(0,this.shake-dt*1.6);this.flash=Math.max(0,this.flash-dt*2.2);
@@ -99,8 +102,9 @@ export class SequenceDirector {
     if(beat!==this.attackBeat){this.attackBeat=beat;this.fired=0;}
     const list=beat?ATTACKS[beat]:[];
     while(this.fired<list.length&&t>=list[this.fired].at){
-      const a=list[this.fired++],to=a.to?new Vector3(...a.to):undefined;
+      const a=list[this.fired++],to=a.to?new Vector3(...a.to):beat==='overhead'?this.swipeTarget.clone():undefined;
       if(a.kind==='charge')this.emit({type:'charge',position:this.muzzle.clone()});
+      else if(a.kind==='flyby'){this.emit({type:'flyby',position:this.muzzle.clone()});this.impulse(.14);}
       else if(a.kind==='discharge'&&to){
         this.emit({type:'discharge',from:this.muzzle.clone(),to});
         // The bolt travels; the world answers when it arrives.
@@ -114,28 +118,28 @@ export class SequenceDirector {
   }
   private reset(){
     this.pending.length=0;this.attackBeat=null;this.fired=0;
-    this.chase=0;this.chaseSpeed=0;this.beatIndex=-1;this.beatTime=0;this.stallUntil=0;this.finalFired=false;
+    this.chase=0;this.chaseSpeed=0;this.beatIndex=-1;this.beatTime=0;this.runTime=0;
     this.alignment=0;this.docked=false;this.red=0;this.tear=0;this.corridor=0;this.collapse=0;this.whiteout=0;
     this.warp=0;this.flash=0;this.shake=0;this.slowmo=1;this.kick.set(0,0,0);this.lookWeight=0;
   }
   private enter(phase:Phase){
     if(phase==='awakening')this.reset();
     if(phase==='ignition')this.emit({type:'beat',beat:'launch'});
-    if(phase==='chase'){this.chase=0;this.beatIndex=-1;this.stallUntil=this.time+1.15;}
+    if(phase==='chase'){this.chase=0;this.beatIndex=-1;this.runTime=0;}
   }
   private updateChase(dt:number){
     const input=this.sprint||this.holding;
     if(input)this.lastInput=performance.now()/1000;
-    // Hiro keeps moving under pressure; input turns the stagger into a sprint.
-    const stalled=this.time<this.stallUntil;
-    const target=(stalled?.12:input?2.55:1.05)/CHASE_LENGTH;
-    this.chaseSpeed=MathUtils.damp(this.chaseSpeed,target,stalled?6:2.6,dt);
+    // The action owns its cadence; sprint changes Hiro's footfall/FOV, not the time
+    // Baymax spends hanging motionless at the end of a completed animation.
+    const before=this.chase;
+    this.runTime+=dt*this.slowmo;
+    this.chase=Math.min(.86,this.runTime/RUN_SECONDS);
+    this.chaseSpeed=MathUtils.damp(this.chaseSpeed,(this.chase-before)/Math.max(dt,.001)*(input?1.12:1),7,dt);
     const nextBeat=CHASE_BEATS[this.beatIndex+1];
-    const cap=nextBeat?.id==='final'||this.beatIndex===CHASE_BEATS.length-1?.97:1;
-    this.chase=Math.min(cap,this.chase+this.chaseSpeed*dt*this.slowmo);
     this.beatTime+=dt*this.slowmo;
     if(nextBeat&&this.chase>=nextBeat.at){
-      this.beatIndex++;this.beatTime=0;this.stallUntil=this.time+nextBeat.stall;
+      this.beatIndex++;this.beatTime=0;
       this.emit({type:'beat',beat:nextBeat.id});
     }
   }

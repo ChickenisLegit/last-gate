@@ -75,7 +75,7 @@ export class CinematicPost {
   fx={warp:0,center:new Vector2(.5,.5),flash:0,white:0,red:0,cyan:0,chroma:0,aperture:-1,time:0,action:false,opening:true};
   render(dt:number,wake:number,progress:number,focus:number){
     const dpr=this.gl.getPixelRatio();if(dpr!==this.dpr){this.dpr=dpr;this.composer.setPixelRatio(dpr);this.resize(this.width,this.height);}
-    const recovering=!this.fx.opening&&!reducedMotion&&wake<1;
+    const recovering=!this.fx.opening&&!this.fx.action&&!reducedMotion&&wake<1;
     // Fast action hides AO; below HIGH it is skipped there so the chase keeps its frame rate.
     this.ao.enabled=!this.fx.opening&&!recovering&&this.preset.aoSamples>0&&!(this.fx.action&&this.preset.dprCap<1.5);
     const signal=cinematicSignals;

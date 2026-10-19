@@ -10,7 +10,7 @@ const span=(t:number,a:number,b:number)=>MathUtils.smoothstep(t,a,b);
 const BLEND:Partial<Record<Phase,number>>={
   'portal-sighted':2.4,'call-baymax':1.6,'to-portal':1.2,'through-portal':.5,'sf-arrival':1.3,'sf-turnback':1.6,'back-decision':1,'back-through':.3,reentry:.25,
   discovery:2.4,inspected:2.4,'chip-focus':2.2,'chip-reaching':1.2,'chip-held':.9,'chest-focus':1.4,'panel-opening':1.2,
-  'socket-ready':1,inserting:.8,silence:.6,booting:2.6,diagnostic:2.2,corrupting:2.4,threat:1.5,ignition:.9,chase:.01,fracture:1.2,pulled:.4,handoff:.01
+  'socket-ready':1,inserting:.8,silence:.6,booting:2.6,diagnostic:2.2,corrupting:2.4,threat:1.5,ignition:.5,chase:.01,fracture:1.2,pulled:.4,handoff:.01
 };
 const PULL=new CatmullRomCurve3([new Vector3(1.3,1.45,-27.1),new Vector3(1.55,3.4,-30.4),new Vector3(1.8,6.2,-33.8),new Vector3(1.85,7.1,-40),new Vector3(1.9,7.2,-49)]);
 const INSPECT_AIM=new Vector3(4.14,1.3,-9.02);
@@ -299,13 +299,11 @@ export class CameraDirector {
         this.fov=MathUtils.lerp(34,29.5,lock);this.focusDistance=P.distanceTo(ctx.head);break;
       }
       case 'ignition':{
-        // Hiro backs off; the blast throws him; he lies looking up as Baymax launches.
-        // He stands to full height; Hiro staggers back and the lens opens so all of him reads.
-        const back=span(t,0,1.25),thrown=span(t,1.62,2.05);
-        this.v.set(2.55,2.5,-9.4).lerp(this.v2.set(2.05,1.55,-6.7),back);P.copy(this.v).lerp(this.v2.set(1.05,.52,-6.2),thrown);
-        A.copy(ctx.head).lerp(this.v2.copy(ctx.baymax).setY(ctx.baymax.y+2.2),back*.6);A.lerp(this.v2.copy(ctx.baymax).setY(ctx.baymax.y+2.4),span(t,2,3));
-        if(t>1.62&&t<2.05)A.y+=(1-thrown)*.8;
-        this.fov=MathUtils.lerp(36,53,back)+thrown*5;this.roll=thrown*.32*(1-span(t,3.2,4.6)*.5);
+        // Stay on Hiro's feet and follow the complete launch; no unmotivated fall/roll.
+        const back=span(t,0,1.4);
+        P.set(MathUtils.lerp(2.55,1.05,back),MathUtils.lerp(2.5,1.5,back),MathUtils.lerp(-6.8,-6.7,back));
+        A.copy(ctx.baymax).setY(ctx.baymax.y+1.35);
+        this.fov=MathUtils.lerp(42,58,back);this.roll=0;
         this.focusDistance=P.distanceTo(ctx.baymax)+.5;break;
       }
       case 'chase':{
@@ -315,17 +313,24 @@ export class CameraDirector {
         this.run+=dt*speed*2.2;
         const instability=span(t,1.8,5.2);
         const bob=reducedMotion?0:Math.abs(Math.sin(this.run))*.07*Math.min(1,speed/2.2),side=reducedMotion?0:Math.sin(this.run*.5)*.04*Math.min(1,speed/2.2);
-        P.y=MathUtils.lerp(.52,P.y,rise)+bob;P.x+=side;
+        P.y+=bob;P.x+=side;
         // Look well down the line; near the end, the seam itself becomes the destination.
         CHASE_PATH.getPointAt(Math.min(1,u+.16),A);A.y=MathUtils.lerp(A.y+.9,A.y+.15,rise);
         A.lerp(this.v2.set(1.8,3.4,-34),span(u,.7,1)*.6);
         if(!reducedMotion&&instability>0){P.x+=Math.sin(t*2.1)*.018*instability;P.y+=Math.sin(t*1.7)*.012*instability;A.x+=Math.sin(t*1.3+1)*.055*instability;this.roll+=Math.sin(t*1.1)*.012*instability;}
         // Glances: the director pulls Hiro's eyes to Baymax when he is the threat on screen.
         const w=this.glance(seq);if(w>0){A.lerp(this.v.copy(ctx.baymax).setY(ctx.baymax.y+1.4),w);}
+        // See the miss as well as the shooter. Looking only at his chest hid every
+        // projectile strike beneath the screen, making the attack feel disconnected.
+        const shot=seq.beat==='rooftop'?span(seq.beatTime,.75,1.15)*(1-span(seq.beatTime,1.85,2.25)):0;
+        if(shot>0)A.lerp(this.v.set(-4.6,-.12,-21.2),shot*.55);
         // Never crane straight up: keep the street, and whatever is about to hit it, in frame.
         const reach=Math.hypot(A.x-P.x,A.z-P.z);if(w<.6)A.y=Math.min(A.y,P.y+reach*.42);
         A.x+=lookX*1.2;A.y-=lookY*.6;
-        this.fov=52+Math.min(6,speed*2)+(1-rise)*-4;this.roll=(1-rise)*.32+side*-.3;
+        this.fov=Math.max(58+Math.min(3,speed),MathUtils.radToDeg(2*Math.atan(2.5/Math.max(3,P.distanceTo(ctx.baymax)))));
+        this.fov+=shot*17;
+        if(seq.beat==='overhead')this.fov+=10*span(seq.beatTime,.55,1)*(1-span(seq.beatTime,1.65,2.3));
+        this.roll=side*-.18;
         this.focusDistance=12;break;
       }
       case 'fracture':{
@@ -371,11 +376,11 @@ export class CameraDirector {
   }
   private glance(seq:SequenceDirector){
     const b=seq.beat,t=seq.beatTime;
-    if(b==='silhouette')return .9*span(t,.05,.4)*(1-span(t,1.8,2.6));
-    if(b==='overhead')return span(t,0,.25)*(1-span(t,2.2,2.8));
-    if(b==='rooftop')return span(t,0,.35)*(1-span(t,2.6,3.3));
+    // Keep tracking across beat boundaries. Resetting to zero used to whip Hiro's
+    // gaze to the road on each new attack, then whip it back up to Baymax.
+    if(b==='silhouette'||b==='overhead'||b==='rooftop')return 1;
     if(b==='tear-pass')return .7*span(t,.2,.45)*(1-span(t,1.1,1.6));
-    if(b==='final')return span(t,0,.45);
+    if(b==='final')return 1;
     return 0;
   }
   /** Shake is noise, not random jitter; kicks are damped shoves; FOV punches on hits. */

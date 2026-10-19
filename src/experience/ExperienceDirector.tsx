@@ -207,7 +207,11 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
       // Keep the boot cover until queued warm-up draws have actually finished on the GPU.
       const context=gl.getContext() as WebGL2RenderingContext,fence=context.fenceSync(context.SYNC_GPU_COMMANDS_COMPLETE,0);
       if(fence){context.flush();await new Promise<void>(resolve=>{const start=performance.now();const poll=()=>{const status=context.clientWaitSync(fence,0,0);if(status===context.TIMEOUT_EXPIRED&&performance.now()-start<10000){setTimeout(poll,16);return;}context.deleteSync(fence);resolve();};poll();});}
-      if(active)useSceneState.getState().ready();
+      if(active){
+        useSceneState.getState().ready();
+        // Authoring shortcut follows the real director, actor and effects; production always starts at the portal.
+        if(import.meta.env.DEV&&new URLSearchParams(location.search).get('phase1')==='fight')useSceneState.setState({phase:'ignition',chapter:'RED_WAKE'});
+      }
     }).catch(()=>{if(active)useSceneState.setState({error:'Could not prepare the scene. Reload to try again.'});});
     return()=>{active=false;};
   },[shell,shellMask,gl,scene,camera,post,sf,gate,environment,worldMasks,rock,debris]);
@@ -489,7 +493,6 @@ export function ExperienceDirector(){
   return <main className={`experience phase-${phase}`} aria-label="LAST GATE: Hiro’s vision inside the portal dimension">
     {world}
     <div className="lens-vignette" aria-hidden="true"/><div className="film-grain" aria-hidden="true"/>
-    <div className="cinema-edge top" aria-hidden="true"/><div className="cinema-edge bottom" aria-hidden="true"/>
     <div className="organic-blink" ref={aperture} aria-hidden="true"><i className="blink-lid blink-top"/><i className="blink-lid blink-bottom"/></div>
     <div className="arrival-flash" aria-hidden="true"/>
     {/* He watches the gate seal first; only then does he black out. */}

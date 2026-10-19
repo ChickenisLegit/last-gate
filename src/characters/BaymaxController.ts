@@ -22,7 +22,7 @@ const UP=new Vector3(0,1,0),DOWN=new Vector3(0,-1,0);
 const DORMANT_HEAD={x:.24,y:0,z:-.12};
 type Pose={pos:Vector3;yaw:number;pitch:number;roll:number;head:Vector3;look:number;arm:number;aim:Vector3;thrust:number;inflate:number;stand:number};
 /** Standing straightens the legs under him; the body rises by this much to keep the feet grounded. */
-const STAND_LIFT=.89,LEG_SWING=1.45;
+const LEG_SWING=1.45;
 
 function glowTexture(){
   const c=document.createElement('canvas');c.width=c.height=64;const x=c.getContext('2d')!;
@@ -39,6 +39,7 @@ export class BaymaxController {
   private head:Object3D|null=null;
   private eyes:Mesh[]=[];private eyeGlow:Sprite[]=[];
   private armR=new Group();private armL=new Group();private legR=new Group();private legL=new Group();
+  private ankleR=new Group();private ankleL=new Group();private standLift=.89*LATER_BAYMAX_SCALE;
   private armor:MeshPhysicalMaterial;private skin:MeshPhysicalMaterial;
   private redLight=new PointLight('#ff2a1c',0,7,1.6);
   private thruster=new Group();private flame:ShaderMaterial;private thrusterGlow:Sprite;
@@ -97,11 +98,13 @@ export class BaymaxController {
     // and in flight they swing down under him, so he can rise and fly rather than float seated.
     for(const [side,pivot] of [[1,this.legR],[-1,this.legL]] as const){
       pivot.position.set(side*.53,.55,.28);shell.add(pivot);
+      const ankle=side===1?this.ankleR:this.ankleL;
+      ankle.position.set(side*.18,-.27,.86);pivot.add(ankle);shell.updateMatrixWorld(true);
       for(const m of meshes){
         const p=m.position,sx=side*p.x;
         const thigh=Math.abs(sx-.57)<.06&&Math.abs(p.y-.48)<.06&&Math.abs(p.z-.76)<.08;
         const foot=Math.abs(sx-.71)<.06&&(Math.abs(p.y-.26)<.06||Math.abs(p.y-.04)<.06)&&p.z>1.2;
-        if(thigh||foot)pivot.attach(m);
+        if(thigh)pivot.attach(m);else if(foot)ankle.attach(m);
       }
     }
     this.hand.position.set(.23,-1.95,.62);this.armR.add(this.hand);
@@ -141,6 +144,12 @@ export class BaymaxController {
     const rest=():Pose=>({pos:new Vector3(...BAYMAX_POSITION),yaw:-.18,pitch:0,roll:0,head:new Vector3(DORMANT_HEAD.x,DORMANT_HEAD.y,DORMANT_HEAD.z),look:0,arm:0,aim:new Vector3(),thrust:0,inflate:0,stand:0});
     this.pose=rest();this.target=rest();
     this.contact=createSurfaceContact(meshes);
+    // Match the later rig: ankles counter-rotate the hips so feet remain feet,
+    // rather than turning into long vertical capsules when he stands or flies.
+    this.legR.rotation.x=this.legL.rotation.x=LEG_SWING;
+    this.ankleR.rotation.x=this.ankleL.rotation.x=-LEG_SWING;shell.updateMatrixWorld(true);
+    this.standLift=Math.max(0,this.contact.correction(-.14));
+    this.legR.rotation.x=this.legL.rotation.x=this.ankleR.rotation.x=this.ankleL.rotation.x=0;shell.updateMatrixWorld(true);
   }
 
   /** The dock in world space, for the chip and camera. */
@@ -237,13 +246,14 @@ export class BaymaxController {
     // Flight layer: bank into turns, legs trail with speed and sway on the thruster, the free arm sweeps back.
     const yawVel=this.moved?wrap(P.yaw-this.prevYaw)/Math.max(dt,1e-3):0,speed=this.moved?this.tmp2.subVectors(P.pos,this.prevPos).length()/Math.max(dt,1e-3):0;
     this.prevYaw=P.yaw;this.prevPos.copy(P.pos);this.moved=!reduced;
-    this.bank=MathUtils.damp(this.bank,MathUtils.clamp(-yawVel*.2,-.5,.5)*P.thrust,4,dt);
+    this.bank=MathUtils.damp(this.bank,MathUtils.clamp(-yawVel*.14,-.28,.28)*P.thrust,5,dt);
     const trail=Math.min(.45,speed*.025)*P.thrust,sway=reduced?0:Math.sin(time*1.7)*.07*P.thrust*P.stand;
     this.stretch=MathUtils.damp(this.stretch,0,5,dt);
     // Breathing: soft and slow as himself; faster and heavier once the combat program has him.
     const red0=seq.red,breathe=reduced?0:Math.sin(time*MathUtils.lerp(1.05,2.3,red0))*MathUtils.lerp(.004,.007,red0)*P.inflate;
-    this.shell.position.copy(P.pos);this.shell.position.y+=breathe-.009*(1-Math.exp(-time*.18))*(1-P.inflate)+P.stand*STAND_LIFT*LATER_BAYMAX_SCALE;
+    this.shell.position.copy(P.pos);this.shell.position.y+=breathe-.009*(1-Math.exp(-time*.18))*(1-P.inflate)+P.stand*this.standLift;
     this.legR.rotation.set(P.stand*LEG_SWING+trail+sway,0,P.stand*-.05);this.legL.rotation.set(P.stand*LEG_SWING+trail-sway*.8,0,P.stand*.05);
+    this.ankleR.rotation.x=-P.stand*LEG_SWING-trail*.7;this.ankleL.rotation.x=-P.stand*LEG_SWING-trail*.7;
     this.shell.rotation.set(P.pitch,P.yaw,P.roll+this.bank);
     const st=this.stretch;
     this.shell.scale.set(1+P.inflate*.006+breathe*.4-st*.03,1+P.inflate*.012+breathe+st*.05,1+P.inflate*.006+breathe*.4-st*.03).multiplyScalar(LATER_BAYMAX_SCALE);
@@ -288,7 +298,7 @@ export class BaymaxController {
   private lookAt(point:Vector3,T:Pose,weight:number){
     if(weight<=0)return;
     // Head height follows the body's own pitch (he pivots near the feet), so aim from where the eyes really are.
-    const lift=(2.98+T.stand*STAND_LIFT)*LATER_BAYMAX_SCALE,headY=T.pos.y+lift*Math.cos(T.pitch),reachZ=lift*Math.sin(T.pitch);
+    const lift=2.98*LATER_BAYMAX_SCALE+T.stand*this.standLift,headY=T.pos.y+lift*Math.cos(T.pitch),reachZ=lift*Math.sin(T.pitch);
     const hx=T.pos.x+Math.sin(T.yaw)*reachZ,hz=T.pos.z+Math.cos(T.yaw)*reachZ;
     const dx=point.x-hx,dz=point.z-hz,dy=point.y-headY;
     // Relative to the body. What the neck can't reach, the body turns and leans into.
@@ -322,10 +332,9 @@ export class BaymaxController {
     T.head.set(0,0,0);this.flightLook(this.watch,T,.9);
   }
   private charging(phase:Phase,t:number,seq:SequenceDirector){
-    if(phase==='ignition')return span(t,.55,1.55)*(1-span(t,1.6,1.7));
+    if(phase==='ignition')return span(t,.4,.9)*(1-span(t,1.15,1.5));
     if(phase!=='chase')return 0;
     const b=seq.beat,bt=seq.beatTime;
-    if(b==='silhouette')return span(bt,.2,.9)*(1-span(bt,.95,1.05));
     if(b==='rooftop')return span(bt,.75,1.4)*(1-span(bt,1.45,1.55));
     if(b==='final')return span(bt,1.05,2)*(1-span(bt,2.25,2.4));
     return 0;
@@ -333,17 +342,13 @@ export class BaymaxController {
   private ignition(t:number,T:Pose,camera:Vector3){
     // He stands. The first thing the corrupted state does is rise to full height over Hiro.
     T.inflate=1;T.pos.y+=.035-.07*bump(t,0,.45);T.stand=span(t,.25,1.05);
-    // A squash as the thruster catches, then he stretches up and away.
-    if(t>2.3&&t<2.33)this.stretch=-.6;if(t>2.5&&t<2.53)this.stretch=.7;
-    // Tension, aim, discharge, recoil, spool, launch.
+    // Compress, ignite, then accelerate away. Hiro isn't knocked down by a nonexistent shot.
     this.face(camera,T,.45*span(t,0,.6));this.lookAt(camera,T,1);
-    T.pitch=.12*span(t,0,.5)-.1*span(t,1.6,1.75)*(1-span(t,1.9,2.3));
-    T.arm=span(t,.2,1.05);T.aim.set(1.5,.7,-8.5);
-    if(t>1.6&&t<1.85)T.arm=.85;
-    T.thrust=span(t,1.95,2.5);
-    const lift=Math.pow(span(t,2.45,4.4),1.6);
+    T.pitch=.12*span(t,0,.8);T.arm=.35*span(t,.2,.8)*(1-span(t,1.25,1.8));T.aim.copy(camera);
+    T.thrust=span(t,.9,1.55);
+    const lift=Math.pow(span(t,1.35,3.5),1.6);
     T.pos.set(BAYMAX_POSITION[0]+lift*1.6,BAYMAX_POSITION[1]+.035+lift*4.8,BAYMAX_POSITION[2]-lift*6);
-    T.pitch-=lift*.25;if(t>2.6){T.arm=MathUtils.lerp(T.arm,0,span(t,2.6,3.2));}
+    T.pitch-=lift*.25;
   }
   private chase(seq:SequenceDirector,T:Pose,camera:Vector3){
     const b=seq.beat,u=seq.beatTime,V=(x:number,y:number,z:number)=>this.tmp.set(x,y,z);
@@ -352,31 +357,32 @@ export class BaymaxController {
     if(b!==this.beat){this.beat=b;this.lastBeatTime=0;this.beatCamera.copy(camera);this.beatOrigin.copy(this.pose.pos);
       if(b==='overhead'){
         this.passCurve.points[0].copy(this.beatOrigin);
-        this.passCurve.points[1].set(camera.x-3.7,camera.y+2.3,camera.z-4.8);
-        this.passCurve.points[2].set(camera.x-5.2,camera.y+4.2,camera.z-12);
+        this.passCurve.points[1].set(camera.x-4.5,camera.y-.7,camera.z-5.8);
+        this.passCurve.points[2].set(camera.x-5.2,camera.y+3.6,camera.z-12);
         this.passCurve.updateArcLengths();
+        seq.swipeTarget.set(camera.x-1.8,camera.y,camera.z-2.8);
       }
     }
     const C=this.beatCamera;
     if(b==='silhouette'){
-      // A readable shape ahead in the street: eyes first, then he banks into the fly-by.
-      const from=this.beatOrigin,hold=new Vector3(4.6,4.4,-18.5);
-      if(u<.6)this.flyToward(from,hold,T,u/.6,.8);else{T.pos.copy(hold);T.pos.y+=Math.sin(u*2)*.12;T.pitch=.12;}
-      if(u>.6&&u<1.3){this.face(camera,T);this.lookAt(camera,T,span(u,.6,.8));T.arm=0;}
-      if(u>1.15)this.flyToward(hold,V(C.x+5.5,C.y+5.2,C.z-13).clone(),T,span(u,1.15,2.35),.62);
+      // Continuous bank into the first attack; no stop-and-hover establishing loop.
+      this.flyToward(this.beatOrigin,V(C.x+3.9,C.y+3.2,C.z-11).clone(),T,span(u,0,1.25),.4);
     }else if(b==='overhead'){
       // Cross the forward field rather than teleporting behind the running camera.
       // He banks past the left shoulder with a safe horizontal clearance.
-      const p=span(u,0,2.2);this.passCurve.getPointAt(p,T.pos);this.passCurve.getTangentAt(p,this.tmp2);
-      T.yaw=Math.atan2(this.tmp2.x,this.tmp2.z);T.pitch=.42*Math.sin(Math.PI*p);T.thrust=.35+.65*Math.sin(Math.PI*p);
+      const p=span(u,0,2.65);this.passCurve.getPointAt(p,T.pos);this.passCurve.getTangentAt(p,this.tmp2);
+      T.yaw=Math.atan2(this.tmp2.x,this.tmp2.z);T.pitch=.38*Math.sin(Math.PI*p);T.thrust=.4+.6*Math.sin(Math.PI*p);
+      T.arm=span(u,.55,1.16)*(1-span(u,1.35,1.9));T.aim.copy(seq.swipeTarget);
       this.flightLook(camera,T,.7);
     }else if(b==='rooftop'){
       // Bank above the left roofline, fire wide, and peel back into the street.
-      const roof=new Vector3(C.x-5.2,C.y+5.6,C.z-8.8);
+      const roof=new Vector3(C.x-5.2,C.y+1.8,C.z-8.8);
       const from=this.beatOrigin;
       if(u<.75)this.flyToward(from,roof,T,u/.75,.85);
-      else{T.pos.copy(roof);T.thrust=.25;T.pitch=.18;this.face(camera,T);this.lookAt(camera,T,1);T.arm=span(u,.7,1.3)*(1-span(u,1.8,2.3));T.aim.set(-4.6,-.12,-21.2);}
-      if(u>2.15)this.flyToward(roof,V(C.x+7,C.y+6,C.z-15).clone(),T,span(u,2.15,3.25),.65);
+      else{T.pos.copy(roof);T.pos.x-=span(u,.75,2.15)*.7;T.pos.y-=span(u,.75,2.15)*.3;
+        T.thrust=.5;T.pitch=.1-.16*bump(u,1.45,1.8);this.face(camera,T);this.lookAt(camera,T,1);
+        T.arm=span(u,.7,1.3)*(1-span(u,1.8,2.3));T.aim.set(-4.6,-.12,-21.2);}
+      if(u>2.15)this.flyToward(roof,V(C.x+4.5,C.y+3.8,C.z-14).clone(),T,span(u,2.15,3.25),.55);
     }else if(b==='tear-pass'){
       // He comes out of the tear itself, close enough to fill the frame for a moment.
       const from=new Vector3(5.8,2.3,-23.8),to=new Vector3(-8,3.8,-19.8);
