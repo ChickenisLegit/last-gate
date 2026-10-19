@@ -13,7 +13,7 @@ const snapshots:unknown[]=[];let time=0;const v=new T.Vector3(),box=new T.Box3()
 let checkedFrames=0,peakStep=0,impactClearance=Infinity,minMeshCameraDistance=Infinity,dt=1/60,sprinting=true;
 const previous=new T.Vector3();let hasPrevious=false;const strikes:number[][]=[],cadence:unknown[]=[];let attacks=0;
 seq.on(event=>{
- if(event.type==='flyby'||event.type==='discharge'||event.type==='impact'&&seq.beat==='final')attacks++;
+ if(event.type==='flyby'||event.type==='discharge'||event.type==='impact'&&(seq.beat==='final'||seq.beat==='overhead'))attacks++;
  if(event.type==='impact'&&seq.beat==='rooftop'){
   const screen=event.position.clone().project(camera);strikes.push(screen.toArray());
   if(Math.abs(screen.x)>.95||Math.abs(screen.y)>.95||screen.z>1)throw new Error('Ranged miss is outside the camera');
@@ -47,7 +47,7 @@ for(const [index,aspect] of [16/9,690/668,16/9,690/668].entries()){
  dt=index<2?1/60:1/30;sprinting=index<2;attacks=0;camera.aspect=aspect;camera.updateProjectionMatrix();sampled.clear();
  useSceneState.setState({phase:'ignition',chapter:'RED_WAKE',replay:index});for(let i=0;i<Math.ceil(SHELL_DURATIONS.ignition!/dt);i++)frame('ignition');
  useSceneState.setState({phase:'chase'});let frames=0;for(;frames<Math.ceil(16/dt)&&useSceneState.getState().phase==='chase';frames++)frame('chase');
- if(sampled.size!==4)throw new Error('Missing flight beat');if(attacks!==3)throw new Error(`Expected three attacks, received ${attacks}`);
+ if(sampled.size!==4)throw new Error('Missing flight beat');if(attacks!==5)throw new Error(`Expected five attack contacts, received ${attacks}`);
  if(frames*dt>12.5)throw new Error('Fight stalls while waiting for input');
  cadence.push({aspect,fps:1/dt,sprinting,seconds:frames*dt,attacks});
 }

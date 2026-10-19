@@ -14,6 +14,7 @@ import './ui/experience.css';
 import './presentation/polish.css';
 import './presentation/revisions.css';
 import { transitionChapter } from './presentation/chapterTransition';
+import { LoadingBaymax } from './presentation/LoadingBaymax';
 
 const Experience = lazy(() => import('./experience/ExperienceDirector').then(module => ({ default: module.ExperienceDirector })));
 
@@ -48,7 +49,7 @@ function ExperienceRoot() {
 
   useEffect(() => {
     if (phase !== 'handoff') return;
-    const timer = window.setTimeout(() => transitionChapter(enterRecovery), 450);
+    const timer = window.setTimeout(() => transitionChapter(enterRecovery, true), 450);
     return () => window.clearTimeout(timer);
   }, [phase]);
 
@@ -90,7 +91,7 @@ function ExperienceRoot() {
   }, [phaseTwoEntry.active]);
 
   return <AppBoundary>
-    <Suspense fallback={<main className="boot" role="status">LOADING EXPERIENCE…</main>}>
+    <Suspense fallback={<LoadingBaymax overlay />}>
       <PhaseSixHost><PhaseFiveHost><DistrictHost><PhaseTwoHost><Experience /></PhaseTwoHost></DistrictHost></PhaseFiveHost></PhaseSixHost>
     </Suspense>
   </AppBoundary>;

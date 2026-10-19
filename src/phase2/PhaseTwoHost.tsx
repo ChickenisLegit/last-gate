@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useState, type ReactNode } from 'react';
 import { usePhaseTwoEntry } from './entry';
 import { useRecovery } from '../recovery/state';
 import { useSceneState } from '../state/SceneStateManager';
+import { LoadingBaymax } from '../presentation/LoadingBaymax';
 const Recovery = lazy(() => import('../recovery/Recovery').then(module => ({default: module.Recovery})));
 
 const PhaseTwo = lazy(()=>import('./PhaseTwoExperience').then(module=>({default:module.PhaseTwoExperience})));
@@ -16,11 +17,11 @@ export function PhaseTwoHost({children}:{children:ReactNode}) {
   return <>
     {!recovering && <LegacyHost>{children}</LegacyHost>}
     {(recovering || prepared) && <div inert={!recovering} aria-hidden={!recovering} style={{ position: 'fixed', inset: 0, visibility: recovering ? 'visible' : 'hidden', pointerEvents: recovering ? 'auto' : 'none' }}>
-      <Suspense fallback={<div className="recovery-cover" aria-hidden="true" />}><Recovery active={recovering} /></Suspense>
+      <Suspense fallback={<LoadingBaymax overlay />}><Recovery active={recovering} /></Suspense>
     </div>}
   </>;
 }
 function LegacyHost({children}:{children:ReactNode}) {
   const {active,entry,session}=usePhaseTwoEntry();
-  return active ? <Suspense fallback={<div style={{position:'fixed',inset:0,background:'#deedf1'}} role="status" aria-label="Entering the fracture"/>}><PhaseTwo key={session} entry={entry}/></Suspense> : children;
+  return active ? <Suspense fallback={<LoadingBaymax overlay />}><PhaseTwo key={session} entry={entry}/></Suspense> : children;
 }

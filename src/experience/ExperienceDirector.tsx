@@ -25,6 +25,7 @@ import { experience } from '../core/ExperienceFlow';
 import { setRunReset } from '../core/legacyCheckpoints';
 import { ProductionLayer } from '../core/ProductionLayer';
 import { useQuality } from '../performance/Quality';
+import { LoadingBaymax } from '../presentation/LoadingBaymax';
 
 class RenderBoundary extends Component<{children:ReactNode},{error:boolean}> {
   state={error:false};
@@ -497,7 +498,7 @@ export function ExperienceDirector(){
     <div className="arrival-flash" aria-hidden="true"/>
     {/* He watches the gate seal first; only then does he black out. */}
     <div className={`knockout ${phase==='reentry'?'on':''}`} style={{transitionDelay:phase==='reentry'&&!reducedMotion?'3.02s':'0s',transitionDuration:phase==='reentry'?'.15s':undefined}} aria-hidden="true"/>
-    {chapter==='BOOT'&&<div className="boot" role="status"><span className="signal-line"/><span>RECONNECTING…</span></div>}
+    <LoadingBaymax overlay ready={chapter!=='BOOT'} />
     <button className="sound" onClick={toggleSound} aria-label={sound?'Mute atmospheric sound':'Enable atmospheric sound'} aria-pressed={sound}>
       <span className={`wave ${sound?'active':''}`} aria-hidden="true"><i/><i/><i/><i/></span>
       <span>{audioError?'UNAVAILABLE':sound?'SOUND ON':'SOUND OFF'}</span>

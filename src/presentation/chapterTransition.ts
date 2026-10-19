@@ -1,7 +1,8 @@
+import { createBaymaxLoadingElement } from './LoadingBaymax';
 let transitioning = false;
 
 /** A quiet covered cut. The next renderer reveals itself only after its shaders are ready. */
-export function transitionChapter(go: () => void, waitUntilReady = false) {
+export function transitionChapter(go: () => void, waitUntilReady = true) {
   if (transitioning) return;
   transitioning = true;
   const cover = document.createElement('div');
@@ -14,9 +15,10 @@ export function transitionChapter(go: () => void, waitUntilReady = false) {
     released = true; clearTimeout(fallback);
     window.removeEventListener('lastgate:scene-ready', release);
     window.setTimeout(() => {
+      cover.style.transition = matchMedia('(prefers-reduced-motion: reduce)').matches ? 'none' : 'opacity .55s ease';
       cover.classList.remove('covered');
-      window.setTimeout(() => { cover.remove(); transitioning = false; }, 550);
-    }, 80);
+      window.setTimeout(() => { cover.remove(); transitioning = false; }, 750);
+    }, 120);
   };
   window.setTimeout(() => {
     window.addEventListener('lastgate:scene-ready', release, { once: true });
@@ -24,8 +26,8 @@ export function transitionChapter(go: () => void, waitUntilReady = false) {
       if (!waitUntilReady) { release(); return; }
       // Never expose an unfinished scene on a timer. A slow load remains covered.
       const note = document.createElement('div'); note.className = 'later-cover-note';
-      note.textContent = 'THE LAST GATE · LOADING…'; cover.append(note);
-    }, 6500);
+      note.append(createBaymaxLoadingElement()); cover.append(note);
+    }, waitUntilReady ? 750 : 6500);
     go();
   }, matchMedia('(prefers-reduced-motion: reduce)').matches ? 20 : 300);
 }

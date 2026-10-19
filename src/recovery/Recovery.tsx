@@ -8,6 +8,7 @@ import { reducedMotion } from '../config/experience';
 import { SceneQuality } from '../presentation/SceneQuality';
 import { sfx, useSfxBed, useUiSfx } from '../audio/sfx';
 import { SoundToggle } from '../audio/SoundToggle';
+import { SceneCurtain } from '../presentation/SceneCurtain';
 import './recovery.css';
 
 const DEV_JOURNEY = import.meta.env.DEV && new URLSearchParams(location.search).get('recovery') === 'journey';
@@ -65,7 +66,7 @@ function Scene({ intent, onReady, onArrived, onError }: {
   });
   return <>
     <color attach="background" args={['#101a21']} /><fog attach="fog" args={['#192932', 22, 115]} />
-    <SceneQuality ready={!!world} prepare={prepare} onReady={onReady} />
+    <SceneQuality ready={!!world} prepare={prepare} onReady={onReady} onError={onError} />
     {world && intent.current.stage === 'journey' && extension && <extension.Scene world={world} />}
   </>;
 }
@@ -121,6 +122,6 @@ export function Recovery({ active = true }: { active?: boolean }) {
     {stage === 'journey' && extension && <extension.Overlay />}
     {stage !== 'journey' && <p className="recovery-objective"><span>Objective</span>In search of the healthcare chip’s location</p>}
     {active && ready && <SoundToggle />}
-    {error && <div className="recovery-error" role="alert">Baymax could not be loaded. <button onClick={() => location.reload()}>Reload</button></div>}
+    <SceneCurtain ready={ready} error={error ? 'Baymax could not be loaded.' : ''} />
   </main>;
 }

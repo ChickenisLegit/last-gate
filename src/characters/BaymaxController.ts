@@ -39,6 +39,7 @@ export class BaymaxController {
   private head:Object3D|null=null;
   private eyes:Mesh[]=[];private eyeGlow:Sprite[]=[];
   private armR=new Group();private armL=new Group();private legR=new Group();private legL=new Group();
+  private elbowR=new Group();private elbowL=new Group();
   private ankleR=new Group();private ankleL=new Group();private standLift=.89*LATER_BAYMAX_SCALE;
   private armor:MeshPhysicalMaterial;private skin:MeshPhysicalMaterial;
   private redLight=new PointLight('#ff2a1c',0,7,1.6);
@@ -88,11 +89,13 @@ export class BaymaxController {
     // Arms hinge at the shoulder: upper arm, forearm, hand and fingers are separate shapes.
     for(const [side,pivot] of [[1,this.armR],[-1,this.armL]] as const){
       pivot.position.set(side*1.02,2.26,.02);shell.add(pivot);
+      const elbow=side===1?this.elbowR:this.elbowL;elbow.position.set(side*.17,-1.08,.18);pivot.add(elbow);shell.updateMatrixWorld(true);
       for(const m of meshes){
         const p=m.position,sx=side*p.x;
         const upper=Math.abs(sx-1.12)<.06&&Math.abs(p.y-1.7)<.06,fore=Math.abs(sx-1.23)<.06&&Math.abs(p.y-.82)<.06;
         const hand=Math.abs(sx-1.25)<.06&&Math.abs(p.y-.35)<.06,finger=sx>1.0&&sx<1.5&&Math.abs(p.y-.29)<.03&&p.z>.7;
-        if(upper||fore||hand||finger)pivot.attach(m);
+        const shoulder=Math.abs(sx-.93)<.06&&Math.abs(p.y-2.3)<.06;
+        if(upper||shoulder)pivot.attach(m);else if(fore||hand||finger)elbow.attach(m);
       }
     }
     // Legs hinge at the hip: thigh, armoured foot and sole. Seated, they point forward; standing
@@ -109,7 +112,7 @@ export class BaymaxController {
         if(thigh)pivot.attach(m);else if(foot)ankle.attach(m);
       }
     }
-    this.hand.position.set(.23,-1.95,.62);this.armR.add(this.hand);
+    this.hand.position.set(.23,-1.95,.62);this.armR.add(this.hand);shell.updateMatrixWorld(true);this.elbowR.attach(this.hand);
     const glow=glowTexture();
     // Medical access bay, seated on the surface normal of the chest curve.
     // The iris leaves keep an unpatched copy of the skin; only the body is cut open.
@@ -276,6 +279,15 @@ export class BaymaxController {
       this.tmp.copy(P.aim);this.shell.worldToLocal(this.tmp);this.tmp.sub(this.armR.position).normalize();
       this.q.setFromUnitVectors(DOWN,this.tmp);this.q2.identity();this.armR.quaternion.slerpQuaternions(this.q2,this.q,Math.min(1,P.arm));
     }else this.armR.rotation.set(0,0,P.arm*.6);
+    // Load the fist before a strike, extend it through the action, then recover.
+    // Previously every arm was a single straight shoulder hinge throughout the fight.
+    const bt=seq.beatTime;
+    const elbow=phase==='ignition'?.45*span(t,.25,.75)*(1-span(t,1.1,1.65))
+      :phase==='chase'&&seq.beat==='overhead'?.7*span(bt,.2,.65)*(1-span(bt,.85,1.2))+.25*span(bt,1.35,1.6)*(1-span(bt,1.8,2.1))
+      :phase==='chase'&&seq.beat==='rooftop'?.8*span(bt,.55,1)*(1-span(bt,1.1,1.43))+.35*bump(bt,1.45,1.9)
+      :phase==='chase'&&seq.beat==='final'?.6*span(bt,.8,1.2)*(1-span(bt,1.55,1.95)):.16*P.thrust;
+    this.elbowR.rotation.x=MathUtils.damp(this.elbowR.rotation.x,-elbow,10,dt);
+    this.elbowL.rotation.x=MathUtils.damp(this.elbowL.rotation.x,-.25*P.thrust,7,dt);
     this.shell.updateMatrixWorld();
     if(this.suit)this.dressSuit(armourK,P.stand);
     this.shell.position.y+=Math.max(0,this.contact.correction(-.14));this.shell.updateMatrixWorld(true);
@@ -333,7 +345,7 @@ export class BaymaxController {
     T.pos.lerpVectors(from,to,progress);this.tmp2.subVectors(to,from);
     const length=Math.max(.001,Math.hypot(this.tmp2.x,this.tmp2.z)),nx=-this.tmp2.z/length,nz=this.tmp2.x/length;
     const arc=Math.sin(Math.PI*progress)**2,tangent=Math.PI*Math.sin(2*Math.PI*progress);
-    T.pos.x+=nx*bend*sign*arc;T.pos.z+=nz*bend*sign*arc;T.pos.y+=bend*.4*arc;
+    T.pos.x+=nx*bend*sign*arc;T.pos.z+=nz*bend*sign*arc;T.pos.y+=bend*.12*arc;
     this.tmp2.x+=nx*bend*sign*tangent;this.tmp2.z+=nz*bend*sign*tangent;
     T.yaw=Math.atan2(this.tmp2.x,this.tmp2.z);T.thrust=1;T.stand=1;
     const lean=pitch*Math.min(1,Math.sin(Math.PI*Math.min(1,u*1.1))*1.7);
@@ -347,7 +359,7 @@ export class BaymaxController {
     if(phase==='ignition')return span(t,.4,.9)*(1-span(t,1.15,1.5));
     if(phase!=='chase')return 0;
     const b=seq.beat,bt=seq.beatTime;
-    if(b==='rooftop')return span(bt,.75,1.4)*(1-span(bt,1.45,1.55));
+    if(b==='rooftop')return Math.max(span(bt,.75,1.4)*(1-span(bt,1.45,1.55)),.65*span(bt,1.65,1.9)*(1-span(bt,1.95,2.05)),.55*span(bt,2.15,2.35)*(1-span(bt,2.4,2.5)));
     if(b==='final')return span(bt,1.05,2)*(1-span(bt,2.25,2.4));
     return 0;
   }
@@ -391,10 +403,10 @@ export class BaymaxController {
       const roof=new Vector3(C.x-5.2,C.y+1.8,C.z-8.8);
       const from=this.beatOrigin;
       if(u<.75)this.flyToward(from,roof,T,u/.75,.85);
-      else{T.pos.copy(roof);T.pos.x-=span(u,.75,2.15)*.7;T.pos.y-=span(u,.75,2.15)*.3;
+      else{T.pos.copy(roof);T.pos.x-=span(u,.75,2.55)*.7;T.pos.y-=span(u,.75,2.55)*.3;
         T.thrust=.5;T.pitch=.1-.16*bump(u,1.45,1.8);this.face(camera,T);this.lookAt(camera,T,1);
-        T.arm=span(u,.7,1.3)*(1-span(u,1.8,2.3));T.aim.set(-4.6,-.12,-21.2);}
-      if(u>2.15)this.flyToward(roof,V(C.x+4.5,C.y+3.8,C.z-14).clone(),T,span(u,2.15,3.25),.55);
+        T.arm=span(u,.7,1.3)*(1-span(u,2.45,2.75));T.aim.set(-4.6,-.12,-21.2);T.pitch-=.07*bump(u,1.95,2.15)+.07*bump(u,2.4,2.55);}
+      if(u>2.55)this.flyToward(roof.clone().add(V(-.7,-.3,0)),V(C.x+4.5,C.y+3.8,C.z-14).clone(),T,span(u,2.55,3.65),.55);
     }else if(b==='tear-pass'){
       // He comes out of the tear itself, close enough to fill the frame for a moment.
       const from=new Vector3(5.8,2.3,-23.8),to=new Vector3(-8,3.8,-19.8);

@@ -22,7 +22,7 @@ export const CHASE_LENGTH = CHASE_PATH.getLength();
 /** One continuous run. Distance markers no longer leave Baymax hovering between attacks. */
 export const CHASE_BEATS:{id:BeatId;at:number}[] = [
   {id:'silhouette',at:0},{id:'overhead',at:.13},
-  {id:'rooftop',at:.42},{id:'final',at:.76}
+  {id:'rooftop',at:.42},{id:'final',at:.81}
 ];
 const RUN_SECONDS=9.5;
 /** The dimensional seam the final blast rips open (matches the anomaly in PortalDimension). */
@@ -33,10 +33,10 @@ type Attack = {at:number;kind:'charge'|'discharge'|'impact'|'flyby';to?:[number,
 /** Every violent act is authored: when it charges, where it lands, and whether it tears the dimension. */
 const ATTACKS:Record<BeatId,Attack[]> = {
   launch:[{at:.8,kind:'charge'}],
-  // Three attacks: close swipe past Hiro, ranged miss, then the landing.
+  // A close pass, a three-shot ranged burst, then the landing.
   silhouette:[],
   overhead:[{at:1.3,kind:'flyby'}],
-  rooftop:[{at:.75,kind:'charge'},{at:1.45,kind:'discharge',to:[-4.6,-.12,-21.2],power:.8,tear:false}],
+  rooftop:[{at:.75,kind:'charge'},{at:1.45,kind:'discharge',to:[-4.6,-.12,-21.2],power:.8,tear:false},{at:1.7,kind:'charge'},{at:1.95,kind:'discharge',to:[-4.6,-.12,-21.2],power:.4,tear:false},{at:2.15,kind:'charge'},{at:2.4,kind:'discharge',to:[-4.6,-.12,-21.2],power:.32,tear:false}],
   'tear-pass':[{at:0,kind:'impact',to:[5.6,2.3,-23.6],power:.42,tear:true},{at:.62,kind:'impact',to:[0,2,-21],power:.25,tear:false,slowmo:.28}],
   // The last attack is Baymax himself: a dive whose shockwave splits the seam behind him.
   final:[{at:1.05,kind:'charge'},{at:2.35,kind:'impact',to:[1.9,-.12,-30.4],power:1.1,tear:true}]

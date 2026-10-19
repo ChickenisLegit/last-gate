@@ -322,7 +322,7 @@ export class CameraDirector {
         const w=this.glance(seq);if(w>0){A.lerp(this.v.copy(ctx.baymax).setY(ctx.baymax.y+1.4),w);}
         // See the miss as well as the shooter. Looking only at his chest hid every
         // projectile strike beneath the screen, making the attack feel disconnected.
-        const shot=seq.beat==='rooftop'?span(seq.beatTime,.75,1.15)*(1-span(seq.beatTime,1.85,2.25)):0;
+        const shot=seq.beat==='rooftop'?span(seq.beatTime,.75,1.15)*(1-span(seq.beatTime,2.6,2.85)):0;
         if(shot>0)A.lerp(this.v.set(-4.6,-.12,-21.2),shot*.55);
         // Never crane straight up: keep the street, and whatever is about to hit it, in frame.
         const reach=Math.hypot(A.x-P.x,A.z-P.z);if(w<.6)A.y=Math.min(A.y,P.y+reach*.42);

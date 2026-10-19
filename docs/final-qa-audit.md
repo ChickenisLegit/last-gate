@@ -90,3 +90,14 @@ Release validation: `npm run build` passes and rebuilds tracked `dist/`. The pro
 - An authoring-only shortcut, `?phase1=fight` on the dev server, runs the actual actor/director/effects from ignition. Production retains the normal portal opening. Combat bypasses awakening soft-focus even when reviewed directly.
 - The expanded check covers 292 attack frames, plus launch framing, at two aspect ratios and simulated 30/60Hz with/without sprint. It checks the actual ranged impact in screen space, sole contact at impact, three-attack cadence, and visible body surface clearance from the camera. The nearest checked body surface stays more than 1.7m from the lens.
 - Browser captures cover launch, bank, swipe, ranged shot, landing and fracture without renderer errors. `checkpoint-fight-37.png` shows the landing/recovery; `fight-jets-current.png` shows the corrected exhaust. Images are local QA artifacts under `artifacts/later-qa/`.
+
+
+## Final flight, loading and model package follow-up
+
+- Reduced the unnecessary vertical bend from .4 to .12, removed the offset jump leaving the firing position, and added two further charged ranged hits inside the existing firing beat. The extended exit preserves acceleration without a speed spike.
+- Elbow joints carry forearms, fingers and muzzle through anticipation, extension and recovery.
+- Opening regression passes at 16:9 and 690x668, simulated 30/60Hz: five attack contacts in 11.27 seconds, four staging beats framed, minimum camera surface clearance above 1.7m, boot contact within .024m of the road.
+- Initial loading, lazy chapters and shader warm-up use shared ASCII Baymax. Chapter covers wait for scene-ready and fade out over .55 seconds. Actual opening-to-recovery handoff checked.
+- Replayed fitting, 35% output test, relay (all five tasks), and Baymax entrance without skips between these scenes. Full body/feet remain visible at entry without building occlusion. Renderer error log empty. Full later sequence through white restoration/end card was verified earlier; this follow-up did not change that choreography.
+- Model collection contains 20 GLBs including current source shell, combat/healthcare actors, Hiro, open chip bay, engineering internals, red/green chips, regulator, remote/hands, cartridge and full environment sets. Runtime shader/particle/camera/animation behavior remains in website code. Embedded textures and a baked combat finish make the GLBs portable. Validation report accompanies the collection.
+- Build, contact/camera checks and DPR logic pass. Baseline GPU performance parity has not been established; these checks do not prove no GPU FPS regression.
