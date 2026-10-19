@@ -150,6 +150,7 @@ export class CameraDirector {
       const over=this.keepAt.z>1?1:Math.max(0,Math.abs(this.keepAt.x)-.86)+Math.max(0,Math.abs(this.keepAt.y)-.86);
       if(over>0){const ahead=camera.getWorldDirection(this.keepAt).multiplyScalar(camera.position.distanceTo(this.keep)).add(camera.position);camera.lookAt(ahead.lerp(this.keep,Math.min(1,over*1.8)*.6));camera.rotateZ(roll);}
     }
+    if(directed&&['ignition','chase','fracture','pulled'].includes(state.phase)&&camera.aspect<16/9)camera.fov=MathUtils.radToDeg(2*Math.atan(Math.tan(MathUtils.degToRad(camera.fov)/2)*(16/9)/camera.aspect));
     camera.updateProjectionMatrix();camera.updateMatrixWorld();
     this.initialized=true;this.lastPos.copy(camera.position);this.lastLook.copy(this.target);this.lastRoll=roll;
     this.visualProgress=p;this.wake=wake;
@@ -194,13 +195,16 @@ export class CameraDirector {
         this.fov=MathUtils.lerp(56,52,k);this.focusDistance=42;break;
       }
       case 'sf-turnback':{
-        // He turns back to the gate; Baymax is slumped far beyond it, not following.
-        const k=span(t,0,3);P.set(MathUtils.lerp(-1.4,0,k),MathUtils.lerp(3,2.5,k),31.5);A.set(lookX*.2,MathUtils.lerp(4.4,3.6,k),24);
-        this.fov=MathUtils.lerp(52,43,k);this.focusDistance=P.distanceTo(this.v.set(2.7,.6,-12));break;
+        // Look through the opening at Baymax, rather than above him at its bright rim.
+        const k=span(t,0,2.7);P.set(MathUtils.lerp(-1.4,0,k),MathUtils.lerp(3,2.5,k),31.5);
+        A.copy(ctx.baymax);A.y+=1.25;A.x+=lookX*.2;
+        this.fov=MathUtils.lerp(52,40,k);this.focusDistance=P.distanceTo(A);break;
       }
       case 'back-decision':{
-        const k=span(t,0,2.8);P.set(0,2.5,MathUtils.lerp(31.5,27,k));A.set(0,3.9,24);
-        this.fov=44-k*2;this.focusDistance=P.distanceTo(this.v.set(0,4.2,24));break;
+        // A brief decision, then a committed step back into the failing portal.
+        const k=span(t,.65,2.8);P.set(0,2.5,MathUtils.lerp(31.5,27,k));A.copy(ctx.baymax).setY(ctx.baymax.y+1.25);
+        A.lerp(this.v.set(0,3.4,24),k*.6);
+        this.fov=40+k*4;this.focusDistance=P.distanceTo(A);break;
       }
       case 'back-through':{
         // Run and jump back through the ring into the dimension; the landing lands in 'reentry'.
@@ -319,7 +323,7 @@ export class CameraDirector {
         // Glances: the director pulls Hiro's eyes to Baymax when he is the threat on screen.
         const w=this.glance(seq);if(w>0){A.lerp(this.v.copy(ctx.baymax).setY(ctx.baymax.y+1.4),w);}
         // Never crane straight up: keep the street, and whatever is about to hit it, in frame.
-        const reach=Math.hypot(A.x-P.x,A.z-P.z);A.y=Math.min(A.y,P.y+reach*.42);
+        const reach=Math.hypot(A.x-P.x,A.z-P.z);if(w<.6)A.y=Math.min(A.y,P.y+reach*.42);
         A.x+=lookX*1.2;A.y-=lookY*.6;
         this.fov=52+Math.min(6,speed*2)+(1-rise)*-4;this.roll=(1-rise)*.32+side*-.3;
         this.focusDistance=12;break;
@@ -335,6 +339,7 @@ export class CameraDirector {
         const resist=span(t,0,.9),drag=Math.pow(span(t,.9,4.4),1.7);
         PULL.getPointAt(drag,P);P.z+=resist*.3*(1-drag);
         PULL.getPointAt(Math.min(1,drag+.12),A);A.y+=.4*(1-drag);
+        A.lerp(this.v.copy(ctx.baymax).add(this.v2.set(0,1.4,0)),.72*(1-span(t,2.6,3.6)));
         this.fov=MathUtils.lerp(58,82,drag);this.roll=drag*.9;this.focusDistance=8;break;
       }
       case 'handoff':{
@@ -366,11 +371,11 @@ export class CameraDirector {
   }
   private glance(seq:SequenceDirector){
     const b=seq.beat,t=seq.beatTime;
-    if(b==='silhouette')return .55*span(t,.25,.8)*(1-span(t,1.6,2.4));
-    if(b==='overhead')return .42*span(t,.2,.7)*(1-span(t,1.2,1.9));
-    if(b==='rooftop')return .42*span(t,.3,.9)*(1-span(t,2,2.8));
+    if(b==='silhouette')return .9*span(t,.05,.4)*(1-span(t,1.8,2.6));
+    if(b==='overhead')return span(t,0,.25)*(1-span(t,2.2,2.8));
+    if(b==='rooftop')return span(t,0,.35)*(1-span(t,2.6,3.3));
     if(b==='tear-pass')return .7*span(t,.2,.45)*(1-span(t,1.1,1.6));
-    if(b==='final')return .85*span(t,.4,1.1);
+    if(b==='final')return span(t,0,.45);
     return 0;
   }
   /** Shake is noise, not random jitter; kicks are damped shoves; FOV punches on hits. */

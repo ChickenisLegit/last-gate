@@ -1,6 +1,6 @@
 import { Component, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Canvas, useFrame, useThree, type ThreeEvent } from '@react-three/fiber';
-import { ACESFilmicToneMapping, Color, DodecahedronGeometry, DynamicDrawUsage, Euler, FogExp2, Group, InstancedMesh, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, PMREMGenerator, Quaternion, SRGBColorSpace, Vector3 } from 'three';
+import { ACESFilmicToneMapping, Color, DodecahedronGeometry, DynamicDrawUsage, Euler, FogExp2, Group, InstancedMesh, MathUtils, Matrix4, Mesh, MeshStandardMaterial, PerspectiveCamera, PMREMGenerator, Quaternion, SRGBColorSpace, Vector3 } from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { CinematicPost } from '../effects/CinematicPost';
 import { createPortalDimension } from '../environment/PortalDimension.js';
@@ -38,7 +38,7 @@ const STREET_BG=new Color('#101c31'),CORRIDOR_BG=new Color('#061420'),STREET_FOG
 const SF_BG=new Color('#0d1b30'),SF_FOG=new Color('#1b3450');
 const INTRO_PORTAL:Phase[]=['portal-sighted','call-baymax','to-portal','through-portal','sf-arrival','sf-turnback','back-decision','back-through'];
 const FRAME_TIMED:Phase[]=[...INTRO_PORTAL,'reentry'];
-const PORTAL_CLOSE:Partial<Record<Phase,number>>={'portal-sighted':.1,'call-baymax':.16,'to-portal':.24,'through-portal':.3,'sf-arrival':.42,'sf-turnback':.58,'back-decision':.74,'back-through':.95,reentry:.95};
+const PORTAL_CLOSE:Partial<Record<Phase,number>>={'portal-sighted':.1,'call-baymax':.16,'to-portal':.24,'through-portal':.3,'sf-arrival':.42,'sf-turnback':.66,'back-decision':.74,'back-through':.95,reentry:.95};
 /** Seconds into the hurt re-entry when the gate behind Hiro collapses (he has turned to look by then). */
 const SEAL_AT=1.45;
 /** Tracker N-01: on the hurt re-entry, a chunk of debris tumbles in and hits Hiro: that is what knocks him out. */
@@ -253,6 +253,7 @@ function AwakeScene({director,seq,marker,readout,audio}:SceneProps) {
     // The escape attempt: the gate and the normal world appear while Hiro tries to leave, and the
     // gate slowly irises shut. Both are hidden again once he commits to Baymax (the approach).
     gate.group.visible=gateLive;sf.group.visible=gateLive;gate.setShown(gateLive);
+    gate.setTension(phase==='sf-turnback'?MathUtils.smoothstep(phaseT.current,.8,3.4):phase==='back-decision'||phase==='back-through'?1:0);
     gate.update(t,dt,gateLive?(PORTAL_CLOSE[phase]??0):0);if(gateLive)sf.update(t);
     if(gate.imploded){cameraRig.shake('portal',.9);seq.shake=Math.max(seq.shake,.45);audio.impact(.85,false,0,.75);}
     worldMasks.city.set(gateLive?(inSF?'outside':'inside'):'none');const dimensionMask=gateLive?(inSF?'inside':'outside'):'none';worldMasks.dimension.set(dimensionMask);worldMasks.rupture.set(dimensionMask);worldMasks.chip.set(dimensionMask);shellMask?.set(dimensionMask);
@@ -519,7 +520,7 @@ export function ExperienceDirector(){
       {(phase==='threat'||phase==='ignition')&&<p className="threat-line"><span><DiagnosticLine text="PRIMARY THREAT" delay={1.65}/></span><i/><b><DiagnosticLine text="HIRO HAMADA" delay={2.05}/></b></p>}
     </div>
     {phase==='inspected'&&<div className={`failed-link ${linkVisible?'visible':''}`} aria-live="polite"><span className="fault-dot"/> BAYMAX <span>NO RESPONSE</span></div>}
-    <div className="signature" aria-hidden="true">LAST GATE <small>PHASE I</small></div>
+    <div className="signature" aria-hidden="true">LAST GATE</div>
     {ZOOM_PHASES.includes(phase)&&<div className="zoom-hint" aria-hidden="true">SCROLL <span>//</span> ZOOM</div>}
     {phase==='inspected'&&linkVisible&&<button className="replay" onClick={replayRun}>REPLAY OPENING <span>R ↶</span></button>}
     {phase==='handoff'&&<div className="handoff" role="status">

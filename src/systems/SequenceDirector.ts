@@ -20,21 +20,24 @@ export const CHASE_PATH = new CatmullRomCurve3([
 export const CHASE_LENGTH = CHASE_PATH.getLength();
 /** Where the path crosses each authored attack. `stall` lets the moment land before Hiro can run on. */
 export const CHASE_BEATS:{id:BeatId;at:number;stall:number}[] = [
-  {id:'silhouette',at:.04,stall:1.5},{id:'overhead',at:.26,stall:.9},{id:'rooftop',at:.47,stall:1.7},
-  {id:'tear-pass',at:.67,stall:1.3},{id:'final',at:.86,stall:99}
+  {id:'silhouette',at:.04,stall:1.15},{id:'overhead',at:.29,stall:.75},
+  {id:'rooftop',at:.56,stall:1.35},{id:'final',at:.84,stall:99}
 ];
 /** The dimensional seam the final blast rips open (matches the anomaly in PortalDimension). */
 export const SEAM_POSITION = new Vector3(1.8,4.2,-34);
+/** Outer right shoulder meets this broken frame once, 1.45 seconds into displacement. */
+export const PULL_CONTACT_POSITION = new Vector3(2.7,6.2,-46.54);
 type Attack = {at:number;kind:'charge'|'discharge'|'impact';to?:[number,number,number];power?:number;tear?:boolean;slowmo?:number};
 /** Every violent act is authored: when it charges, where it lands, and whether it tears the dimension. */
 const ATTACKS:Record<BeatId,Attack[]> = {
   launch:[{at:.55,kind:'charge'},{at:1.6,kind:'discharge',to:[1.25,-.12,-8.3],power:1.05,tear:true}],
-  silhouette:[{at:.2,kind:'charge'},{at:.95,kind:'discharge',to:[4.75,.35,-17.4],power:.72,tear:true}],
-  overhead:[{at:.95,kind:'impact',to:[-4.6,-.1,-19.2],power:.55,tear:false}],
-  rooftop:[{at:.75,kind:'charge'},{at:1.45,kind:'discharge',to:[-.6,-.12,-21.2],power:1,tear:true}],
+  // The first shape is a threat and a near pass; the ranged shot is saved for the rooftop beat.
+  silhouette:[],
+  overhead:[],
+  rooftop:[{at:.75,kind:'charge'},{at:1.45,kind:'discharge',to:[-4.6,-.12,-21.2],power:.8,tear:false}],
   'tear-pass':[{at:0,kind:'impact',to:[5.6,2.3,-23.6],power:.42,tear:true},{at:.62,kind:'impact',to:[0,2,-21],power:.25,tear:false,slowmo:.28}],
   // The last attack is Baymax himself: a dive whose shockwave splits the seam behind him.
-  final:[{at:1.05,kind:'charge'},{at:2.3,kind:'impact',to:[1.9,-.12,-30.4],power:1.3,tear:true}]
+  final:[{at:1.05,kind:'charge'},{at:2.35,kind:'impact',to:[1.9,-.12,-30.4],power:1.1,tear:true}]
 };
 
 /**

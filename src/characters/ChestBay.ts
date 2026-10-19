@@ -53,6 +53,8 @@ export function mountChestBay(shell: Group) {
 
   return {
     root: chest.root,
+    combatChip: chip,
+    combatGlow: glow,
     /** Socket centre in world space, for camera framing. */
     dockWorld: () => chest.dockWorld(),
     /** True while the bay is open; the armour only cuts its hole then. */

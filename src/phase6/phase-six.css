@@ -11,7 +11,8 @@
   --mono:var(--lg-mono);--display:var(--lg-display);--ease:var(--lg-ease)}
 .p6-world{position:absolute;inset:0;animation:p6In 1.2s both}
 .p6-world canvas{display:block;touch-action:none}
-.p6-world.p6-warping{filter:url(#p6-warp) saturate(1.25) brightness(1.08)}
+.p6-world.p6-warping{filter:url(#p6-warp)}
+.p6-crossing-cover{position:absolute;inset:0;z-index:80;pointer-events:none;background:#000;opacity:0}
 .p6-filters{position:absolute;width:0;height:0}
 .p6-grade{position:absolute;inset:0;pointer-events:none;background:radial-gradient(125% 100% at 50% 46%,transparent 50%,rgba(4,10,18,.6) 100%)}
 .p6-set-home .p6-grade{background:radial-gradient(125% 100% at 55% 45%,transparent 55%,rgba(30,20,40,.38) 100%)}
@@ -145,7 +146,7 @@
 
 /* Fades between sets, the white of the crossing, and the final fade. */
 .p6-veil{position:absolute;inset:0;z-index:4;pointer-events:none;background:#05090d;animation:p6Lift .9s .1s both}
-.p6-set-home .p6-veil{background:#f1ecfb;animation:p6Lift 1.1s both}
+.p6-set-home .p6-veil{background:#000;animation:p6Lift 1.1s both}
 .p6-veil.black{background:#05090d;animation:p6Drop 2.4s both}
 .p6-loading{position:absolute;inset:0;z-index:6;display:grid;place-items:center;background:#05090d;color:rgba(243,240,233,.55);font:11px var(--mono);letter-spacing:.24em}
 
@@ -163,6 +164,9 @@
   .p6-side{left:16px;right:16px;bottom:16px;width:auto}
   .p6-controls{display:none}
   .p6-say{bottom:auto;top:64px;font-size:14px}
+}
+@media (max-width:800px){
+  .p6:is(.p6-stage-wake,.p6-stage-flyin,.p6-stage-faceoff,.p6-stage-switchOn2) .p6-side{top:12px;bottom:auto;left:12px;right:auto;width:250px}
 }
 @media (prefers-reduced-motion:reduce){
   .p6 *{animation-duration:.01s!important;animation-iteration-count:1!important}

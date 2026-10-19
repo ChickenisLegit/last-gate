@@ -13,6 +13,7 @@ import { SoundToggle } from '../audio/SoundToggle';
 import './phase-six.css';
 import { EndCard } from './EndCard';
 import { AdaptiveDpr } from '../performance/AdaptiveDpr';
+import { SceneCurtain } from '../presentation/SceneCurtain';
 
 /**
  * Phase 6, through Hiro's eyes. The combat chip brings Baymax back up at the relay. Hiro's
@@ -37,12 +38,15 @@ function useStageTime(stage: Stage) {
 }
 
 export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
+  const [dpr, setDpr] = useState(1);
   useState(() => { begin(initial); return 0; });
   const audio = useMemo(() => new PhaseSixAudio(), []);
   useEffect(() => () => audio.dispose(), [audio]);
   const s = useP6();
   const e = useStageTime(s.stage);
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const onLoadError = useCallback(() => setLoadError('This scene could not be loaded.'), []);
   // Tell the chapter cover (presentation/chapterTransition) the scene is drawn and it can lift.
   const onReady = useCallback(() => {
     // Tracker S-05: the wake (his fly-in) starts when the scene is actually shown, not while it loads.
@@ -50,8 +54,8 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
     setReady(true); requestAnimationFrame(() => requestAnimationFrame(() => window.dispatchEvent(new Event('lastgate:scene-ready')))); }, []);
   const grab = useRef<HTMLDivElement>(null), drop = useRef<HTMLDivElement>(null);
   const hints = useMemo(() => ({ grab, drop }), []);
-  const warp = useRef<SVGFEDisplacementMapElement>(null), world = useRef<HTMLDivElement>(null), hurt = useRef<HTMLDivElement>(null);
-  const fx = useMemo(() => ({ warp, world, hurt }), []);
+  const warp = useRef<SVGFEDisplacementMapElement>(null), world = useRef<HTMLDivElement>(null), hurt = useRef<HTMLDivElement>(null), crossingCover = useRef<HTMLDivElement>(null);
+  const fx = useMemo(() => ({ warp, world, hurt, crossingCover }), []);
   const run = useRef<RunState>({ p: 0, speed: 0, forward: false, pointer: new T.Vector2(), impulse: 0, gap: 8, dread: 0, hiro: [0, 0], bay: [0, 0], misses: 0 });
   const [live, setLive] = useState({ p: 0, gap: 8, dread: 0, hiro: [0, 0] as [number, number], bay: [0, 0] as [number, number], misses: 0 });
   const [moved, setMoved] = useState(false);
@@ -147,11 +151,11 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
   const drag = (text: string) => <span className="p6-withhand"><DragHand />{text}</span>;
   const style = { '--dread': live.dread.toFixed(2) } as CSSProperties;
 
-  return <main className={`p6 p6-set-${set} p6-stage-${st} ${insert ? 'p6-insert' : ''}`} style={style} aria-label="Phase 6: Baymax wakes again">
+  return <main className={`p6 p6-set-${set} p6-stage-${st} ${insert ? 'p6-insert' : ''}`} style={style} aria-label="Baymax wakes again">
     <SoundToggle />
     <div className="p6-world" ref={world}>
-      <Canvas dpr={[1, 1.4]} camera={{ fov: 62, near: .02, far: 900, position: [2, 2, 2] }} gl={{ antialias: true, powerPreference: 'high-performance' }}><AdaptiveDpr />
-        <World audio={audio} hints={hints} fx={fx} run={run} onReady={onReady} />
+      <Canvas dpr={dpr} camera={{ fov: 62, near: .02, far: 900, position: [2, 2, 2] }} gl={{ antialias: true, powerPreference: 'high-performance' }}><AdaptiveDpr onChange={setDpr} />
+        <World audio={audio} hints={hints} fx={fx} run={run} onReady={onReady} onError={onLoadError} />
       </Canvas>
     </div>
     <svg className="p6-filters" aria-hidden="true" width="0" height="0">
@@ -163,6 +167,7 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
     <div className="p6-grade" aria-hidden="true" />
     <div className="p6-dread" aria-hidden="true" />
     <div className="p6-hurt" ref={hurt} aria-hidden="true" />
+    <div className="p6-crossing-cover" ref={crossingCover} aria-hidden="true" />
 
     <header className="p6-top">
     </header>
@@ -224,11 +229,11 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
         rows={gateRows(e > CLUE_END ? ['Reader', 'Tuned to his combat chip', 'red'] : ['Reader', 'Signal close by', 'red'])}
         action={e > CLUE_END ? drag('Drag it up out of his chest.') : undefined} />}
       {st === 'carry' && s.chip === 'out' && pulled > 1 && <Panel id={pulled > 3.6 ? 'cart' : 'clear'} label="The Last Gate" tone="cyan"
-        title={pulled > 3.6 ? 'Play the capture' : undefined}
-        rows={pulled > 3.6 ? [['Reader', 'Clear', 'cyan'], ['Destination', 'None'], ['RX/06', 'Healthcare chip’s last signal', 'orange']] : gateRows(['Reader', 'Clear', 'cyan'])}
-        action={pulled > 3.6 ? drag('Drag the cartridge into the reader.') : undefined} />}
+        title={pulled > 3.6 ? 'Seat the combat chip' : undefined}
+        rows={pulled > 3.6 ? [['Reader', s.cart === 'slot' ? 'Seating' : 'Ready', 'cyan'], ['Combat chip', 'Removed', 'red'], ['RX/06 trace', 'Loaded', 'orange']] : gateRows(['Reader', 'Clear', 'cyan'])}
+        action={pulled > 3.6 && s.cart !== 'slot' ? drag('Insert the red combat chip into the reader.') : undefined} />}
       {st === 'bloom' && e > 1.2 && e < 7.4 && <Panel id="bloom" label="The Last Gate" tone="cyan"
-        rows={[['Control input', 'RX/06', 'cyan'], ['Gate', 'Open', 'cyan'], ['Field', 'Stable', 'ok']]} />}
+        rows={[['Reader', 'Combat chip seated', 'cyan'], ['Gate', 'Open', 'cyan'], ['Field', 'Stable', 'ok']]} />}
 
       {/* 8 · Home. */}
       {st === 'home' && e > EMERGE + 2.4 && <Panel id="home" label="Baymax" title="His healthcare chip"
@@ -248,7 +253,7 @@ export function PhaseSix({ initial }: { initial: PhaseSixStep }) {
 
     {st === 'end' && <EndCard onReplay={replay} />}
     <div className="p6-veil" key={`veil-${set}`} aria-hidden="true" />
-    {!ready && <div className="p6-loading" role="status">BAYMAX IS MOVING…</div>}
+    <SceneCurtain ready={ready} error={loadError} />
     {reducedMotion && <span className="sr-only">Reduced motion is on: camera shake and long fades are off.</span>}
   </main>;
 }

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import * as T from 'three';
 import { create } from 'zustand';
 import { createBay, type Bay } from './bay';
 import { createFacility } from './facility';
-import { createHandInsert, INSERT, INSERT_CAMERA } from '../characters/RegulatorHand';
+import { FACILITY_SHOTS, facilityCameraRoute } from './cameraRoute';
+import { createFirstPersonHands } from '../characters/RegulatorController';
 import type { PhaseFiveStep } from './entry';
 import { phaseFiveExit } from './exit';
 import { reducedMotion } from '../config/experience';
@@ -16,6 +17,7 @@ import { sfx, useSfxBed, useUiSfx } from '../audio/sfx';
 import { SoundToggle } from '../audio/SoundToggle';
 import './phase-five.css';
 import { AdaptiveDpr } from '../performance/AdaptiveDpr';
+import { SceneCurtain } from '../presentation/SceneCurtain';
 
 /**
  * Phase 5. The limiter goes onto Baymax and is tested: he comes back up, still hostile, held to
@@ -54,7 +56,7 @@ const strengthOf = (az: number, el: number) => {
 /** Every state change that makes a sound: the fitting, the power-up and the relay console. */
 function phaseFiveSounds(s: State, p: State) {
   if (s.stage !== p.stage) {
-    if (s.stage === 'fitting') { sfx.play('mech.lift'); sfx.play('step.concrete', { delay: .5 }); sfx.play('step.concrete', { delay: .95 }); sfx.play('mech.clunk', { delay: 1.25 }); sfx.play('mech.cable-plug', { delay: 1.9 }); }
+    if (s.stage === 'fitting') { sfx.play('mech.lift'); sfx.play('mech.clunk', { delay: 2.7 }); sfx.play('mech.cable-plug', { delay: 4.1 }); }
     if (s.stage === 'testing') { sfx.play('power.whine-up'); sfx.play('baymax.eyes', { delay: .5 }); sfx.play('power.strain', { delay: .3 }); sfx.play('servo.groan', { delay: 1.4 }); sfx.play('servo.groan', { delay: 3, pitch: 1.12 }); }
     if (s.stage === 'held') { sfx.play('servo.groan', { gain: .7, pitch: .9 }); sfx.play('mech.clunk', { gain: .4, delay: .5 }); }
     if (s.stage === 'transit') sfx.play('move.whoosh');
@@ -78,7 +80,7 @@ function useCentreBesidePanel() {
   useEffect(() => {
     const panel = document.querySelector('.p5-panel');
     const measure = () => {
-      const shift = panel ? Math.round(panel.getBoundingClientRect().right / 2) : 0;
+      const shift = panel && gl.domElement.clientWidth > 720 ? Math.round(panel.getBoundingClientRect().right / 2) : 0;
       const w = gl.domElement.clientWidth, h = gl.domElement.clientHeight;
       (camera as T.PerspectiveCamera).setViewOffset(w + shift * 2, h, 0, 0, w, h);
     };
@@ -87,7 +89,7 @@ function useCentreBesidePanel() {
   }, [camera, gl, stage]);
 }
 
-function BayScene() {
+function BayScene({ onReady, onError }: { onReady: () => void; onError: () => void }) {
   const { scene, camera, gl } = useThree();
   const zoom = useMemo(() => new ZoomController({ min: .82, max: 1.2, step: .01 }, 1), []);
   useEffect(() => { const off = zoom.bind(gl.domElement); zoom.setEnabled(true); return () => { off(); zoom.dispose(); }; }, [gl, zoom]);
@@ -96,63 +98,56 @@ function BayScene() {
   const pos = useMemo(() => new T.Vector3(), []), focus = useMemo(() => new T.Vector3(), []);
   const motion = useRef({ fitted: 0, power: 0, since: 0, pressed: false, clicked: false, inInsert: false, back: new T.Vector3(), backQ: new T.Quaternion() });
   // Hiro's own regulator remote: POWER HIM UP is his thumb on it, seen close, before the load comes on.
-  const insert = useMemo(createHandInsert, []);
-  useEffect(() => { scene.add(insert.root); return () => insert.dispose(); }, [scene, insert]);
+  const hands = useMemo(createFirstPersonHands, []);
+  useEffect(() => { const parent = camera.parent; scene.add(camera); camera.add(hands.root); hands.root.visible = false; return () => { hands.dispose(); if (parent) parent.add(camera); else camera.removeFromParent(); }; }, [scene, camera, hands]);
   useCentreBesidePanel();
   useEffect(() => {
     let alive = true, made: Bay | null = null;
     createBay().then(b => {
       if (!alive) { b.dispose(); return; }
       made = b; scene.add(b.district.group);
-      pos.copy(b.body).addScaledVector(b.side, 6.4).addScaledVector(b.axis, -.6); pos.y = b.body.y + 3.6;
-      focus.copy(b.body).addScaledVector(b.side, .9).setY(b.body.y - .2); camera.position.copy(pos); camera.lookAt(focus);
+      const front = new T.Vector3(0, 0, 1).applyQuaternion(b.model.quaternion);
+      pos.copy(b.body).addScaledVector(front, 9.8); pos.y = b.body.y + 3.6;
+      focus.copy(b.body).setY(b.body.y + .3); camera.position.copy(pos); camera.lookAt(focus);
       setBay(b);
-    });
+    }).catch(onError);
     return () => { alive = false; if (made) { scene.remove(made.district.group); made.dispose(); } };
-  }, [scene, camera, pos, focus]);
+  }, [scene, camera, pos, focus, onError]);
   useFrame(({ clock, pointer }, delta) => {
     if (!bay) return;
     const dt = Math.min(delta, .05), s = useP5.getState(), t = clock.elapsedTime;
     // The unit is carried over and seated while FIT runs; POWER drives him up against the limit.
     const m = motion.current;
-    m.fitted = s.stage === 'fitting' ? (reducedMotion ? 1 : Math.min(1, m.fitted + dt / 2.2)) : s.stage === 'fit' ? 0 : 1;
+    m.fitted = s.stage === 'fitting' ? (reducedMotion ? 1 : Math.min(1, m.fitted + dt / 4.8)) : s.stage === 'fit' ? 0 : 1;
     if (s.stage === 'testing' && !m.pressed) {
       m.pressed = true; m.clicked = reducedMotion; m.inInsert = !reducedMotion;
       m.back.copy(camera.position); m.backQ.copy(camera.quaternion);
-      if (!reducedMotion) insert.play('on', () => { sfx.play('ui.toggle'); m.clicked = true; }, () => { m.inInsert = false; camera.position.copy(m.back); camera.quaternion.copy(m.backQ); });
+      if (!reducedMotion) hands.press(() => { sfx.play('ui.toggle'); m.clicked = true; }, () => { m.inInsert = false; });
     }
     if (s.stage !== 'testing') { m.pressed = false; m.inInsert = false; }
-    insert.update(t);
+    hands.root.visible = s.stage === 'testing';
+    hands.update(t, dt, { walk: 0, gait: 0, raise: m.inInsert ? 1 : .1, reach: 0 });
     m.power = s.stage === 'testing' ? (m.clicked ? Math.min(1, m.power + (reducedMotion ? 1 : dt / 4.5)) : 0) : ['held', 'transit'].includes(s.stage) ? 1 : 0;
     m.since += dt;
     if (['fitting', 'testing'].includes(s.stage) && (m.since > .1 || m.fitted === 1 && s.fitted !== 1 || m.power === 1 && s.power !== 1)) {
       m.since = 0; useP5.setState({ fitted: m.fitted, power: m.power });
     }
     bay.update(t, dt, { fitted: m.fitted, power: m.power, held: s.stage === 'held' });
-    if (m.inInsert) { camera.position.copy(INSERT).add(INSERT_CAMERA.pos); camera.lookAt(INSERT.clone().add(INSERT_CAMERA.look)); return; }
-    // Side-on from the lane, like the board's overview: all of him, the limiter between him and Hiro.
+    // Stay on the chest-facing side of the semi-reclined pose. The old side-on shot projected
+    // his whole body into a horizontal stack and made the correctly seated regulator look upright.
     const b = bay.body, close = s.stage === 'testing' || s.stage === 'held' ? 1 : 0;
     const distance = zoom.update(dt, reducedMotion ? 20 : 7);
-    pos.copy(b).addScaledVector(bay.side, (6.4 - close * .7) * distance).addScaledVector(bay.axis, -.6);
-    pos.y = b.y + 3.6 - close * .3;
-    focus.copy(b).addScaledVector(bay.side, .9).setY(b.y - .2);
+    const front = new T.Vector3(0, 0, 1).applyQuaternion(bay.model.quaternion).normalize();
+    pos.copy(b).addScaledVector(front, (9.8 - close * .45) * distance).addScaledVector(bay.side, 1.1 * close);
+    pos.y = b.y + 3.6 - close * .2;
+    focus.copy(b).setY(b.y + .3);
     rig.update(camera, close ? 'test' : 'fit', pos, focus, dt, 1.65);
     camera.rotateY(pointer.x * .008); camera.rotateX(pointer.y * .005);
   });
-  return <SceneQuality ready={!!bay} />;
+  return <SceneQuality ready={!!bay} manageDpr={false} onReady={onReady} onError={onError} />;
 }
 
-const FACILITY_SHOTS: Record<Task | 'done', [[number, number, number], [number, number, number]]> = {
-  power: [[1.1, 1.8, 3.3], [7.6, 1.6, .65]],
-  patch: [[2.2, 1.8, 4.6], [7.8, 1.7, 2.6]],
-  spectrum: [[-.9, 1.75, 1.7], [0, 1.4, -1.95]],
-  dish: [[8, 12.2, -23], [1.6, 6.9, -14]],
-  // High over the relay roof, so the whole track reads from the dish to the boundary.
-  // In at the middle console's screen: the chip's last transmission.
-  trace: [[0, 1.42, -.35], [0, 1.24, -2]],
-  done: [[20, 44, 28], [-5, 17, -58]],
-};
-function FacilityScene() {
+function FacilityScene({ onReady, onError }: { onReady: () => void; onError: () => void }) {
   const { scene, camera, size } = useThree();
   const facility = useMemo(createFacility, []);
   const rig = useMemo(() => new CameraShot(), []);
@@ -170,12 +165,7 @@ function FacilityScene() {
     const [p, l] = FACILITY_SHOTS[key];
     const r = route.current;
     if (r.key !== key) {
-      r.key = key; r.leg = 0; r.shots = [];
-      // Leave through the broken wall before taking an exterior receiver shot.
-      if (['dish', 'trace', 'done'].includes(key) && camera.position.z > -7) {
-        r.shots.push({ p: [1.4, 2.7, -5.4], l: [1.6, 5, -14], duration: .8 }, { p: [1.4, 4.1, -9.5], l: [1.6, 6.7, -14], duration: .8 }, { p: [7.5, 6.4, -11], l: [1.6, 6.7, -14], duration: .65 });
-      }
-      r.shots.push({ p, l, duration: key === 'done' ? 2.3 : key === 'trace' ? 2.8 : 1.65 });
+      r.key = key; r.leg = 0; r.shots = facilityCameraRoute(camera.position, key);
     }
     const shot = r.shots[r.leg]; pos.set(...shot.p); focus.set(...shot.l);
     if (rig.update(camera, `${key}/${r.leg}`, pos, focus, dt, shot.duration) && r.leg < r.shots.length - 1) r.leg++;
@@ -184,7 +174,7 @@ function FacilityScene() {
   return <>
     <color attach="background" args={['#081320']} />
     <fog attach="fog" args={['#14293b', 14, 150]} />
-    <SceneQuality />
+    <SceneQuality manageDpr={false} onReady={onReady} onError={onError} />
   </>;
 }
 
@@ -315,8 +305,14 @@ function TraceTask({ done }: { done: () => void }) {
 // ------------------------------------------------------------------ page
 
 export function PhaseFive({ initial: from }: { initial: PhaseFiveStep }) {
+  const [dpr, setDpr] = useState(1);
   useState(() => { useP5.setState(initial(from)); return 0; });
   const s = useP5();
+  const sceneKey = ['fit', 'fitting', 'test', 'testing', 'held', 'transit'].includes(s.stage) ? 'bay' : 'facility';
+  const [readyScene, setReadyScene] = useState('');
+  const [loadError, setLoadError] = useState('');
+  const onReady = useCallback(() => setReadyScene(sceneKey), [sceneKey]);
+  const onLoadError = useCallback(() => setLoadError('This scene could not be loaded.'), []);
   useEffect(() => useP5.subscribe(phaseFiveSounds), []);
   const atBayNow = ['fit', 'fitting', 'test', 'testing', 'held'].includes(s.stage);
   useSfxBed('harbour', atBayNow || s.stage === 'transit'); useSfxBed('combat-hum', atBayNow && s.power > .2, .9);
@@ -338,26 +334,27 @@ export function PhaseFive({ initial: from }: { initial: PhaseFiveStep }) {
   useEffect(() => {
     if (s.stage === 'fitting' && s.fitted >= 1) useP5.setState({ stage: 'test' });
     if (s.stage === 'testing' && s.power >= 1) { const t = window.setTimeout(() => useP5.setState({ stage: 'held' }), 900); return () => window.clearTimeout(t); }
-    if (s.stage === 'transit') transitionChapter(() => useP5.setState({ stage: 'facility' }));
+    if (s.stage === 'transit') transitionChapter(() => useP5.setState({ stage: 'facility' }), true);
   }, [s.stage, s.fitted, s.power]);
 
   const atBay = ['fit', 'fitting', 'test', 'testing', 'held'].includes(s.stage);
   const motor = Math.round(35 * Math.min(1, s.power * 1.3)), target = s.power > .55;
   const task = TASKS[s.task];
-  return <main className={`p5 p5-stage-${s.stage}`} aria-label="Phase 5: limiter test and telemetry trace">
+  return <main className={`p5 p5-stage-${s.stage}`} aria-label="Limiter test and telemetry trace">
     <div className="p5-world">
-      <Canvas shadows={false} dpr={[1, 1.4]} camera={{ fov: 46, near: .1, far: 400, position: [0, 3, 8] }} gl={{ antialias: true, powerPreference: 'high-performance' }}><AdaptiveDpr />
-        {atBay || s.stage === 'transit' ? <BayScene /> : <FacilityScene />}
+      <Canvas shadows={false} dpr={dpr} camera={{ fov: 46, near: .1, far: 400, position: [0, 3, 8] }} gl={{ antialias: true, powerPreference: 'high-performance' }}><AdaptiveDpr onChange={setDpr} />
+        {atBay || s.stage === 'transit' ? <BayScene onReady={onReady} onError={onLoadError} /> : <FacilityScene onReady={onReady} onError={onLoadError} />}
       </Canvas>
     </div>
     <div className="p5-grade" aria-hidden="true" />
     <SoundToggle />
+    <SceneCurtain ready={readyScene === sceneKey} error={loadError} />
 
-    {atBay && <aside className="p5-panel" aria-live="polite">
+    {atBay && <aside className="p5-panel p5-bay-panel" aria-live="polite">
       {(s.stage === 'fit' || s.stage === 'fitting') && <>
         <p className="p5-kicker">BACK AT THE BAY <span>01 / 02</span></p>
         <h1>Fit the regulator.</h1>
-        <p className="p5-body">The regulator from Bay 6 goes on his chest plate, in line with his main feed.</p>
+        <p className="p5-body">The regulator seats on his chest mount, then its feed connects to the service bay.</p>
         <button className="p5-primary" disabled={s.stage === 'fitting'} onClick={() => useP5.setState({ stage: 'fitting' })}>{s.stage === 'fitting' ? 'SEATING…' : 'FIT THE REGULATOR'}</button>
       </>}
       {(s.stage === 'test' || s.stage === 'testing' || s.stage === 'held') && <>

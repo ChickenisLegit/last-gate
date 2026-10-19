@@ -44,22 +44,22 @@ export class FirstPerson {
     return out.set(eye.x - Math.sin(y) * Math.cos(p) * 10, eye.y + Math.sin(p) * 10, eye.z - Math.cos(y) * Math.cos(p) * 10);
   }
 
-  update(cam: T.PerspectiveCamera, dt: number, t: number, s: { look: T.Vector3; eye: number; lookRate?: number; pointer?: T.Vector2; freeLook?: number; onStep?: Footstep }) {
+  update(cam: T.PerspectiveCamera, dt: number, t: number, s: { look: T.Vector3; eye: number; steady?: boolean; lookRate?: number; pointer?: T.Vector2; freeLook?: number; onStep?: Footstep }) {
     const moved = Math.hypot(this.feet.x - this.last.x, this.feet.z - this.last.z);
     this.last.copy(this.feet);
     const v = dt > 0 ? Math.min(9, moved / dt) : 0;
     this.speed = T.MathUtils.damp(this.speed, v, 6, dt);
-    const run = T.MathUtils.smoothstep(this.speed, 2.2, 4);
+    const run = s.steady ? 0 : T.MathUtils.smoothstep(this.speed, 2.2, 4);
     this.gait += moved / T.MathUtils.lerp(WALK_STRIDE, RUN_STRIDE, run) * Math.PI;
     const k = Math.floor(this.gait / Math.PI);
     if (k !== this.step) { this.step = k; if (this.speed > .25) s.onStep?.(k % 2 ? 1 : -1, this.speed); }
     this.eye = T.MathUtils.damp(this.eye, s.eye, 5, dt);
 
-    const moving = T.MathUtils.smoothstep(this.speed, .1, 1), m = reducedMotion ? .25 : 1;
+    const moving = s.steady ? 0 : T.MathUtils.smoothstep(this.speed, .1, 1), m = reducedMotion ? .25 : 1;
     const amp = T.MathUtils.lerp(.028, .062, run) * moving * m;
     const bob = (Math.abs(Math.sin(this.gait)) - .6) * amp;
     const sway = Math.sin(this.gait) * T.MathUtils.lerp(.018, .034, run) * moving * m;
-    const breathe = Math.sin(t * 1.5) * .007 * (1 - moving);
+    const breathe = s.steady ? 0 : Math.sin(t * 1.5) * .007 * (1 - moving);
 
     cam.position.set(this.feet.x, this.feet.y + this.eye + bob + breathe, this.feet.z);
     const d = s.look.clone().sub(cam.position);

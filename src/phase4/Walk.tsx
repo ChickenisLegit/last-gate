@@ -13,6 +13,7 @@ import { batchStaticGeometry, createBaySixArchitecture, createServiceStreetDetai
 import { Dressing, buildingFrame, cityMaterials, dressFacade, dressRoof, roadBreakup, skyline } from '../environment/CityDressing';
 import './walk.css';
 import { AdaptiveDpr } from '../performance/AdaptiveDpr';
+import { SceneCurtain } from '../presentation/SceneCurtain';
 
 /**
  * Between the board and Bay 6: Hiro leaves Baymax and walks the corrupted city, following the
@@ -196,6 +197,11 @@ function WalkWorld({ state, onProgress }: { state: React.MutableRefObject<WalkSt
 }
 
 export function Walk() {
+  const [dpr, setDpr] = useState(1);
+  const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState('');
+  const onReady = useCallback(() => setReady(true), []);
+  const onLoadError = useCallback(() => setLoadError('The street could not be loaded.'), []);
   const state = useRef<WalkState>({ p: 0, speed: 0, forward: false, back: false, pointer: new T.Vector2(), impulse: 0 });
   const [progress, setProgress] = useState(0);
   const [moved, setMoved] = useState(false);
@@ -216,7 +222,7 @@ export function Walk() {
     if (leaving) return; setLeaving(true); sfx.play('mech.latch'); sfx.play('mech.lid-creak', { gain: .6, delay: .2 });
     void import('./ServiceBay');
     // Build the bay under the chapter cover, so it's ready when the cover lifts.
-    transitionChapter(() => { void import('./bayScene').then(m => { m.prepareServiceBay(); enterServiceBay(); }); });
+    transitionChapter(() => { void import('./bayScene').then(m => { m.prepareServiceBay(); enterServiceBay(); }); }, true);
   }, [leaving]);
 
   useEffect(() => {
@@ -241,10 +247,10 @@ export function Walk() {
   }, [enter]);
 
   const metres = Math.max(0, Math.round((1 - progress) * LENGTH + (0 - GATE_Z - 56)));
-  return <main className={`walk ${leaving ? 'walk-leaving' : ''}`} aria-label="Phase 4: the walk to Bay 6">
-    <div className="walk-world"><Canvas dpr={[1, 1.4]} camera={{ fov: 54, near: .1, far: 460, position: [0, EYE, 8] }} gl={{ antialias: true, powerPreference: 'high-performance' }}><AdaptiveDpr />
+  return <main className={`walk ${leaving ? 'walk-leaving' : ''}`} aria-label="The walk to Bay 6">
+    <div className="walk-world"><Canvas dpr={dpr} camera={{ fov: 54, near: .1, far: 460, position: [0, EYE, 8] }} gl={{ antialias: true, powerPreference: 'high-performance' }}><AdaptiveDpr onChange={setDpr} />
       <WalkWorld state={state} onProgress={setProgress} />
-      <SceneQuality />
+      <SceneQuality manageDpr={false} onReady={onReady} onError={onLoadError} />
     </Canvas></div>
     <div className="walk-grade" aria-hidden="true" />
     <div className="walk-objective" role="status"><span>FOLLOW THE LIVE CABLE</span><b>Bay 6 <i>·</i> {metres} m</b></div>
@@ -252,6 +258,7 @@ export function Walk() {
     {!moved && !arrived && <p className="walk-hint">HOLD <b>W</b> · SPACE · OR THE MOUSE TO WALK <i>·</i> SCROLL TO STEP</p>}
     {arrived && <button className="walk-enter" onClick={enter}>Enter Bay 6 <i>→</i></button>}
     <SoundToggle />
+    <SceneCurtain ready={ready} error={loadError} />
     <p className="sr-only">Hold W, Space or the mouse button to walk along the street, or scroll to step. Move the pointer to look around. At the gate, press Enter or E, or select Enter Bay 6.</p>
   </main>;
 }

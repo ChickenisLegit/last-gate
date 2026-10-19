@@ -16,6 +16,7 @@ import { createBayRender, type BayRender } from './bayRender';
 import './bay.css';
 import './bay-theme.css';
 import { AdaptiveDpr } from '../performance/AdaptiveDpr';
+import { SceneCurtain } from '../presentation/SceneCurtain';
 
 /**
  * Phase 4, inside Bay 6. Hiro walks in from the gate, looks around the abandoned bay, reads a job
@@ -43,10 +44,10 @@ const SPOT_AT: Record<Spot, [number, number]> = { cradle: [2, -15], toolwall: [-
 
 const ease = (t: number) => t < .5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
 
-function World({ bay, cam, state, pins, pinEls, hiro, onPick, onReady }: {
+function World({ bay, cam, state, pins, pinEls, hiro, onPick, onReady, onError }: {
   bay: Bay; cam: MutableRefObject<Cam>; state: MutableRefObject<BayState>;
   pins: MutableRefObject<Pin[]>; pinEls: MutableRefObject<Record<string, HTMLButtonElement | null>>; hiro: MutableRefObject<SVGGElement | null>;
-  onPick: (part: string) => void; onReady: () => void;
+  onPick: (part: string) => void; onReady: () => void; onError: (message: string) => void;
 }) {
   const { camera, scene, gl, raycaster } = useThree();
   const skyline = useMemo(() => {
@@ -73,7 +74,7 @@ function World({ bay, cam, state, pins, pinEls, hiro, onPick, onReady }: {
     if (import.meta.env.DEV) (window as Window & { __bay?: unknown }).__bay = { scene, bay, skyline, gl, split };
     const show = () => { if (!alive) return; bay.root.visible = skyline.group.visible = true; setLive(true); };
     bay.root.visible = skyline.group.visible = true;
-    split.compile(gl, camera).then(show, show);
+    split.compile(gl, camera).then(show, () => { if (alive) onError('Bay 6 could not finish loading. Please reload to try again.'); });
     bay.root.visible = skyline.group.visible = false;
     return () => { alive = false; draw.current = null; split.dispose(gl); scene.environment = null; env.dispose(); pmrem.dispose(); skyline.dispose(); };
   }, [scene, gl, camera, raycaster, bay, skyline]);
@@ -157,6 +158,7 @@ function World({ bay, cam, state, pins, pinEls, hiro, onPick, onReady }: {
 }
 
 export function ServiceBay({ start }: { start: BayStart }) {
+  const [dpr, setDpr] = useState(1);
   const bay = useMemo(takeServiceBay, []);
   useEffect(() => () => bay.dispose(), [bay]);
   const initial: View = start === 'enter' ? VIEWS.gate : start === 'box' ? VIEWS.box : HOLD;
@@ -172,6 +174,7 @@ export function ServiceBay({ start }: { start: BayStart }) {
   const [line, setLine] = useState<{ text: string; key: number } | null>(null);
   const [leaving, setLeaving] = useState(false);
   const [ready, setReady] = useState(false);
+  const [loadError, setLoadError] = useState<string>();
   const state = useRef<BayState>({ cleared: 0, latches: [false, false], lid: false, lift: 0, charge: 0 });
   state.current = { cleared: cleared ? 1 : 0, latches, lid, lift: stage === 'taken' ? 1 : 0, charge: lid ? 1 : 0 };
   const timers = useRef<number[]>([]);
@@ -302,14 +305,14 @@ export function ServiceBay({ start }: { start: BayStart }) {
   const where: [string, string] = busy ? ['On the move', stage === 'cable' ? 'Following the hot line' : 'Walking'] : stage === 'enter' ? ['Side door', 'Just inside'] : stage === 'explore' ? (focus === 'cradle' ? ['Service stand 6', 'Centre bay'] : focus === 'toolwall' ? ['Shadow board', 'West wall'] : focus === 'jobcard' ? ['Bench 2', 'West wall'] : ['Main aisle', 'Near the door']) : ['Under the stairs', 'North-west corner'];
   const chapters = [['03', 'Board', 'done'], ['04', 'Walk', 'done'], ['04', 'Bay 6', 'now'], ['05', 'Baymax', 'next']] as const;
 
-  return <main className={`bay ${ready ? 'bay-ready' : ''} ${leaving ? 'bay-leaving' : ''}`} aria-label="Phase 4: inside Bay 6">
+  return <main className={`bay bay-stage-${stage} ${ready ? 'bay-ready' : ''} ${leaving ? 'bay-leaving' : ''}`} aria-label="Inside Bay 6">
     <div className="bay-world">
-      <Canvas shadows dpr={[1, 1.4]} camera={{ fov: 52, near: .05, far: 420, position: VIEWS.gate.pos }} gl={{ antialias: true, powerPreference: 'high-performance' }}><AdaptiveDpr />
-        <World bay={bay} cam={cam} state={state} pins={pins} pinEls={pinEls} hiro={hiro} onPick={onPick} onReady={() => { setReady(true); window.dispatchEvent(new Event('lastgate:scene-ready')); }} />
+      <Canvas shadows dpr={dpr} camera={{ fov: 52, near: .05, far: 420, position: VIEWS.gate.pos }} gl={{ antialias: true, powerPreference: 'high-performance' }}><AdaptiveDpr onChange={setDpr} />
+        <World bay={bay} cam={cam} state={state} pins={pins} pinEls={pinEls} hiro={hiro} onPick={onPick} onError={setLoadError} onReady={() => { setReady(true); window.dispatchEvent(new Event('lastgate:scene-ready')); }} />
       </Canvas>
     </div>
     <div className="bay-grade" aria-hidden="true" />
-    {!ready && <p className="bay-loading" role="status">Bay 6…</p>}
+    <SceneCurtain ready={ready} error={loadError} />
     <header className="bay-top">
       <ol className="bay-chapters" aria-label="Where you are in the story">{chapters.map(([n, name, st]) => <li key={name} className={`is-${st}`}><b>{st === 'done' ? '✓' : n}</b>{name}</li>)}</ol>
       <button className="lg-pill lg-pill-ghost lg-pill-small" onClick={restart}>Start the bay again</button>

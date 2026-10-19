@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import {mergeGeometries} from 'three/addons/utils/BufferGeometryUtils.js';
 import {patchWarpTree,warpUniforms} from '../effects/WorldWarp.js';
-import {SEAM_POSITION} from '../systems/SequenceDirector';
+import {SEAM_POSITION,PULL_CONTACT_POSITION} from '../systems/SequenceDirector';
 
 const ease=t=>{t=Math.max(0,Math.min(1,t));return t*t*(3-2*t);};
 const span=(t,a,b)=>ease((t-a)/(b-a));
@@ -134,6 +134,13 @@ export function createRuptureSet(environment){
   const SLABS=34,slabMesh=new THREE.InstancedMesh(new THREE.BoxGeometry(1.3,.32,1.2),new THREE.MeshStandardMaterial({color:'#7c838e',roughness:.95}),SLABS);
   slabMesh.castShadow=true;slabMesh.frustumCulled=false;slabMesh.visible=false;root.add(slabMesh);
   const slabs=Array.from({length:SLABS},(_,i)=>{const x=-4+(i%6)*1.45+rand(-.2,.2),z=-23.2-Math.floor(i/6)*1.32+rand(-.15,.15);return {base:new THREE.Vector3(x,-.31,z),delay:rand(0,.45)+Math.max(0,(z+31)*-.0)+(Math.abs(x-1.5)*.04),spin:new THREE.Vector3(rand(-2,2),rand(-1,1),rand(-2,2))};});
+  // One broken service-frame member catches his shoulder during displacement.
+  // Its brief electrical scatter is separate from the larger road-impact effect pool.
+  const pullFrame=new THREE.Mesh(new THREE.BoxGeometry(.38,3.8,.44),new THREE.MeshStandardMaterial({color:'#465462',roughness:.83,metalness:.3}));
+  pullFrame.position.copy(PULL_CONTACT_POSITION).add(new THREE.Vector3(.25,0,0));pullFrame.rotation.set(.12,.15,-.22);pullFrame.visible=false;root.add(pullFrame);
+  const sparkPositions=new Float32Array(24*3),sparkGeo=new THREE.BufferGeometry();sparkGeo.setAttribute('position',new THREE.BufferAttribute(sparkPositions,3));
+  const sparkMat=new THREE.PointsMaterial({color:'#b8e7ff',size:.045,transparent:true,opacity:0,depthWrite:false,blending:THREE.AdditiveBlending});
+  const pullSparks=new THREE.Points(sparkGeo,sparkMat);pullSparks.position.copy(PULL_CONTACT_POSITION);pullSparks.frustumCulled=false;root.add(pullSparks);let pullHit=false;
   patchWarpTree(root);
   const tmp=new THREE.Vector3(),tmp2=new THREE.Vector3(),seamWorld=SEAM_POSITION.clone();
   let fold=0,foldTarget=0,shearSpike=0;
@@ -187,6 +194,15 @@ export function createRuptureSet(environment){
     },
     update(t,dt,seq,phase,camera){
       warpUniforms.uWarpTime.value=t;
+      pullFrame.visible=(phase==='fracture'&&seq.phaseTime>3)||(phase==='pulled'&&seq.phaseTime<3.4);
+      const contactAge=phase==='pulled'?seq.phaseTime-1.45:9;
+      pullSparks.visible=contactAge>=0&&contactAge<.34;
+      if(pullSparks.visible){
+        sparkMat.opacity=(1-contactAge/.34)*.85;
+        for(let i=0;i<24;i++){const a=i*2.399;const speed=.8+(i%5)*.3;sparkPositions[i*3]=Math.cos(a)*contactAge*speed;sparkPositions[i*3+1]=Math.sin(a)*contactAge*speed-contactAge*contactAge*3;sparkPositions[i*3+2]=(i%3-1)*contactAge*.7;}
+        sparkGeo.attributes.position.needsUpdate=true;
+        if(!pullHit){pullHit=true;seq.impulse(.16);}
+      }
       // Bolts: the head runs ahead of the beam, the beam lingers a fraction then dies.
       for(const b of bolts){
         if(!b.g.visible)continue;b.age+=dt;const u=Math.min(1,b.age/b.flight);
@@ -252,6 +268,7 @@ export function createRuptureSet(environment){
     },
     /** Clears scars, tears and the corridor for a replay. */
     reset(){
+      pullHit=false;pullFrame.visible=false;pullSparks.visible=false;
       [...scars.map(s=>s.g),...tears.map(t=>t.g)].forEach(g=>{g.visible=false;});
       chunks.forEach(c=>{c.life=0;});fold=0;foldTarget=0;shearSpike=0;warpUniforms.uFold.value.set(0,0,0,0);warpUniforms.uShear.value=0;warpUniforms.uPull.value.set(0,0,0,0);
       warpUniforms.uImpactPower.value.set(0,0,0,0);

@@ -119,7 +119,7 @@ export function createPortalGate(z=24) {
   const key=new T.PointLight('#8fd8ff',0,42,1.5);key.position.set(0,0,.6);lights.add(key);
   const wash=new T.PointLight('#a487ff',0,26,1.6);wash.position.set(0,-3.4,-.8);lights.add(wash);
 
-  let close=0,sealT=-1,shown=true,flashOut=0,imploded=false;
+  let close=0,sealT=-1,shown=true,flashOut=0,imploded=false,tension=0;
   const aperture=()=>T.MathUtils.lerp(.89,.34,close);
   return {group,lights,z,
     get closeAmount(){return close;},
@@ -130,9 +130,11 @@ export function createPortalGate(z=24) {
     /** True on the one update where the gate implodes. */
     get imploded(){return imploded;},
     setClose(value:number){close=clamp01(value);},
+    /** The return decision builds wind and flicker without prematurely sealing the aperture. */
+    setTension(value:number){tension=clamp01(value);},
     /** Collapse the gate for good: contraction, implosion, shockwave. Idempotent. */
     seal(){if(sealT<0)sealT=0;},
-    reset(){sealT=-1;close=0;flashOut=0;imploded=false;},
+    reset(){sealT=-1;close=0;flashOut=0;imploded=false;tension=0;},
     /** Whether the gate is in the world at all (drives light, not shader state). */
     setShown(value:boolean){shown=value;},
     update(t:number,dt:number,target?:number){
@@ -143,12 +145,12 @@ export function createPortalGate(z=24) {
       const contract=sealT<0?0:ease(clamp01(sealT/SEAL_IMPLODE));
       const after=sealT<SEAL_IMPLODE?0:clamp01((sealT-SEAL_IMPLODE)/(SEAL_DONE-SEAL_IMPLODE));
       const gone=sealT>=SEAL_IMPLODE;
-      const instability=Math.min(1,close*.35+contract*1.2);
+      const instability=Math.min(1,close*.35+contract*1.2+tension*.38);
       const scale=gone?0:1-contract*contract*.82;
       ellipse.scale.set(.8*scale,1.1*scale,1);ellipse.visible=!gone;
       const ap=T.MathUtils.lerp(aperture(),0,contract);
       shared.uTime.value=t;shared.uClose.value=close;shared.uAperture.value=ap;shared.uInstability.value=instability;shared.uIntensity.value=1+contract*1.6;
-      sparkMat.uniforms.uPull.value=contract*2+close*.3;
+      sparkMat.uniforms.uPull.value=contract*2+close*.3+tension*.9;
       // Aperture follows the same wobble the shader draws.
       const amp=1+instability*3,r=Math.max(.0001,R*ap);
       for(let i=1;i<maskPos.count;i++){const k=1+wobble(rimAngles[i],t)*amp;maskPos.setXY(i,Math.cos(rimAngles[i])*k,Math.sin(rimAngles[i])*k);}
@@ -157,7 +159,7 @@ export function createPortalGate(z=24) {
       fringeMat.opacity=.18+contract*.35;
       rimGroup.scale.setScalar(1+Math.sin(t*1.3)*.004+shiver(t,instability));
       // Debris: an inward spiral; through the seal they all go at once.
-      const pull=1+close*.6+contract*6;
+      const pull=1+close*.6+contract*6+tension*1.6;
       for(let i=0;i<DEBRIS;i++){const c=chunks[i];c.life+=dt*c.speed*pull;if(c.life>=1){c.life=gone?1:0;c.a=Math.random()*Math.PI*2;c.r=1.25+Math.random()*1.1;}
         const k=c.life*c.life,rr=T.MathUtils.lerp(c.r,ap*.9,k),a=c.a+k*2.4+t*.04;
         const fade=gone?0:Math.min(1,c.life*6)*(1-T.MathUtils.smoothstep(c.life,.8,1));
@@ -171,7 +173,7 @@ export function createPortalGate(z=24) {
       waveMat.uniforms.uWave.value=after*1.05;waveMat.uniforms.uAlpha.value=gone?(1-after)*(1-after)*.9:0;
       flashOut=sealT<0?0:pop;
       // Light: pulses while open, swells as it contracts, spikes at the implosion, then gone.
-      const pulse=.9+.1*Math.sin(t*.8)+.05*Math.sin(t*5.3)*instability;
+      const pulse=.9+.1*Math.sin(t*.8)+(.05+.12*tension)*Math.sin(t*5.3)*instability;
       const live=shown&&!(gone&&after>=1)?1:0;
       key.intensity=live*((gone?0:(14-close*5)*pulse*(1+contract*1.8))+pop*70);
       wash.intensity=live*((gone?0:6*pulse*(1+contract))+pop*30);

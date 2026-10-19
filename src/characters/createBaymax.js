@@ -31,19 +31,23 @@ for(const x of [-.075,.075])mesh(new THREE.BoxGeometry(.018,.15,.025),housingMat
 const seal=new THREE.Group();seal.name='access-seal';seal.visible=false;baymax.add(seal);seal.position.copy(access.position);seal.rotation.copy(access.rotation);
 mesh(new THREE.TorusGeometry(.155,.01,8,40),materials.seam,0,0,.043,seal);
 for(let side of [-1,1]){
-  ellipsoid(.45,.56,.46,materials.armor,side*.93,2.3,-.03,baymax).rotation.z=side*.25;
+  const tag=side<0?'right':'left';
+  ellipsoid(.45,.56,.46,materials.white,side*.93,2.3,-.03,baymax).rotation.z=side*.25;
+  baymax.children.at(-1).name=`shoulder-${tag}`;
   ellipsoid(.38,.73,.38,materials.white,side*1.12,1.7,.08,baymax).rotation.z=side*.12;
+  baymax.children.at(-1).name=`upper-arm-${tag}`;
   ellipsoid(.39,.54,.42,materials.white,side*1.23,.82,.3,baymax).rotation.x=-.16;
-  ellipsoid(.35,.24,.38,materials.white,side*1.25,.35,.48,baymax);
-  for(let finger=0;finger<3;finger++)ellipsoid(.09,.11,.17,materials.white,side*1.25+(finger-1)*.17,.29,.76,baymax);
-  const leg=ellipsoid(.49,.49,.83,materials.white,side*.57,.48,.76,baymax);leg.rotation.y=side*.2;
-  ellipsoid(.43,.35,.61,materials.armor,side*.71,.26,1.42,baymax);
+  baymax.children.at(-1).name=`forearm-${tag}`;
+  ellipsoid(.35,.24,.38,materials.white,side*1.25,.35,.48,baymax).name=`hand-${tag}`;
+  for(let finger=0;finger<3;finger++)ellipsoid(.09,.11,.17,materials.white,side*1.25+(finger-1)*.17,.29,.76,baymax).name=`finger-${tag}-${finger}`;
+  const leg=ellipsoid(.49,.49,.83,materials.white,side*.57,.48,.76,baymax);leg.rotation.y=side*.2;leg.name=`thigh-${tag}`;
+  ellipsoid(.43,.35,.61,materials.white,side*.71,.26,1.42,baymax).name=`boot-${tag}`;
   box(.53,.07,.62,materials.dark,side*.71,.04,1.5,baymax);
 }
 // A few armor scratches, and a dormant back thruster.
 box(.025,.29,.012,materials.seam,-.99,2.35,.373,baymax).rotation.z=-.4;
 box(.016,.19,.012,materials.seam,1.06,2.27,.365,baymax).rotation.z=.3;
-ellipsoid(.48,.66,.26,materials.armor,0,2.1,-.61,baymax);
+ellipsoid(.48,.66,.26,materials.white,0,2.1,-.61,baymax).name='back-shell';
 
 return baymax;
 }

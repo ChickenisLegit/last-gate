@@ -1,5 +1,5 @@
 import type { ComponentType } from 'react';
-import type { ArmouredBaymax } from '../characters/ArmouredBaymax';
+import type { ArmouredBaymax } from '../characters/SolidArmour';
 import type { Camera, Group, Scene, WebGLRenderer } from 'three';
 import type { ChestBay } from '../characters/ChestBay';
 import type { District } from './district';

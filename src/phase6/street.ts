@@ -1,4 +1,5 @@
 import * as T from 'three';
+import { createStreetImpacts } from './StreetImpacts';
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { SceneKit, seeded, type Pose } from '../phase2/SceneKit';
 import { createPortalDimension } from '../environment/PortalDimension.js';
@@ -72,7 +73,7 @@ float rim=smoothstep(edge-.32,edge,r);
 float clear=smoothstep(.95,.2,r/max(edge,.001))*smoothstep(.15,.8,uOpen);
 vec3 col=mix(dusk*(.7+swirl*.6),view,clear*.92);
 col+=glow*rim*(.8+swirl*.5)+dusk*(1.-clear)*.4;
-col=mix(col,vec3(1.,.97,1.),uFlash);
+col=mix(col,vec3(.06,.045,.11),uFlash*.85);
 gl_FragColor=vec4(col,1.);}`;
 
 function crackTexture() {
@@ -308,7 +309,7 @@ export function createStreet() {
   k.box({ p: [0, 0, 0], s: [.5, .08, .36] }, k.dark, head);
   const readerScreen = k.ownMaterial(new T.MeshBasicMaterial({ color: '#16211c', toneMapped: false }));
   k.mesh(k.ownGeometry(new T.PlaneGeometry(.3, .12)), readerScreen, { p: [0, .041, -.09], r: [-Math.PI / 2, 0, 0] }, head);
-  k.mesh(k.ownGeometry(new T.PlaneGeometry(.11, .024)), k.ownMaterial(new T.MeshBasicMaterial({ color: '#030506' })), { p: [0, .041, .08], r: [-Math.PI / 2, 0, 0] }, head);
+  k.mesh(k.ownGeometry(new T.PlaneGeometry(.14, .024)), k.ownMaterial(new T.MeshBasicMaterial({ color: '#030506' })), { p: [0, .041, .08], r: [-Math.PI / 2, 0, 0] }, head);
   const readerLamp = k.ownMaterial(new T.MeshBasicMaterial({ color: '#3a2a20', toneMapped: false }));
   k.mesh(k.ownGeometry(new T.CircleGeometry(.012, 12)), readerLamp, { p: [.17, .041, .08], r: [-Math.PI / 2, 0, 0] }, head);
   k.label('READER  旧ゲート', { p: [0, .042, .145], r: [-Math.PI / 2, 0, 0] }, .32, '#c5b484', head);
@@ -328,6 +329,13 @@ export function createStreet() {
   // Work lights clamped to the scaffold.
   const worklight = k.basic('#ffd9a1', 1.4);
   for (const [x, y, z] of [[-5.3, 4.8, -91.9], [5.3, 6.9, -91.9]]) k.mesh(k.ownGeometry(new T.BoxGeometry(.3, .2, .16)), worklight, { p: [x, y, z] });
+  // The existing scaffold lamps light the work, rather than only glowing themselves.
+  // Tight, unshadowed cones keep the warm recovery area distinct from the cool gate rim.
+  const recoveryLight = new T.SpotLight('#ffd1a0', 72, 17, .68, .85, 2);
+  recoveryLight.position.set(-5.3, 4.8, -91.9); recoveryLight.target.position.set(LANDING.x, .7, LANDING.z);
+  const gateRim = new T.SpotLight('#9ebfdb', 55, 17, .72, .9, 2);
+  gateRim.position.set(5.3, 6.9, -91.9); gateRim.target.position.set(PEDESTAL.x, 1, PEDESTAL.z);
+  k.root.add(recoveryLight, recoveryLight.target, gateRim, gateRim.target);
 
   // --- The fall: cracked paving and lifted tiles, dust thrown out from the impact.
   const crackMat = k.ownMaterial(new T.MeshBasicMaterial({ map: crackTexture(), transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
@@ -360,7 +368,10 @@ export function createStreet() {
   const purple = new T.Color('#5B4B8A'), copper = new T.Color('#7a4a24'), hot = new T.Color('#ffc58a');
 
   const lockRed = new T.Color('#ff3a2c');
+  const impacts = createStreetImpacts(k.root, (at, wall) => kickDust(at.clone().setY(0), wall ? .45 : .8, .15));
   return {
+    fire: impacts.fire,
+    impact: impacts.impact,
     root: k.root, lamps, portalMat, frame, hub,
     /** The reader's cartridge slot in world space, and how it sits (for seating the cartridge). */
     readerWorld: (out = new T.Vector3()) => slot.getWorldPosition(out),
@@ -373,6 +384,7 @@ export function createStreet() {
       c.spin.set(rand(-4, 4), rand(-4, 4), rand(-4, 4)); c.live = true; c.bounced = false; c.land = onLand ?? null; c.m.visible = true;
     },
     update(t: number, dt: number, s: { angles: number[]; live: number[]; powered: number; open: number; flash: number; cracked: number; socket: number; lock?: number; eye?: T.Vector3; dread?: number }) {
+      impacts.update(dt);
       skyline.update(t, dt, false, 0, 'approaching');
       // Debris: falls, bounces once, settles where it lands.
       for (const c of chunks) {
@@ -423,7 +435,7 @@ export function createStreet() {
       spokes.forEach((m, i) => { m.scale.y = 1 - s.open * .98; m.position.setLength((FRAME_R / 2) * (1 + s.open * .9)); m.visible = s.open < .97; void i; });
       portal.visible = s.open > .001;
       portalMat.uniforms.uOpen.value = s.open; portalMat.uniforms.uTime.value = t; portalMat.uniforms.uFlash.value = s.flash;
-      portalLight.intensity = s.open * 26 + s.flash * 30;
+      portalLight.intensity = s.powered * 2 + s.open * 26 + s.flash * 30;
       crackMat.opacity = s.cracked;
       heaved.forEach((m, i) => { m.visible = s.cracked > .05; m.rotation.x = s.cracked * (.18 + (i % 3) * .07); m.position.y = .04 + s.cracked * .06; });
       // Dust: drifts out, slows, settles and fades.
@@ -439,7 +451,7 @@ export function createStreet() {
         dustMat.size = .5 + dustAge * .35;
       } else dustMat.opacity = 0;
     },
-    dispose() { skyline.dispose(); dotTex.dispose(); (crackMat.map as T.Texture).dispose(); k.dispose(); },
+    dispose() { impacts.dispose(); skyline.dispose(); dotTex.dispose(); (crackMat.map as T.Texture).dispose(); k.dispose(); },
   };
 }
 export type Street = ReturnType<typeof createStreet>;

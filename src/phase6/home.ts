@@ -241,7 +241,7 @@ export function directHome(home: Home, cast: HomeCast, s: HomeShot, cue: { chime
   // 0–1.6 the bay closes. 1.9 eyes on, chime.
   P.open = 4.6 * (1 - sm(be, .2, 1.6));
   const eyesOn = sm(be, 1.9, 2.9);
-  // Healthcare online: the combat armour comes off him, plate by plate, before he gets up.
+  // Healthcare online: clear the combat finish on the same body before he gets up.
   P.armour = 1 - sm(be, 2.1, 4.4);
   P.eyes.copy(RED_OFF).lerp(CARE_WHITE, eyesOn); P.eyeGlow = eyesOn * .25;
   if (stage === 'boot' && be > 1.95 && be - dt <= 1.95) cue.chime();

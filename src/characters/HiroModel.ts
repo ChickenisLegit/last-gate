@@ -105,7 +105,7 @@ export function createHiro() {
   const lowSphere = g(new T.SphereGeometry(1, 12, 8));
   const cyl = g(new T.CylinderGeometry(1, 1, 1, 14));
 
-  const root = new T.Group(); root.name = 'hiro';
+  const root = new T.Group(); root.name = 'hiro'; root.scale.set(1.08, 1, 1.04);
   const body = new T.Group(); root.add(body);
   const pelvis = joint(body, 0, HIP_Y);
 

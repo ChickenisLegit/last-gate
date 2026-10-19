@@ -9,7 +9,7 @@ import type { PhaseSixStep } from './entry';
  *   6 faceoff → switchOn2 → drop · 7 carry → bloom · 8 home → seated → boot → end
  *
  * In carry Hiro pulls the combat chip out of the open bay (chip: bay → held → out), then plays the
- * relay's capture of the healthcare chip's last transmission into the gate (cart: hand → held → slot).
+ * seats that same card in the gate reader (cart: hand → held → slot). The relay capture stays loaded.
  */
 export type Stage =
   | 'wake' | 'switchOn1' | 'limited' | 'escape' | 'gate' | 'powered' | 'choice' | 'switchOff' | 'flyin'

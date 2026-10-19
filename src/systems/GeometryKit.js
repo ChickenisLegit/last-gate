@@ -8,7 +8,7 @@ const materials = {
   edge: new THREE.MeshStandardMaterial({color:'#354156',roughness:1}),
   dark: new THREE.MeshStandardMaterial({color:'#101925',roughness:.82}),
   metal: new THREE.MeshStandardMaterial({color:'#626c7c',roughness:.66,metalness:.5}),
-  white: new THREE.MeshStandardMaterial({color:'#eeeade',roughness:.53,metalness:.025}),
+  white: new THREE.MeshStandardMaterial({color:'#f6f8fa',roughness:.58,metalness:0}),
   seam: new THREE.MeshStandardMaterial({color:'#b2bbb2',roughness:.7}),
   black: new THREE.MeshStandardMaterial({color:'#131a1b',roughness:.45}),
   armor: new THREE.MeshPhysicalMaterial({color:'#4b1918',roughness:.32,metalness:.52,clearcoat:.32,clearcoatRoughness:.38}),

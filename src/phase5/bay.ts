@@ -1,22 +1,29 @@
 import * as T from 'three';
 import { createHarbourWorld } from '../recovery/HarbourWorld';
 import { createLimiter, LIMITER_FEED } from '../phase4/limiter';
+import { configureLaterArmour, createSurfaceContact, REGULATOR_WORLD_SCALE } from '../characters/LaterBaymax';
+import { createRegulatorMount } from '../characters/RegulatorMount';
 
 /**
  * Back at the harbour bay: the same district and the same Baymax pose as the landing and the
  * engineering board (on his apron, clear of the debris), plus the power regulator Hiro found in
- * Bay 6 (Phase 4's createLimiter), lifted off the apron and fitted flat onto his right chest plate,
+ * Bay 6 (Phase 4's createLimiter), lifted off the apron and fitted below the chip bay,
  * where it stays for the rest of the story. Its gauge and lamp show the load.
  */
 export async function createBay() {
   const { district, baymax: model, bay, armoured } = await createHarbourWorld();
   district.group.add(model);
+  const ground = -1.02;
+  const disposeArmourCores = armoured ? configureLaterArmour(armoured) : null;
+  model.updateMatrixWorld(true);
+  const contact = createSurfaceContact(armoured?.root ?? model);
+  model.position.y += contact.correction(ground); model.updateMatrixWorld(true);
   district.group.traverse(object => {
     if (!('isPointLight' in object)) return;
     for (let parent = object.parent; parent; parent = parent.parent) if (parent === bay.root) return;
     object.visible = false;
   });
-  const body = new T.Box3().setFromObject(model).getCenter(new T.Vector3());
+  const body = new T.Box3().setFromObject(armoured?.root ?? model, true).getCenter(new T.Vector3());
   const arm = new T.Group(); arm.name = 'baymax-output-test-arm'; arm.position.set(1.02, 2.26, .02); model.add(arm); model.updateMatrixWorld(true);
   const armMeshes: T.Mesh[] = []; model.traverse(o => { if (o instanceof T.Mesh) armMeshes.push(o); });
   for (const mesh of armMeshes) {
@@ -36,7 +43,7 @@ export async function createBay() {
   });
   const headBase = head ? (head as T.Object3D).rotation.clone() : new T.Euler();
   // His body axis (hips → head) and the side facing the lane: the camera and the limiter work from there.
-  const headWorld = head ? (head as T.Object3D).getWorldPosition(new T.Vector3()) : body.clone().add(new T.Vector3(0, 0, -1));
+  const headWorld = armoured?.headWorld() ?? (head ? (head as T.Object3D).getWorldPosition(new T.Vector3()) : body.clone().add(new T.Vector3(0, 0, -1)));
   const axis = headWorld.clone().sub(body).setY(0).normalize();
   const side = new T.Vector3(-axis.z, 0, axis.x); if (side.x > 0) side.negate();
   const red = new T.PointLight('#ff2a1c', 0, 6, 1.8); red.position.copy(body).add(new T.Vector3(-.6, 1.2, .4)); district.group.add(red);
@@ -49,20 +56,24 @@ export async function createBay() {
     }
   });
   const limiter = createLimiter();
-  limiter.scale.setScalar(.46);
-  const ground = -1.02;
+  limiter.scale.setScalar(REGULATOR_WORLD_SCALE);
   const staged = body.clone().addScaledVector(side, 2.6).addScaledVector(axis, -.4).setY(ground);
   limiter.position.copy(staged); limiter.rotation.y = .5; district.group.add(limiter);
-  // The limiter's mount (tracker N-04): flat on his right chest plate, face out, long side along his
-  // body. Kept relative to the chest bone so it moves with him once fitted.
+  // The limiter's mount (tracker N-04): flat on his right chest plate, face out, long side
+  // across his chest. Kept relative to the chest bone so it moves with him once fitted.
   const tmpP = new T.Vector3(), redEye = new T.Color('#ff2414'), tmpM = new T.Matrix4();
   const mountLocal = new T.Matrix4(), mountPos = new T.Vector3(), mountQ = new T.Quaternion(), mountS = new T.Vector3(), mountN = new T.Vector3();
   const stagedQ = new T.Quaternion().setFromEuler(new T.Euler(0, .5, 0));
-  const spot = armoured?.chestFrame(-.3, .24) ?? null;
+  const spot = armoured?.chestFrame(0, -.45) ?? null;
+  let regulatorMount: ReturnType<typeof createRegulatorMount> | null = null;
   if (spot) {
     const n = spot.n;
-    const mw = new T.Matrix4().makeBasis(spot.x, n, spot.z).setPosition(spot.point.clone().addScaledVector(n, -.02)).scale(limiter.scale.clone());
+    const mw = new T.Matrix4().makeBasis(spot.z, spot.x, n)
+      .setPosition(spot.point.clone().addScaledVector(n, .16)).scale(limiter.scale.clone());
     mountLocal.copy(spot.bone.matrixWorld).invert().multiply(mw);
+    mw.decompose(limiter.position, limiter.quaternion, limiter.scale); limiter.updateWorldMatrix(true, true);
+    regulatorMount = createRegulatorMount(limiter, armoured!.root); regulatorMount.setFitted(0);
+    limiter.position.copy(staged); limiter.quaternion.copy(stagedQ);
   }
   // The feed: once the unit is home, its heavy black lead runs from the main gland into the rim of
   // his chest bay ("in line with his main feed"), drawn out along its length, then the plug seats.
@@ -72,8 +83,8 @@ export async function createBay() {
   const buildFeed = () => {
     if (!spot) return;
     const bone = spot.bone; bone.updateWorldMatrix(true, true); limiter.updateMatrixWorld(true);
-    const n = new T.Vector3(0, 1, 0).transformDirection(limiter.matrixWorld), along = new T.Vector3(1, 0, 0).transformDirection(limiter.matrixWorld);
-    const a = limiter.localToWorld(LIMITER_FEED.clone()), c = bay.root.getWorldPosition(new T.Vector3());
+    const n = new T.Vector3(0, 0, 1).transformDirection(limiter.matrixWorld), along = new T.Vector3(1, 0, 0).transformDirection(limiter.matrixWorld);
+    const a = regulatorMount?.feedWorld() ?? limiter.localToWorld(LIMITER_FEED.clone()), c = bay.root.getWorldPosition(new T.Vector3());
     const rim = bay.root.getWorldScale(new T.Vector3()).x * .235;
     const to = a.clone().sub(c); to.addScaledVector(n, -to.dot(n)).normalize();
     const b = c.clone().addScaledVector(to, rim * .98).addScaledVector(n, .01);
@@ -90,24 +101,23 @@ export async function createBay() {
   const hipsP5 = model.children.filter(c => c.name.startsWith('hip-')), hipBase = hipsP5.map(h => h.rotation.x);
   const headQ = new T.Quaternion(), headRestInv = new T.Quaternion().setFromEuler(headBase).invert(), legE = new T.Euler();
   const legQ = (h: T.Object3D | undefined) => h ? new T.Quaternion().setFromEuler(legE.set(h.rotation.x - 1.42, 0, h.rotation.z)) : undefined;
+  const work = new T.SpotLight('#ffd1a0', 42, 12, .8, .7, 2);
+  work.position.copy(body).addScaledVector(side, 2.5).addScaledVector(axis, -.7); work.position.y = body.y + 4;
+  work.target.position.copy(body); district.group.add(work, work.target);
   const ss = (x: number, a: number, b: number) => T.MathUtils.smoothstep(x, a, b), pulse = (x: number, a: number, b: number) => Math.sin(Math.PI * T.MathUtils.clamp((x - a) / (b - a), 0, 1));
   return {
     district, model, bay, body, side, axis,
     /** fitted: 0 staged → 1 on his flank. power: 0 dormant → 1 running against the limit. */
     update(t: number, dt: number, s: { fitted: number; power: number; held: boolean }) {
       district.update(t, dt, false);
-      // Timed to the fitting's sounds (2.2 s; PhaseFive's phaseFiveSounds): lifted at 0, two steps
-      // across (.5 s, .95 s), pushed home onto the plate with a clunk (1.25 s), the feed plugged into
-      // his bay (1.9 s). It comes up one end first and is carried with a step in it, lines up over the
-      // plate, and is driven home fast, so it lands with weight instead of easing into place.
+      // Unit-only fitting over 4.8 seconds: lift, align, seat at 2.7s, then connect at 4.1s.
       const f = s.fitted, ss2 = T.MathUtils.smootherstep;
+      regulatorMount?.setFitted(ss2(f, .48, .57));
       const lift = ss2(f, 0, .18), carry = ss2(f, .12, .5), push = Math.pow(T.MathUtils.clamp((f - .5) / .07, 0, 1), 2);
       if (spot) tmpM.copy(spot.bone.matrixWorld).multiply(mountLocal).decompose(mountPos, mountQ, mountS);
-      mountN.set(0, 1, 0).applyQuaternion(mountQ);
+      mountN.set(0, 0, 1).applyQuaternion(mountQ);
       tmpP.copy(mountPos).addScaledVector(mountN, .32).sub(staged).multiplyScalar(carry).add(staged);
       tmpP.y += lift * .45 * (1 - carry) + Math.sin(Math.PI * carry) * .3;
-      // Two footfalls on the way over: a dip and recover on each.
-      if (carry > 0 && carry < 1) tmpP.y -= Math.abs(Math.sin(Math.PI * 2 * T.MathUtils.clamp((f - .2) / .3, 0, 1))) * .03;
       limiter.position.copy(tmpP).lerp(mountPos, push);
       // Seated: a small rebound off the plate, then still.
       const settle = T.MathUtils.clamp((f - .57) / .1, 0, 1);
@@ -168,13 +178,20 @@ export async function createBay() {
         legL: legQ(hipsP5.find(h => h.name === 'hip-right')), legR: legQ(hipsP5.find(h => h.name === 'hip-left')),
         head: head ? headQ.setFromEuler((head as T.Object3D).rotation).multiply(headRestInv) : undefined,
       });
+      model.updateMatrixWorld(true); model.position.y += contact.correction(ground); model.updateMatrixWorld(true);
+      // Re-read the live chest mount after his response and ground correction, so the unit never lags.
+      if (spot && f >= .57) {
+        tmpM.copy(spot.bone.matrixWorld).multiply(mountLocal).decompose(mountPos, mountQ, mountS);
+        limiter.position.copy(mountPos).addScaledVector(mountN, Math.sin(t * 57) * .005 * (press + clunk + test));
+        limiter.quaternion.copy(mountQ);
+      }
       // His bay stays shut here (tracker T-02): the limiter only goes on his chest plate.
       bay.update({ t, open: 0, seated: 1, red: .9, seamGlow: .15 + p * .35 });
     },
     dispose() {
-      limiter.dispose(); feedMat.dispose(); plugMat.dispose();
+      regulatorMount?.dispose(); limiter.dispose(); feedMat.dispose(); plugMat.dispose();
       if (feed) { feed.tube.geometry.dispose(); feed.plug.geometry.dispose(); }
-      eyes.forEach(m => m.dispose()); bay.dispose(); district.dispose();
+      eyes.forEach(m => m.dispose()); disposeArmourCores?.(); bay.dispose(); district.dispose();
     },
   };
 }

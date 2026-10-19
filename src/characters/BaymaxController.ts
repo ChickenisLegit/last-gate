@@ -1,9 +1,10 @@
-import { Box3, Euler, type Material, AdditiveBlending, CanvasTexture, Color, ConeGeometry, Group, MathUtils, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, Object3D, PointLight, Quaternion, RepeatWrapping, ShaderMaterial, Sprite, SpriteMaterial, Vector3 } from 'three';
+import { Box3, CatmullRomCurve3, Euler, type Material, AdditiveBlending, CanvasTexture, Color, ConeGeometry, Group, MathUtils, Mesh, MeshBasicMaterial, MeshPhysicalMaterial, Object3D, PointLight, Quaternion, RepeatWrapping, ShaderMaterial, Sprite, SpriteMaterial, Vector3 } from 'three';
 import { BAYMAX_POSITION } from '../config/experience';
 import type { Phase } from '../state/SceneStateManager';
 import type { SequenceDirector } from '../systems/SequenceDirector';
 import { createChestAccess } from './ChestAccess.js';
-import { createArmouredBaymax, mountArmour, type ArmouredBaymax } from './ArmouredBaymax';
+import { createArmouredBaymax, mountArmour, type ArmouredBaymax } from './SolidArmour';
+import { createSurfaceContact, LATER_BAYMAX_SCALE } from './LaterBaymax';
 
 /** After the combat chip takes over: plated. It assembles during 'corrupting' (tracker P1-01). */
 const ARMOURED:Phase[]=['threat','ignition','chase','fracture','pulled','handoff'];
@@ -48,19 +49,23 @@ export class BaymaxController {
   private prevPos=new Vector3();private prevYaw=0;private bank=0;private stretch=0;private moved=false;
   private tmp=new Vector3();private tmp2=new Vector3();private q=new Quaternion();private q2=new Quaternion();
   private eyeColor=new Color();private lastBeatTime=0;
+  private beatCamera=new Vector3();private beatOrigin=new Vector3();
+  private passCurve=new CatmullRomCurve3([new Vector3(),new Vector3(),new Vector3()]);
   private hole={uHoleCenter:{value:new Vector3()},uHoleNormal:{value:new Vector3(0,0,1)},uHoleRadius:{value:.196},uHoleOpen:{value:0}};
   // The armoured suit (tracker PW-03), loaded in the background and mounted on the shell.
   private suit?: ArmouredBaymax;private suitBaseY=0;private wasCovered=false;private white?:Mesh[];private suitStandY=0;private box=new Box3();private eul=new Euler();
   private qs=[new Quaternion(),new Quaternion(),new Quaternion(),new Quaternion(),new Quaternion()];
+  private contact: ReturnType<typeof createSurfaceContact>;
   constructor(public readonly shell: Group) {
     shell.position.set(...BAYMAX_POSITION);
     shell.rotation.order='YXZ';shell.rotation.y=-.18;
     shell.name='Baymax';
+    shell.scale.setScalar(LATER_BAYMAX_SCALE);
     const canvas=document.createElement('canvas');canvas.width=canvas.height=128;
     const ctx=canvas.getContext('2d')!;ctx.fillStyle='#bbbbbb';ctx.fillRect(0,0,128,128);
     for(let y=0;y<128;y+=4)for(let x=0;x<128;x+=4){const v=178+Math.sin(x*.31+y*.2)*5;ctx.fillStyle=`rgb(${v},${v},${v})`;ctx.fillRect(x,y,4,4);}
     const roughness=new CanvasTexture(canvas);roughness.wrapS=roughness.wrapT=RepeatWrapping;roughness.repeat.set(3,3);
-    this.skin=new MeshPhysicalMaterial({name:'inflatable',color:'#eee8dc',roughness:.79,roughnessMap:roughness,metalness:0,sheen:.38,sheenColor:new Color('#ead8c3'),sheenRoughness:.9,clearcoat:.02,envMapIntensity:.45});
+    this.skin=new MeshPhysicalMaterial({name:'inflatable',color:'#f6f8fa',roughness:.79,roughnessMap:roughness,metalness:0,sheen:.3,sheenColor:new Color('#eef4f8'),sheenRoughness:.9,clearcoat:.02,envMapIntensity:.45});
     this.armor=new MeshPhysicalMaterial({name:'armor',color:'#8c1531',roughness:.3,metalness:.48,clearcoat:.28,clearcoatRoughness:.36,envMapIntensity:.65,emissive:'#ff1d12',emissiveIntensity:0});
     const meshes:Mesh[]=[];
     shell.traverse(object=>{
@@ -135,6 +140,7 @@ export class BaymaxController {
     this.charge.scale.setScalar(.01);this.hand.add(this.charge);
     const rest=():Pose=>({pos:new Vector3(...BAYMAX_POSITION),yaw:-.18,pitch:0,roll:0,head:new Vector3(DORMANT_HEAD.x,DORMANT_HEAD.y,DORMANT_HEAD.z),look:0,arm:0,aim:new Vector3(),thrust:0,inflate:0,stand:0});
     this.pose=rest();this.target=rest();
+    this.contact=createSurfaceContact(meshes);
   }
 
   /** The dock in world space, for the chip and camera. */
@@ -149,7 +155,7 @@ export class BaymaxController {
   /** Load and mount the armoured suit once. The boot warm-up awaits it, so parsing it never stalls the intro (tracker Q-02). */
   prepareSuit(){
     if(this.suitReady)return this.suitReady;
-    return this.suitReady=createArmouredBaymax({eye:this.eyes[0]?.material as Material|undefined,hole:()=>this.chest.holeOpen?this.dockWorld():null})
+    return this.suitReady=createArmouredBaymax({shell:this.shell,eye:this.eyes[0]?.material as Material|undefined,hole:()=>this.chest.holeOpen?this.dockWorld():null})
       .then(a=>{mountArmour(a,this.shell,{y:.55,z:.28},2.42);this.suitBaseY=a.root.position.y;this.suit=a;})
       .catch(()=>{/* stays white if the suit can't load */});
   }
@@ -158,7 +164,7 @@ export class BaymaxController {
     this.phaseTime+=dt*seq.slowmo;
     const t=this.phaseTime,T=this.target;
     void this.prepareSuit();
-    const armourK=phase==='corrupting'?(reduced?1:MathUtils.smoothstep(t,.8,3.4)):ARMOURED.includes(phase)?1:0;
+    const armourK=phase==='inserting'?span(t,1.1,2.2):phase==='silence'||phase==='booting'||phase==='diagnostic'||phase==='corrupting'||ARMOURED.includes(phase)?1:0;
     this.restPose(T);
     if(phase==='awakening'||phase==='approaching'||phase==='loading'){T.aim.set(0,0,0);this.snap();}
     // ---------------------------------------------------------------- shell + boot
@@ -207,12 +213,23 @@ export class BaymaxController {
     if(phase==='ignition')this.ignition(t,T,camera);
     if(phase==='chase'){this.watch=camera;this.chase(seq,T,camera);this.watch=null;}
     if(phase==='fracture')this.fracture(t,T,camera);
-    if(phase==='pulled'||phase==='handoff'){T.pos.set(1.8,4,-60);T.thrust=0;}
-    this.shell.visible=!(phase==='pulled'||phase==='handoff')&&!(phase==='fracture'&&t>4.3);
+    if(phase==='pulled'){
+      const k=span(t,0,4.4),hit=span(t,1.25,1.55),recover=span(t,1.6,3.2);
+      T.pos.lerpVectors(this.tmp.set(1.9,4,-42),this.tmp2.set(1,3,-65),k);
+      T.pos.x-=hit*.7*(1-recover);T.pos.y-=hit*.35;
+      T.stand=1;T.pitch=-.28-k*.6;T.roll=.28*hit*(1-recover);T.yaw=.15-k*.35;
+      T.thrust=.45*(1-span(t,1.45,2.2));T.arm=.45*(1-recover);
+      T.head.set(.2,0,-.12*hit);T.aim.set(4.1,6.3,-43.1);
+    }
+    if(phase==='handoff'){T.pos.set(1,3,-65);T.thrust=0;}
+    this.shell.visible=phase!=='handoff';
     // ---------------------------------------------------------------- integrate
     const P=this.pose,k=(l:number)=>1-Math.exp(-dt*l);
     const fast=['ignition','chase','fracture'].includes(phase)&&!reduced;
-    P.pos.lerp(T.pos,k(fast?7:2.6));
+    // The final dive is already eased in world space. A second lag used to leave him
+    // airborne when the road impact fired, then slide him down through the dust.
+    if(phase==='chase'&&seq.beat==='final'&&seq.beatTime>=1.65)P.pos.copy(T.pos);
+    else P.pos.lerp(T.pos,k(fast?7:2.6));
     P.yaw+=wrap(T.yaw-P.yaw)*k(fast?5:1.8);P.yaw=wrap(P.yaw);P.pitch=MathUtils.lerp(P.pitch,T.pitch,k(fast?5:1.6));P.roll=MathUtils.lerp(P.roll,T.roll,k(2));
     P.head.lerp(T.head,k(fast?4.5:phase==='threat'?2.4:1.6));P.look=MathUtils.lerp(P.look,T.look,k(2.2));
     P.arm=MathUtils.lerp(P.arm,T.arm,k(fast?6:2));if(P.aim.lengthSq()===0)P.aim.copy(T.aim);else P.aim.lerp(T.aim,k(8));
@@ -225,11 +242,11 @@ export class BaymaxController {
     this.stretch=MathUtils.damp(this.stretch,0,5,dt);
     // Breathing: soft and slow as himself; faster and heavier once the combat program has him.
     const red0=seq.red,breathe=reduced?0:Math.sin(time*MathUtils.lerp(1.05,2.3,red0))*MathUtils.lerp(.004,.007,red0)*P.inflate;
-    this.shell.position.copy(P.pos);this.shell.position.y+=breathe-.009*(1-Math.exp(-time*.18))*(1-P.inflate)+P.stand*STAND_LIFT;
+    this.shell.position.copy(P.pos);this.shell.position.y+=breathe-.009*(1-Math.exp(-time*.18))*(1-P.inflate)+P.stand*STAND_LIFT*LATER_BAYMAX_SCALE;
     this.legR.rotation.set(P.stand*LEG_SWING+trail+sway,0,P.stand*-.05);this.legL.rotation.set(P.stand*LEG_SWING+trail-sway*.8,0,P.stand*.05);
     this.shell.rotation.set(P.pitch,P.yaw,P.roll+this.bank);
     const st=this.stretch;
-    this.shell.scale.set(1+P.inflate*.006+breathe*.4-st*.03,1+P.inflate*.012+breathe+st*.05,1+P.inflate*.006+breathe*.4-st*.03);
+    this.shell.scale.set(1+P.inflate*.006+breathe*.4-st*.03,1+P.inflate*.012+breathe+st*.05,1+P.inflate*.006+breathe*.4-st*.03).multiplyScalar(LATER_BAYMAX_SCALE);
     if(this.head){this.head.rotation.set(P.head.x,P.head.y,P.head.z);}
     // Arms: rest, a slight shoulder rise under corruption, or aimed at a world target.
     this.armL.rotation.set(trail*1.2,0,-P.arm*.6-.12*P.thrust);
@@ -240,6 +257,7 @@ export class BaymaxController {
     }else this.armR.rotation.set(0,0,P.arm*.6);
     this.shell.updateMatrixWorld();
     if(this.suit)this.dressSuit(armourK,P.stand);
+    this.shell.position.y+=Math.max(0,this.contact.correction(-.14));this.shell.updateMatrixWorld(true);
     this.hand.getWorldPosition(seq.muzzle);
     // ---------------------------------------------------------------- light and tone
     this.eyeColor.set('#0b0f11').lerp(this.tmpColor('#e0140c'),red);
@@ -270,7 +288,7 @@ export class BaymaxController {
   private lookAt(point:Vector3,T:Pose,weight:number){
     if(weight<=0)return;
     // Head height follows the body's own pitch (he pivots near the feet), so aim from where the eyes really are.
-    const lift=2.98+T.stand*STAND_LIFT,headY=T.pos.y+lift*Math.cos(T.pitch),reachZ=lift*Math.sin(T.pitch);
+    const lift=(2.98+T.stand*STAND_LIFT)*LATER_BAYMAX_SCALE,headY=T.pos.y+lift*Math.cos(T.pitch),reachZ=lift*Math.sin(T.pitch);
     const hx=T.pos.x+Math.sin(T.yaw)*reachZ,hz=T.pos.z+Math.cos(T.yaw)*reachZ;
     const dx=point.x-hx,dz=point.z-hz,dy=point.y-headY;
     // Relative to the body. What the neck can't reach, the body turns and leans into.
@@ -283,21 +301,25 @@ export class BaymaxController {
     T.head.z=MathUtils.lerp(T.head.z,0,weight);
   }
   private face(point:Vector3,T:Pose,weight=1){T.yaw=wrap(T.yaw+wrap(Math.atan2(point.x-T.pos.x,point.z-T.pos.z)-T.yaw)*weight);}
-  /** Hiro, while the chase runs: flights keep him in view instead of showing their back. */
+  /** Hiro's position during flight; only the neck tracks him while the body follows its path. */
   private watch:Vector3|null=null;
+  private flightLook(point:Vector3,T:Pose,weight:number){
+    const yaw=T.yaw,pitch=T.pitch;this.lookAt(point,T,weight);T.yaw=yaw;T.pitch=pitch;
+  }
   private flyToward(from:Vector3,to:Vector3,T:Pose,u:number,pitch=.55){
-    T.pos.lerpVectors(from,to,ease(u));this.tmp2.subVectors(to,from);
+    const progress=ease(u),bend=Math.min(1.8,from.distanceTo(to)*.085),sign=to.x>=from.x?1:-1;
+    T.pos.lerpVectors(from,to,progress);this.tmp2.subVectors(to,from);
+    const length=Math.max(.001,Math.hypot(this.tmp2.x,this.tmp2.z)),nx=-this.tmp2.z/length,nz=this.tmp2.x/length;
+    const arc=Math.sin(Math.PI*progress)**2,tangent=Math.PI*Math.sin(2*Math.PI*progress);
+    T.pos.x+=nx*bend*sign*arc;T.pos.z+=nz*bend*sign*arc;T.pos.y+=bend*.4*arc;
+    this.tmp2.x+=nx*bend*sign*tangent;this.tmp2.z+=nz*bend*sign*tangent;
     T.yaw=Math.atan2(this.tmp2.x,this.tmp2.z);T.thrust=1;T.stand=1;
     const lean=pitch*Math.min(1,Math.sin(Math.PI*Math.min(1,u*1.1))*1.7);
     if(!this.watch){T.pitch=lean;T.head.set(-.35*Math.min(1,pitch),0,0);return;}
-    // Flying at Hiro he leads with his face. Pulling away he turns to keep watching him and
-    // backs off, leaning back on the thruster, instead of showing his back and the soles of his feet.
-    const fx=this.tmp2.x,fz=this.tmp2.z,cx=this.watch.x-T.pos.x,cz=this.watch.z-T.pos.z;
-    const toward=(fx*cx+fz*cz)/Math.max(1e-4,Math.hypot(fx,fz)*Math.hypot(cx,cz));
-    const away=1-span(toward,-.45,.35);
-    this.face(this.watch,T,away);
-    T.pitch=lean*(1-away)-.28*away*Math.min(1,lean*2);
-    T.head.set(0,0,0);this.lookAt(this.watch,T,.9);
+    // The body follows the flight tangent. Only the head follows Hiro; forcing the
+    // entire body to face him during an exit made Baymax fly backwards.
+    T.pitch=lean;
+    T.head.set(0,0,0);this.flightLook(this.watch,T,.9);
   }
   private charging(phase:Phase,t:number,seq:SequenceDirector){
     if(phase==='ignition')return span(t,.55,1.55)*(1-span(t,1.6,1.7));
@@ -320,39 +342,55 @@ export class BaymaxController {
     if(t>1.6&&t<1.85)T.arm=.85;
     T.thrust=span(t,1.95,2.5);
     const lift=Math.pow(span(t,2.45,4.4),1.6);
-    T.pos.set(BAYMAX_POSITION[0]+lift*1.6,BAYMAX_POSITION[1]+.035+lift*13,BAYMAX_POSITION[2]-lift*5);
+    T.pos.set(BAYMAX_POSITION[0]+lift*1.6,BAYMAX_POSITION[1]+.035+lift*4.8,BAYMAX_POSITION[2]-lift*6);
     T.pitch-=lift*.25;if(t>2.6){T.arm=MathUtils.lerp(T.arm,0,span(t,2.6,3.2));}
   }
   private chase(seq:SequenceDirector,T:Pose,camera:Vector3){
     const b=seq.beat,u=seq.beatTime,V=(x:number,y:number,z:number)=>this.tmp.set(x,y,z);
     T.inflate=1;T.thrust=1;T.stand=1;
-    if(!b){T.pos.set(5,15,-24);T.pitch=.15;this.face(camera,T);this.lookAt(camera,T,1);return;}
-    if(b!==this.beat){this.beat=b;this.lastBeatTime=0;}
+    if(!b){T.pos.set(4.3,4.75,-18);T.pitch=.15;this.face(camera,T);this.lookAt(camera,T,1);return;}
+    if(b!==this.beat){this.beat=b;this.lastBeatTime=0;this.beatCamera.copy(camera);this.beatOrigin.copy(this.pose.pos);
+      if(b==='overhead'){
+        this.passCurve.points[0].copy(this.beatOrigin);
+        this.passCurve.points[1].set(camera.x-3.7,camera.y+2.3,camera.z-4.8);
+        this.passCurve.points[2].set(camera.x-5.2,camera.y+4.2,camera.z-12);
+        this.passCurve.updateArcLengths();
+      }
+    }
+    const C=this.beatCamera;
     if(b==='silhouette'){
-      // A far shape in the fog, eyes first, then the bolt.
-      const from=new Vector3(15,13,-42),hold=new Vector3(8.6,8.2,-31);
+      // A readable shape ahead in the street: eyes first, then he banks into the fly-by.
+      const from=this.beatOrigin,hold=new Vector3(4.6,4.4,-18.5);
       if(u<.6)this.flyToward(from,hold,T,u/.6,.8);else{T.pos.copy(hold);T.pos.y+=Math.sin(u*2)*.12;T.pitch=.12;}
-      if(u>.6&&u<1.3){this.face(camera,T);this.lookAt(camera,T,span(u,.6,.8));T.arm=span(u,.2,.8);T.aim.set(4.75,.35,-17.4);}
-      if(u>1.5)this.flyToward(hold,V(16,17,-44).clone(),T,span(u,1.5,2.8),1);
+      if(u>.6&&u<1.3){this.face(camera,T);this.lookAt(camera,T,span(u,.6,.8));T.arm=0;}
+      if(u>1.15)this.flyToward(hold,V(C.x+5.5,C.y+5.2,C.z-13).clone(),T,span(u,1.15,2.35),.62);
     }else if(b==='overhead'){
-      // A pass directly over Hiro: red light through the dust, the thruster wash shoves him.
-      const from=new Vector3(camera.x+1.6,camera.y+5.2,camera.z+10),to=new Vector3(camera.x-4,camera.y+7.5,camera.z-26);
-      this.flyToward(from,to,T,Math.min(1,u/2.1),1.2);
+      // Cross the forward field rather than teleporting behind the running camera.
+      // He banks past the left shoulder with a safe horizontal clearance.
+      const p=span(u,0,2.2);this.passCurve.getPointAt(p,T.pos);this.passCurve.getTangentAt(p,this.tmp2);
+      T.yaw=Math.atan2(this.tmp2.x,this.tmp2.z);T.pitch=.42*Math.sin(Math.PI*p);T.thrust=.35+.65*Math.sin(Math.PI*p);
+      this.flightLook(camera,T,.7);
     }else if(b==='rooftop'){
-      const roof=new Vector3(-11.4,18.1,-21.6);
-      if(u<.65)this.flyToward(V(-22,25,-34).clone(),roof,T,u/.65,.85);
-      else{T.pos.copy(roof);T.thrust=.25;T.pitch=.18;this.face(camera,T);this.lookAt(camera,T,1);T.arm=span(u,.7,1.3)*(1-span(u,1.8,2.3));T.aim.set(-.6,-.12,-21.2);}
-      if(u>2.3)this.flyToward(roof,V(-4,26,-40).clone(),T,span(u,2.3,3.6),1);
+      // Bank above the left roofline, fire wide, and peel back into the street.
+      const roof=new Vector3(C.x-5.2,C.y+5.6,C.z-8.8);
+      const from=this.beatOrigin;
+      if(u<.75)this.flyToward(from,roof,T,u/.75,.85);
+      else{T.pos.copy(roof);T.thrust=.25;T.pitch=.18;this.face(camera,T);this.lookAt(camera,T,1);T.arm=span(u,.7,1.3)*(1-span(u,1.8,2.3));T.aim.set(-4.6,-.12,-21.2);}
+      if(u>2.15)this.flyToward(roof,V(C.x+7,C.y+6,C.z-15).clone(),T,span(u,2.15,3.25),.65);
     }else if(b==='tear-pass'){
       // He comes out of the tear itself, close enough to fill the frame for a moment.
       const from=new Vector3(5.8,2.3,-23.8),to=new Vector3(-8,3.8,-19.8);
       if(u<.32){T.pos.copy(from);T.thrust=.4;}else this.flyToward(from,to,T,span(u,.32,1.45),1.1);
       if(u>.32&&u<1.1)this.lookAt(camera,T,1);
     }else if(b==='final'){
-      const high=new Vector3(2.2,9.6,-29.6),ground=new Vector3(1.9,-.08,-30.4);
-      if(u<1.05)this.flyToward(V(-6,14,-24).clone(),high,T,u/1.05,.85);
-      else if(u<2.05){T.pos.copy(high);T.pos.y+=Math.sin(u*3)*.1;this.face(camera,T);this.lookAt(camera,T,1);T.thrust=.7;T.arm=span(u,1.05,1.5);T.aim.copy(camera);}
-      else{const d=span(u,2.05,2.3);if(u>2.28&&u<2.32)this.stretch=-1;T.pos.lerpVectors(high,ground,d*d);this.face(camera,T);T.pitch=.35*d;T.arm=.9;T.aim.copy(ground).setY(-1);T.thrust=1-d*.6;}
+      const high=new Vector3(C.x+.5,C.y+6.4,C.z-5.5),ground=new Vector3(1.9,-.08,-30.4);
+      const launch=this.beatOrigin;
+      if(u<1.05)this.flyToward(launch,high,T,u/1.05,.85);
+      else if(u<1.65){T.pos.copy(high);this.face(camera,T);this.lookAt(camera,T,1);T.thrust=.7;T.arm=span(u,1.05,1.5);T.aim.copy(camera);}
+      else{const d=span(u,1.65,2.35),absorb=span(u,2.35,2.48)*(1-span(u,2.48,2.95));
+        T.pos.lerpVectors(high,ground,d*d);this.face(camera,T);T.pitch=.22*d+.12*absorb;
+        T.arm=.8*(1-span(u,2.4,3.05));T.aim.copy(ground).setY(-1);T.thrust=.7*(1-span(u,2.15,2.35));
+        T.stand=1-.2*absorb;}
     }
   }
   private fracture(t:number,T:Pose,camera:Vector3){
@@ -367,9 +405,10 @@ export class BaymaxController {
   /** Pose the suit from this rig, swap it in or out, and keep its feet on the white rig's ground line. */
   private suitK=0;
   /** Where the camera should look for his head: the helmet once the armour is mostly on (tracker N-02). */
-  headFocus(out:Vector3){if(this.suit&&this.suitK>.5)this.suit.headWorld(out);return out;}
+  headFocus(out:Vector3){if(this.head)this.head.getWorldPosition(out);return out;}
   private dressSuit(k:number,stand:number){
     const a=this.suit!;a.set(k);this.suitK=k;
+    if(a.isSingleRig)return;
     const covered=a.covers(k);
     if(covered!==this.wasCovered){
       this.wasCovered=covered;

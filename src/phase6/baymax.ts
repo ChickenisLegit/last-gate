@@ -1,8 +1,10 @@
 import * as T from 'three';
-import { createArmouredBaymax, mountArmour, seatOn } from '../characters/ArmouredBaymax';
-import { createLimiter, LIMITER_FEED } from '../phase4/limiter';
+import { createArmouredBaymax, mountArmour } from '../characters/SolidArmour';
+import { createLimiter } from '../phase4/limiter';
 import { assets } from '../systems/AssetManager';
 import { mountChestBay } from '../characters/ChestBay';
+import { configureLaterArmour, createSurfaceContact, LATER_BAYMAX_SCALE, REGULATOR_WORLD_SCALE } from '../characters/LaterBaymax';
+import { createRegulatorMount } from '../characters/RegulatorMount';
 
 /**
  * The same Baymax as Phase 5 (the shell GLB, the Phase 1 skin, armour and chest bay), hinged so he
@@ -53,7 +55,7 @@ gl_FragColor=vec4(c*a*1.6,a);}`;
  * skinned vertices, helmet to boots), which made him tower over Hiro (1.65 m) and pushed his legs out of
  * frame in every close shot. At this scale he stands about 3.5 m, with his whole body readable at medium distance.
  */
-export const BAYMAX_SCALE = .79;
+export const BAYMAX_SCALE = LATER_BAYMAX_SCALE;
 
 export async function createBaymax() {
   const model = await assets.cloneBaymax();
@@ -87,12 +89,13 @@ export async function createBaymax() {
   headNode?.traverse(o => { if (o instanceof T.Mesh && o.material instanceof T.MeshBasicMaterial) o.material = eyeMat; });
   // The combat armour (tracker PW-03): the armoured suit, mounted in this rig and posed from it.
   const holeAt = new T.Vector3();
-  const armoured = await createArmouredBaymax({ eye: eyeMat, hole: () => bay.holeOpen ? bay.root.getObjectByName('dock')!.getWorldPosition(holeAt) : null });
+  const armoured = await createArmouredBaymax({ shell: model, eye: eyeMat, hole: () => bay.holeOpen ? bay.root.getObjectByName('dock')!.getWorldPosition(holeAt) : null });
   mountArmour(armoured, model, { y: .55, z: .28 }, 2.42);
+  const disposeArmourCores = configureLaterArmour(armoured);
   // The limiter Hiro fitted in Phase 5 stays on his chest plate (tracker N-04); Hiro's remote drives its lamp.
   // Smaller and centred on the plate, so it lies inside his outline from every angle, even lying on his back (tracker R-08).
-  const limiter = createLimiter(); limiter.scale.setScalar(.52 / armoured.root.scale.x); armoured.root.add(limiter);
-  armoured.drive({}); armoured.mountOnChest(limiter, -.3, .24);
+  const limiter = createLimiter(); limiter.scale.setScalar(REGULATOR_WORLD_SCALE / (armoured.root.scale.x * BAYMAX_SCALE)); armoured.root.add(limiter);
+  armoured.drive({}); armoured.mountOnChest(limiter, 0, -.45);
   // Fitted, not stuck on: the loose trailing leads go, and one heavy feed runs from the unit's main
   // gland into the rim of his chest bay, so it reads as wired into his power system. Built once the
   // bay is seated (both ends ride the chest bone, so it holds in any pose).
@@ -100,11 +103,12 @@ export async function createBaymax() {
   const feedMat = new T.MeshStandardMaterial({ color: '#15171a', roughness: .62, metalness: .15 });
   const collarMat = new T.MeshStandardMaterial({ color: '#c9762e', roughness: .45, metalness: .4 });
   let feed: T.Group | null = null;
+  let regulatorMount: ReturnType<typeof createRegulatorMount>;
   const buildFeed = () => {
     const bone = limiter.parent!; bone.updateWorldMatrix(true, true);
-    const n = new T.Vector3(0, 1, 0).transformDirection(limiter.matrixWorld);
+    const n = new T.Vector3(0, 0, 1).transformDirection(limiter.matrixWorld);
     const along = new T.Vector3(1, 0, 0).transformDirection(limiter.matrixWorld);
-    const a = limiter.localToWorld(LIMITER_FEED.clone()), c = dock.getWorldPosition(new T.Vector3());
+    const a = regulatorMount.feedWorld(), c = dock.getWorldPosition(new T.Vector3());
     const rim = bay.root.getWorldScale(new T.Vector3()).x * .235;
     const to = a.clone().sub(c); to.addScaledVector(n, -to.dot(n)).normalize();
     const b = c.clone().addScaledVector(to, rim * .98).addScaledVector(n, .006);
@@ -121,6 +125,7 @@ export async function createBaymax() {
   };
   // Phase 6 opens armoured: start fully on, so the warm-up draw compiles the opaque plates it will really use (tracker R-05).
   armoured.set(1);
+  regulatorMount = createRegulatorMount(limiter, armoured.root);
   // Phase 6 finish: the suit's clear coat made the plates read as glossy toy plastic under the street
   // lights. Painted, worn armour instead: a thin, rougher coat and a little more grain in the paint.
   // (These materials belong to this suit instance, so earlier phases keep their own.)
@@ -144,7 +149,14 @@ export async function createBaymax() {
     const back = new T.Mesh(flameGeo, flameMat); back.position.set(side * .26, 1.75, -.78); back.rotation.x = .45; model.add(back); flames.push(back);
   }
   for (const ankle of ankles) {
-    const foot = new T.Mesh(flameGeo, flameMat); foot.position.set(0, -.3, .42); foot.scale.setScalar(.8); ankle.add(foot); flames.push(foot);
+    const foot = new T.Mesh(flameGeo, flameMat);
+    const boot = ankle.children.find(o => o instanceof T.Mesh && o.name.startsWith('boot-')) as T.Mesh | undefined;
+    if (boot) {
+      boot.geometry.computeBoundingBox(); const sole = boot.geometry.boundingBox!;
+      model.updateMatrixWorld(true);
+      foot.position.copy(ankle.worldToLocal(boot.localToWorld(new T.Vector3((sole.min.x+sole.max.x)/2, sole.min.y-.025, (sole.min.z+sole.max.z)/2))));
+    } else foot.position.set(0, -.3, .42);
+    foot.scale.setScalar(.8); ankle.add(foot); flames.push(foot);
   }
   flames.forEach(f => { f.renderOrder = 5; f.frustumCulled = false; });
   const jetLight = new T.PointLight('#ff8a46', 0, 9, 1.8); jetLight.position.set(0, -.6, 0); model.add(jetLight);
@@ -187,21 +199,23 @@ export async function createBaymax() {
   const whiteParts = meshes.filter(m => !under(m, [bay.root]));
   const whiteTorso = shell.filter(m => !under(m, [...hips, ...shoulders]));
   const qA = new T.Quaternion(), qB = new T.Quaternion(), qC = new T.Quaternion(), qD = new T.Quaternion(), qH = new T.Quaternion(), eul = new T.Euler(), headRest = new T.Quaternion();
-  const box = new T.Box3();
+  const armourContact = createSurfaceContact(whiteParts), whiteContact = armourContact;
+  const worldOrigin = new T.Vector3(), correction = new T.Vector3();
+  const armourHand = (side: 'L' | 'R') => side === 'R' ? palm : fist;
   // The suit's shins (knee end, ankle end), for Hiro taking him by the legs.
-  const leg = (s: 'L' | 'R') => [armoured.root.getObjectByName(`Armor_L_Leg${s}`) ?? model, armoured.root.getObjectByName(`Armor_Foot${s}`) ?? model];
+  const leg = (s: 'L' | 'R') => [hips[s === 'L' ? 1 : 0], ankles[s === 'L' ? 1 : 0]];
   const legBones = { L: leg('L'), R: leg('R') };
-  const bootMeshes = (s: 'L' | 'R') => { const out: T.Mesh[] = []; armoured.root.getObjectByName(`B_Armor_Foot${s}`)?.traverse(o => { if (o instanceof T.Mesh) out.push(o); }); return out; };
+  const bootMeshes = (s: 'L' | 'R') => { const out: T.Mesh[] = []; ankles[s === 'L' ? 1 : 0].traverse(o => { if (o instanceof T.Mesh && o.name.startsWith('boot-')) out.push(o); }); return out; };
   const boots = { L: { bone: legBones.L[1], meshes: bootMeshes('L') }, R: { bone: legBones.R[1], meshes: bootMeshes('R') } };
   return {
     root, model, bay, pose, combatChip, dock, eyeMat,
     /** World position of the dock (the chip's seat). */
     dockWorld: (out = new T.Vector3()) => dock.getWorldPosition(out),
-    headWorld: (out = new T.Vector3()) => (headNode ?? model).getWorldPosition(out),
+    headWorld: (out = new T.Vector3()) => pose.armour > .5 ? armoured.headWorld(out) : (headNode ?? model).getWorldPosition(out),
     /** His right hand (the one Hiro takes). */
-    handWorld: (out = new T.Vector3()) => (palm ?? model).getWorldPosition(out),
+    handWorld: (out = new T.Vector3()) => (pose.armour > .5 ? armourHand('R') ?? model : palm ?? model).getWorldPosition(out),
     /** His other hand, the one `punch` drives (and the fist bump). */
-    fistWorld: (out = new T.Vector3()) => ((fist as T.Mesh | null) ?? model).getWorldPosition(out),
+    fistWorld: (out = new T.Vector3()) => (pose.armour > .5 ? armourHand('L') ?? model : (fist as T.Mesh | null) ?? model).getWorldPosition(out),
     headHeight,
     chestWorld: (out = new T.Vector3()) => bay.chestWorld(out),
     /** The suit's ankle joint and the knee end of that shin ('L' is his left), for taking him by the legs. */
@@ -223,7 +237,7 @@ export async function createBaymax() {
     jolt: (k = 1) => { vel.choke += 10 * k; kick(.5 * k); },
     impact: (k = 1) => { vel.land += 9 * k; kick(.8 * k); },
     lunge: (k = 1) => { vel.lunge += 8 * k; },
-    update(t: number) {
+    update(t: number, floor?: (x: number, z: number) => number) {
       armoured.set(pose.armour);
       limiter.visible = pose.armour > .5;
       // The regulator reads his load: the needle rides just under its limit while he pushes against it,
@@ -231,19 +245,24 @@ export async function createBaymax() {
       const bite = Math.max(0, cur.choke);
       limiter.led.color.set(bite > .25 ? '#fff1c4' : pose.limiterOn > .5 ? '#ffb15a' : '#2a3a33');
       limiter.setGauge(pose.limiterOn > .5 ? .33 + Math.min(.06, pose.thrust * .05 + pose.stride * .03) + Math.min(.5, bite * .7) + Math.sin(t * 9) * .006 + Math.sin(t * 61) * .01 * bite : .05);
-      const covered = armoured.covers(pose.armour); whiteParts.forEach(m => { m.visible = !covered; });
+      // The white body is the solid inner rig at every stage; plates disappear at the healthcare chip.
       const p = pose;
       const gap = last < 0 ? 1 : t - last; last = t;
       const dt = Math.min(.05, Math.max(0, gap)); lastDt = dt;
       // A long gap (a cut, a stage entered cold, the tab coming back) snaps instead of easing.
-      const snap = dt === 0 || gap > .25 || first;
+      const inert = p.lie > .99 && p.getUp <= 0 && p.thrust < .01 && p.eyeGlow < .01;
+      const snap = dt === 0 || gap > .25 || first || inert;
+      if (inert) {
+        mode.tense = mode.slug = 0;
+        for (const key of ['flop', 'wob', 'land', 'choke', 'lunge', 'squash', 'flail', 'bank', 'pitch']) { cur[key] = 0; vel[key] = 0; }
+      }
       first = false;
 
       // ── Mode: combat tension (red eyes, guard up, full power) vs limited sluggishness.
       const red = p.eyeGlow > .5 && p.eyes.r > .5 && p.eyes.g < .4 ? 1 : 0;
       const upright = (1 - p.lie) * (1 - p.sit);
-      const tenseTarget = Math.max(p.tension, p.guard * red * (1 - Math.min(1, p.sputter)) * upright * (1 - p.dangle * .6));
-      const slugTarget = Math.max(p.sluggish, Math.min(1, p.sputter) * upright);
+      const tenseTarget = inert ? 0 : Math.max(p.tension, p.guard * red * (1 - Math.min(1, p.sputter)) * upright * (1 - p.dangle * .6));
+      const slugTarget = inert ? 0 : Math.max(p.sluggish, Math.min(1, p.sputter) * upright);
       mode.tense += (tenseTarget - mode.tense) * (snap ? 1 : 1 - Math.exp(-dt * 4));
       mode.slug += (slugTarget - mode.slug) * (snap ? 1 : 1 - Math.exp(-dt * 2));
       const tense = mode.tense, slug = mode.slug;
@@ -376,6 +395,11 @@ export async function createBaymax() {
       // Find the lowest point of the shell (not the jets or the bay) and sit it on the ground.
       root.rotation.y = cur.yaw;
       root.updateMatrixWorld(true);
+      if (headNode) {
+        const lead = T.MathUtils.clamp(yawErr * .55, -.5, .5);
+        headNode.rotation.set(headBase.x + cur.h0 + tense * .1 + slug * .1 + tuck * .3 - push * .1 + Math.sin(gait * 2 - .8) * stride * .035 - cur.flail * .25 - cur.pitch * .4 - choke * .3 + Math.sin(t * 47) * choke * .05 + crouch * .12, headBase.y + cur.h1 + lead, headBase.z * (1 - cur.guard) + cur.h2);
+      }
+      model.updateMatrixWorld(true);
       // Pose the suit from this rig: shoulder pivots (side +1 is his left), hips (relative to straight down), head.
       if (pose.armour > 0) {
         headRest.setFromEuler(headBase).invert();
@@ -393,20 +417,16 @@ export async function createBaymax() {
         });
       }
       if (pose.armour > .5 && !unseatBay) unseatBay = armoured.seatOnPlate(bay.root, .2, .2, .235, 1.2);
+      if (pose.armour <= .5 && unseatBay) { unseatBay(); unseatBay = null; }
       if (unseatBay && !feed) buildFeed();
       if (feed) feed.visible = limiter.visible;
-      else if (pose.armour <= .5 && unseatBay) { unseatBay(); unseatBay = null; }
-      let low = Infinity;
-      if (pose.armour > .5) { for (const m of whiteTorso) { box.copy(m.geometry.boundingBox!).applyMatrix4(m.matrixWorld); low = Math.min(low, box.min.y); } low = Math.min(low, armoured.footLow()); }
-      else for (const m of shell) { box.copy(m.geometry.boundingBox!).applyMatrix4(m.matrixWorld); low = Math.min(low, box.min.y); }
-      const parentY = root.parent ? root.parent.matrixWorld.elements[13] : 0;
-      // low is in world units; the body moves in the scaled root's units.
-      body.position.y = (root.position.y + parentY - low) / root.scale.y + bounce + hitch
-        + (hover * (Math.sin(t * 2.4) * .07 + Math.sin(t * 1.05 + 1) * .05) - choke * .06 * (1 - lie)) / root.scale.y;
-      if (headNode) {
-        const lead = T.MathUtils.clamp(yawErr * .55, -.5, .5);
-        headNode.rotation.set(headBase.x + cur.h0 + tense * .1 + slug * .1 + tuck * .3 - push * .1 + Math.sin(gait * 2 - .8) * stride * .035 - cur.flail * .25 - cur.pitch * .4 - choke * .3 + Math.sin(t * 47) * choke * .05 + crouch * .12, headBase.y + cur.h1 + lead, headBase.z * (1 - cur.guard) + cur.h2);
-      }
+      root.updateMatrixWorld(true); root.getWorldPosition(worldOrigin);
+      const delta = (pose.armour > .5 ? armourContact : whiteContact).correction(worldOrigin.y, floor);
+      // Translate in world up even on a tilted ramp. Compression belongs in knees/body scale,
+      // never in a negative Y offset added after the feet have been grounded.
+      correction.copy(worldOrigin); correction.y += delta; root.worldToLocal(correction); body.position.add(correction);
+      if (p.dangle > .1 && root.position.y > .2) body.position.y += Math.max(0, hover * (Math.sin(t * 2.4) * .025 + Math.sin(t * 1.05 + 1) * .02));
+      root.updateMatrixWorld(true);
       eyeMat.color.copy(p.eyes).multiplyScalar((1 + p.eyeGlow * (.8 + tense * .25 * (.5 + .5 * Math.sin(t * 6)))) * (1 - Math.min(.7, choke) * (Math.sin(t * 53) > 0 ? .8 : 0)));
       p.getUp = 0; p.tension = 0; p.sluggish = 0;
       // Jets: power, with a broken stutter when the limit starves them.
@@ -417,12 +437,15 @@ export async function createBaymax() {
       jetLight.intensity = power * 9;
       // The bay: its own authored opening; the combat chip's glow grows into the missing piece.
       const pulse = p.chipGlow * (1 + .45 * Math.sin(t * 4));
-      bay.update({ t, open: p.open, seated: p.chipInBay && !p.careSeated ? 1 : 0, red: p.careSeated ? 0 : .9 + pulse * 2.5, seamGlow: p.careSeated ? .05 : .12 + pulse * .6 });
+      bay.update({ t, open: p.open, seated: p.chipInBay && !p.careSeated ? 1 : 0, red: p.careSeated ? 0 : Math.min(1, .9 + pulse * .1), seamGlow: p.careSeated ? .05 : .12 + pulse * .6 });
+      // Ground contact moved the whole actor after drive(). Keep the fragment cutout on the
+      // live dock, otherwise solid chest plating appears inside the open canonical bay.
+      armoured.updateChestHole(.235 * bay.root.getWorldScale(worldOrigin).x);
       combatChip.visible = p.chipInBay && p.open > .4;
     },
     dispose() {
       feed?.traverse(o => { if (o instanceof T.Mesh) o.geometry.dispose(); }); feedMat.dispose(); collarMat.dispose();
-      limiter.dispose(); armoured.dispose(); bay.dispose(); flameGeo.dispose(); flameMat.dispose(); eyeMat.dispose();
+      regulatorMount.dispose(); limiter.dispose(); disposeArmourCores(); armoured.dispose(); bay.dispose(); flameGeo.dispose(); flameMat.dispose(); eyeMat.dispose();
       root.removeFromParent();
     },
   };

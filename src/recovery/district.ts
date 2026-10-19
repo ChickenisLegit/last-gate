@@ -82,6 +82,9 @@ export function createDistrict() {
   k.box({ p: [6.3, .9, -9], s: [3.2, .4, .4], r: [.1, .3, -.5] }, k.metal);
   k.box({ p: [5.3, .4, -9.3], s: [.35, 2.6, .35], r: [.3, 0, .55] }, k.metal);
   k.box({ p: [7.1, 1.5, -9.6], s: [2.6, .35, .35], r: [-.1, -.2, .35] }, k.metal);
+  // A broken concrete section under the fallen gantry gives Baymax's shoulders
+  // a believable resting point while keeping the chest bay and both legs clear.
+  k.box({ p: [2.7, -.54, -7.35], s: [2.05, 1.65, .46] }, k.concrete).name = 'recovery-backstop';
   k.box({ p: [7.1, -.55, -1.6], s: [1.8, .9, 1.4], r: [0, .2, .12] }, k.concrete);
   // A charging point beside the bay (its light steadies later, in engineering).
   k.box({ p: [5.25, -.55, -6.5], s: [.5, 1.1, .5], r: [0, -.1, 0] }, rust);

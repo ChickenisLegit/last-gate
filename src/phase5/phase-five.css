@@ -12,6 +12,7 @@
 
 /* One panel on the left; the world keeps the right two-thirds. */
 .p5-panel{position:absolute;left:32px;top:84px;bottom:28px;width:min(390px,34vw);overflow:auto;padding:22px 22px 24px;background:var(--panel);border:1px solid var(--line);animation:p5Left .9s both;display:flex;flex-direction:column;gap:14px}
+.p5.p5 .p5-bay-panel{bottom:auto;max-height:calc(100dvh - 112px);box-shadow:0 18px 54px rgba(0,0,0,.22)}
 .p5-panel h1{font-size:28px;font-weight:300;line-height:1.2;margin:2px 0 0;color:#eef6fa}
 .p5-panel h1 em{font-style:normal;color:var(--red)}
 .p5-body{margin:0;color:var(--dim);font-size:13.5px;line-height:1.6}
@@ -92,3 +93,4 @@
 @keyframes p5Draw{from{stroke-dashoffset:60;opacity:0}}
 @keyframes p5Pulse{50%{r:11;opacity:.5}}
 @media (prefers-reduced-motion:reduce){.p5 *{animation-duration:.01s!important}}
+@media (max-width:720px){.p5 .p5-bay-panel{left:12px;right:12px;top:auto;bottom:12px;width:auto;max-height:43dvh;padding:16px 18px;gap:9px}.p5 .p5-bay-panel h1{font-size:24px}.p5 .p5-bay-panel .p5-body{font-size:12px;line-height:1.45}}

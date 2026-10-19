@@ -29,11 +29,13 @@ export function createRelay() {
   }
   for (const [x, z, r] of [[-5.2, -9.6, .2], [-6.4, -10.8, -.3], [5.8, -11, .5], [4.4, -18, 0]]) k.box({ p: [x, .45, z], s: [1.1, .9, 1.1], r: [0, r, 0] }, random() > .5 ? k.ivory : k.metal);
   // He sat down against an old cable drum.
-  k.mesh(k.ownGeometry(new T.CylinderGeometry(1.1, 1.1, 1.3, 24)), k.dark, { p: [BAYMAX_YARD.x - .2, 1.1, BAYMAX_YARD.z - 1.9], r: [0, 0, Math.PI / 2] });
+  // Keep the fallen drum off the sightline from the relay entrance to Baymax.
+  k.mesh(k.ownGeometry(new T.CylinderGeometry(1.1, 1.1, 1.3, 24)), k.dark, { p: [-5.5, 1.1, BAYMAX_YARD.z - 3], r: [0, 0, Math.PI / 2] });
   for (let i = 0; i < 6; i++) k.box({ p: [rand(-8, 8), .08, rand(-30, -9)], s: [rand(.4, 1.4), .16, rand(.4, 1)], r: [0, rand(0, 3), 0] }, k.concrete);
   // A yard lamp (lit by the relay's own lights; no extra light of its own).
   k.mesh(k.ownGeometry(new T.SphereGeometry(.14, 12, 10)), k.basic('#ffc062', 1.6), { p: [5.4, 4.2, -8.9] });
-  k.box({ p: [5.4, 2.1, -8.9], s: [.12, 4.2, .12] }, k.metal);
+  // This post used to sit exactly between Hiro's eye and the landing mark.
+  k.box({ p: [8.2, 2.1, -8.9], s: [.12, 4.2, .12] }, k.metal);
   // The recorder rack, with a slot lip on top where the capture cartridge sits.
   k.box({ p: [RECORDER.x, .5, RECORDER.z], s: [.46, 1, .38] }, k.dark);
   k.box({ p: [RECORDER.x, 1.015, RECORDER.z], s: [.5, .03, .42] }, k.metal);

@@ -148,8 +148,15 @@ export async function createArmouredBaymax(opts: { eye?: T.Material; hole?: () =
   const tmpQ = new T.Quaternion(), tmpM = new T.Matrix4(), inv = new T.Matrix4(), id = new T.Quaternion();
 
   let shown = -1;
+  const updateChestHole = (radius?: number) => {
+    const h = opts.hole?.();
+    if (h) { hole.c.copy(h); hole.r = radius ?? .58 * root.getWorldScale(new T.Vector3()).x / 1.5; }
+    else hole.r = 0;
+  };
   const api = {
     root, feet,
+    /** Refresh after an outer rig applies a final world-space contact correction. */
+    updateChestHole,
     /** Bone rest heights in the model's own units (for mounting it inside a white rig). */
     joints: { hipY: uLeg.L.getWorldPosition(new T.Vector3()).y, hipZ: uLeg.L.getWorldPosition(new T.Vector3()).z, shoulderY: uArm.L.getWorldPosition(new T.Vector3()).y },
     /** Pose the suit from the white rig's joint rotations. */
@@ -181,7 +188,7 @@ export async function createArmouredBaymax(opts: { eye?: T.Material; hole?: () =
         tmpM.decompose(hand[s].position, hand[s].quaternion, hand[s].scale);
       }
       root.updateMatrixWorld(true);
-      const h = opts.hole?.(); if (h) { hole.c.copy(h); hole.r = .58 * root.getWorldScale(new T.Vector3()).x / 1.5; } else hole.r = 0;
+      updateChestHole();
     },
     /**
      * A spot on the chest plating: cast in from in front of his chest at (lateral, up) in the suit's
