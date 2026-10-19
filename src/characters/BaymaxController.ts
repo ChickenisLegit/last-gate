@@ -43,6 +43,7 @@ export class BaymaxController {
   private armor:MeshPhysicalMaterial;private skin:MeshPhysicalMaterial;
   private redLight=new PointLight('#ff2a1c',0,7,1.6);
   private thruster=new Group();private flame:ShaderMaterial;private thrusterGlow:Sprite;
+  private footJets:Mesh[]=[];
   private hand=new Object3D();private charge:Sprite;
   private pose:Pose;private target:Pose;
   private phase:Phase='loading';private phaseTime=0;private beat:string|null=null;
@@ -99,6 +100,7 @@ export class BaymaxController {
     for(const [side,pivot] of [[1,this.legR],[-1,this.legL]] as const){
       pivot.position.set(side*.53,.55,.28);shell.add(pivot);
       const ankle=side===1?this.ankleR:this.ankleL;
+      ankle.name=side===1?'ankle-left':'ankle-right';
       ankle.position.set(side*.18,-.27,.86);pivot.add(ankle);shell.updateMatrixWorld(true);
       for(const m of meshes){
         const p=m.position,sx=side*p.x;
@@ -133,9 +135,18 @@ export class BaymaxController {
     // Back thruster: a short, hot cone and a soft bloom source; dormant until ignition.
     this.flame=new ShaderMaterial({transparent:true,depthWrite:false,blending:AdditiveBlending,uniforms:{uPower:{value:0},uTime:{value:0}},
       vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
-      fragmentShader:'varying vec2 vUv;uniform float uPower;uniform float uTime;void main(){float core=pow(1.-vUv.y,2.2);float flicker=.86+.14*sin(uTime*47.+vUv.y*20.);vec3 c=mix(vec3(1.,.28,.16),vec3(1.,.86,.78),core*core);gl_FragColor=vec4(c*core*flicker*uPower*1.6,core*uPower);}'});
-    const cone=new Mesh(new ConeGeometry(.2,1.3,20,1,true),this.flame);cone.rotation.x=Math.PI/2;cone.position.z=-.65;this.thruster.add(cone);
-    this.thrusterGlow=new Sprite(new SpriteMaterial({map:glow,color:'#ff6a4a',transparent:true,opacity:0,depthWrite:false,blending:AdditiveBlending}));
+      fragmentShader:'varying vec2 vUv;uniform float uPower;uniform float uTime;void main(){float life=vUv.y;float core=pow(1.-life,1.4);float flutter=.83+.17*sin(uTime*47.+life*23.);vec3 c=mix(vec3(.13,.35,1.),vec3(.9,.97,1.),core*core);float alpha=core*flutter*uPower*.72;gl_FragColor=vec4(c*(.7+core)*uPower,alpha);}'});
+    // Wide at the nozzle, tapering away. The previous reversed cone looked like a white ribbon.
+    const jetGeometry=new ConeGeometry(.2,1.3,20,1,true);jetGeometry.rotateX(-Math.PI/2);jetGeometry.translate(0,0,-.65);
+    const cone=new Mesh(jetGeometry,this.flame);this.thruster.add(cone);
+    for(const ankle of [this.ankleR,this.ankleL]){
+      const boot=ankle.children.find(o=>o instanceof Mesh&&o.name.startsWith('boot-')) as Mesh|undefined;
+      const jet=new Mesh(jetGeometry,this.flame);jet.rotation.x=-Math.PI/2;jet.scale.setScalar(.78);
+      if(boot){boot.geometry.computeBoundingBox();shell.updateMatrixWorld(true);
+        jet.position.copy(ankle.worldToLocal(boot.localToWorld(new Vector3(0,boot.geometry.boundingBox!.min.y-.025,0))));}
+      ankle.add(jet);this.footJets.push(jet);
+    }
+    this.thrusterGlow=new Sprite(new SpriteMaterial({map:glow,color:'#93bfff',transparent:true,opacity:0,depthWrite:false,blending:AdditiveBlending}));
     this.thrusterGlow.scale.setScalar(1.3);this.thruster.add(this.thrusterGlow);
     // Angled down and back so the jet lifts him as well as driving him forward.
     this.thruster.position.set(0,1.95,-.82);this.thruster.rotation.x=-.75;shell.add(this.thruster);
@@ -279,6 +290,7 @@ export class BaymaxController {
     this.redLight.position.set(.1,MathUtils.lerp(3,2.1,P.thrust),MathUtils.lerp(2.2,-1.6,P.thrust));
     this.flame.uniforms.uPower.value=P.thrust;this.flame.uniforms.uTime.value=time;
     this.thruster.scale.set(1,1,.6+P.thrust*.8);this.thruster.visible=P.thrust>.01;
+    this.footJets.forEach((jet,i)=>{jet.visible=P.thrust>.01;const flicker=reduced?1:.94+.06*Math.sin(time*39+i*2);jet.scale.set(.78,.78,(.4+P.thrust*.7)*flicker);});
     this.thrusterGlow.material.opacity=P.thrust*.85;
     const charging=this.charging(phase,t,seq);
     this.charge.material.opacity=charging;this.charge.scale.setScalar(.05+charging*.75+(reduced?0:Math.sin(time*31)*.04*charging));

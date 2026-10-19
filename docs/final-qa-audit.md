@@ -79,3 +79,14 @@ Latest browser validation: completed regulator activation, telemetry capture pic
 Performance limitation: current in-app-browser audits measured approximately 29fps at DPR 0.75 in the portal and harbour scenes. A matching baseline comparison was not completed, so this report does not claim that a GPU FPS regression has been ruled out. Node CPU actor timings are diagnostic only. The production build removes the development frame logger.
 
 Release validation: `npm run build` passes and rebuilds tracked `dist/`. The production preview on port 4179 was opened from the beginning and reached the San Fransokyo turnback with the centered white Baymax and unstable aperture; no console errors occurred after that production navigation. The later real-mesh/contact suite and expanded opening suite both pass. Portal return captures are in `artifacts/later-qa/portal-return-*.png`.
+
+## Full-screen and fight follow-up
+
+- Removed the opening's two `cinema-edge` overlays and their CSS. The rendered world now fills the available viewport without the permanent top/bottom bands.
+- Replaced distance-triggered attack stalls with a 10.8-second continuous run. Sprint affects the running presentation; leaving the controls alone no longer strands Baymax in a completed hover loop. There are three authored attacks: a close swipe that misses Hiro, a ranged miss, and a heavy landing.
+- Camera tracking remains active across beat changes. The ranged shot lowers and widens the view enough to show both Baymax and the road strike. Ignition no longer moves the lens forward into his torso or throws Hiro down without an impact.
+- The opening now uses counter-rotating ankles like the later rig. Standing lift is measured from the actual sole contact, and boots retain their forward foot shape instead of rotating vertically with the hips.
+- Exhaust tapers away from the nozzle, with a blue/white core and two downward boot jets. The older reversed cone produced a broad white triangular ribbon.
+- An authoring-only shortcut, `?phase1=fight` on the dev server, runs the actual actor/director/effects from ignition. Production retains the normal portal opening. Combat bypasses awakening soft-focus even when reviewed directly.
+- The expanded check covers 292 attack frames, plus launch framing, at two aspect ratios and simulated 30/60Hz with/without sprint. It checks the actual ranged impact in screen space, sole contact at impact, three-attack cadence, and visible body surface clearance from the camera. The nearest checked body surface stays more than 1.7m from the lens.
+- Browser captures cover launch, bank, swipe, ranged shot, landing and fracture without renderer errors. `checkpoint-fight-37.png` shows the landing/recovery; `fight-jets-current.png` shows the corrected exhaust. Images are local QA artifacts under `artifacts/later-qa/`.

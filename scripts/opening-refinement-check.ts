@@ -26,7 +26,7 @@ function visibleBounds(){
 }
 seq.on(event=>{if(event.type==='impact'&&seq.beat==='final'){
  shell.updateMatrixWorld(true);let low=Infinity;
- shell.traverseVisible(o=>{if(o instanceof T.Mesh&&o.name.startsWith('boot-'))for(let i=0;i<o.geometry.attributes.position.count;i++){o.getVertexPosition(i,v).applyMatrix4(o.matrixWorld);low=Math.min(low,v.y);}});
+ shell.traverseVisible(o=>{if(o instanceof T.Mesh&&!Array.isArray(o.material)&&!o.material.transparent&&o.parent?.name.startsWith('ankle-'))for(let i=0;i<o.geometry.attributes.position.count;i++){o.getVertexPosition(i,v).applyMatrix4(o.matrixWorld);low=Math.min(low,v.y);}});
  impactClearance=Math.abs(low+.14);
 }});
 function frame(phase:Phase){
@@ -55,7 +55,7 @@ for (const shot of snapshots as {beat:string,min:number[],max:number[],distance:
 if(sampled.size!==4)throw new Error('An authored flight beat was not exercised');
 if(peakStep>28)throw new Error(`Abrupt movement speed ${peakStep}`);
 if(minMeshCameraDistance<1)throw new Error(`A body surface collides with the camera: ${minMeshCameraDistance}`);
-if(impactClearance>.18)throw new Error(`Impact before boot contact: ${impactClearance}`);
+if(impactClearance>.04)throw new Error(`Impact before sole contact: ${impactClearance}`);
 dt=1/60;useSceneState.setState({phase:'fracture',chapter:'THE_FRACTURE'});for(let i=0;i<336;i++)frame('fracture');
 useSceneState.setState({phase:'pulled'});for(let i=0;i<87;i++)frame('pulled');
 const shoulderContact=shell.localToWorld(new T.Vector3(1.02,2.26,.02)).distanceTo(PULL_CONTACT_POSITION);
